@@ -31,6 +31,8 @@ def _empty_center(coor, data, neigh, movestep, iternum, bounds=np.array([[-1, 1]
     for i in range(iternum):
         # TODO (3): Could we improve the code by using more than 1 neighboor?
         adjs_, distances_ = neigh.knn_query(coor, k=1)
+
+        logger.debug(f'Empty Centers {adjs_} {distances_}')
         
         direc = _elastic(coor, data[adjs_[0]], distances_[0])
         mag = np.linalg.norm(direc)
@@ -142,8 +144,9 @@ import matplotlib.pyplot as plt
 plt.set_loglevel("error")
 logging.getLogger('PIL').setLevel(logging.WARNING)
 
-points = [[0,0], [5,5], [5,0], [0,5]]
-points2 = esa(points, np.array([[0,5], [0,5]]), 10)
+points = [[0,0], [5,5], 
+[5,0], [0,5], [2,2]]
+points2 = esa(points, np.array([[0,5], [0,5]]), 100)
 
 plt.scatter(*zip(*points))
 plt.scatter(*zip(*points2))
@@ -154,8 +157,9 @@ print(f'{points}')
 
 ### 3D TEST
 
-points = [[0,0,0], [5,5,5], [5,0,0], [0,5,0], [0,0,5], [0,5,5], [5,0,5], [5,5,0]]
-points2 = esa(points, np.array([[0,5], [0,5], [0,5]]), 10)
+points = [[0,0,0], [5,5,5], [5,0,0], [0,5,0], 
+[0,0,5], [0,5,5], [5,0,5], [5,5,0], [2,2,2]]
+points2 = esa(points, np.array([[0,5], [0,5], [0,5]]), 1000)
 
 fig = plt.figure(figsize=(12, 12))
 ax = fig.add_subplot(projection='3d')
