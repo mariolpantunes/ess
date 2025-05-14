@@ -30,7 +30,7 @@ def _empty_center(coor, data, neigh, movestep, iternum, bounds=np.array([[-1, 1]
     es_configs = []
     for i in range(iternum):
         # TODO (3): Could we improve the code by using more than 1 neighboor?
-        adjs_, distances_ = neigh.knn_query(coor, k=1)
+        adjs_, distances_ = neigh.knn_query(coor, k=1)#data.shape[1]+1)
 
         logger.debug(f'Empty Centers {adjs_} {distances_}')
         
@@ -71,14 +71,15 @@ def _elastic(es, neighbors, neighbors_dist):
     """
     Optimized Elastic force with vectorization.
     """
-    sigma = np.mean(neighbors_dist) / 2
+    sigma = np.mean(neighbors_dist) / 5.0
     neighbors_dist = np.clip(neighbors_dist, a_min=0.001, a_max=None)  # Avoids distances < 0.001
 
     # Vectorized force computation
     forces = _force(sigma, neighbors_dist)
 
     # Vectorized displacement computation
-    vecs = (es - neighbors) / neighbors_dist[:, np.newaxis]
+    #vecs = (es - neighbors) / neighbors_dist[:, np.newaxis]
+    vecs = (neighbors - es) / neighbors_dist[:, np.newaxis]
     
     # Compute the directional force
     direc = np.sum(vecs * forces[:, np.newaxis], axis=0)
@@ -86,7 +87,7 @@ def _elastic(es, neighbors, neighbors_dist):
     #TODO (2): Changing to
     # return -direc
     # appears to work (right now is pulling towards the points) 
-    return -direc
+    return direc
 
 
 def esa(samples, bounds, n:int=None, seed:int=None):
@@ -159,7 +160,7 @@ print(f'{points}')
 
 points = [[0,0,0], [5,5,5], [5,0,0], [0,5,0], 
 [0,0,5], [0,5,5], [5,0,5], [5,5,0], [2,2,2]]
-points2 = esa(points, np.array([[0,5], [0,5], [0,5]]), 1000)
+points2 = esa(points, np.array([[0,5], [0,5], [0,5]]), 100)
 
 fig = plt.figure(figsize=(12, 12))
 ax = fig.add_subplot(projection='3d')
