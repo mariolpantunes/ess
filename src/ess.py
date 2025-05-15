@@ -64,7 +64,7 @@ def _force(sigma, d):
     # Why is the max value 1000
     attrac = np.clip(attrac, a_min=None, a_max=1000)  # Avoids overflow
     
-    return 6 * (2 * attrac ** 2 - attrac) / d
+    return np.abs(6 * (2 * attrac ** 2 - attrac) / d)
 
 
 def _elastic(es, neighbors, neighbors_dist):
