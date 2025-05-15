@@ -55,6 +55,7 @@ def _force(sigma, d):
     """
     Optimized Force function.
     """
+    logger.debug(f'_force')
     ratio = sigma / d  # Reuse this computation
     # TODO (1): check this clip
     # Why is the max value 3.1622?
@@ -64,6 +65,8 @@ def _force(sigma, d):
     # Why is the max value 1000
     attrac = np.clip(attrac, a_min=None, a_max=1000)  # Avoids overflow
     
+    logger.debug(f'{attrac} -> {(2 * attrac ** 2 - attrac)}')
+
     return 6 * (2 * attrac ** 2 - attrac) / d
 
 
@@ -77,13 +80,18 @@ def _elastic(es, neighbors, neighbors_dist):
     # Vectorized force computation
     forces = _force(sigma, neighbors_dist)
 
+    logger.debug(f'_elastic')
+    logger.debug(f'ES {es} <-> {neighbors}')
+    logger.debug(f'ND {neighbors_dist} {neighbors_dist[:, np.newaxis]}')
     # Vectorized displacement computation
-    #vecs = (es - neighbors) / neighbors_dist[:, np.newaxis]
-    vecs = (neighbors - es) / neighbors_dist[:, np.newaxis]
-    
+    vecs = (es - neighbors) / neighbors_dist[:, np.newaxis]
+    #vecs = (neighbors - es) / neighbors_dist[:, np.newaxis]
+    logger.debug(f'VEC {es} <-> {neighbors} <-> {vecs}')
     # Compute the directional force
     direc = np.sum(vecs * forces[:, np.newaxis], axis=0)
-    
+    logger.debug(f'FORCES {forces}')
+    logger.debug(f'DIREC {direc}')
+
     #TODO (2): Changing to
     # return -direc
     # appears to work (right now is pulling towards the points) 
@@ -113,7 +121,7 @@ def esa(samples, bounds, n:int=None, seed:int=None):
     logger.debug(f'Samples\n{samples}')
     for c in coors:
         es_param = _empty_center(c.reshape(1, -1), samples, neigh, 
-        movestep=0.01, iternum=100, bounds=np.array([[0, 1]]))
+        movestep=0.01, iternum=1, bounds=np.array([[0, 1]]))
         es_params.append(es_param[0])
         samples = np.concatenate((samples, es_param), axis=0)
         #samples = np.append(samples, es_param)
@@ -147,7 +155,7 @@ logging.getLogger('PIL').setLevel(logging.WARNING)
 
 points = [[0,0], [5,5], 
 [5,0], [0,5], [2,2]]
-points2 = esa(points, np.array([[0,5], [0,5]]), 100)
+points2 = esa(points, np.array([[0,5], [0,5]]), 1)
 
 plt.scatter(*zip(*points))
 plt.scatter(*zip(*points2))
