@@ -3,7 +3,7 @@ import logging
 import numpy as np
 
 
-logging.basicConfig(level=logging.DEBUG, format='%(message)s')
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
 
@@ -30,7 +30,7 @@ def _empty_center(coor, data, neigh, movestep, iternum, bounds=np.array([[-1, 1]
     es_configs = []
     for i in range(iternum):
         # TODO (3): Could we improve the code by using more than 1 neighboor?
-        adjs_, distances_ = neigh.knn_query(coor, k=1)#data.shape[1]+1)
+        adjs_, distances_ = neigh.knn_query(coor, k=data.shape[1]+1)
 
         logger.debug(f'Empty Centers {adjs_} {distances_}')
         
@@ -56,12 +56,8 @@ def _force(sigma, d):
     Optimized Force function.
     """
     ratio = sigma / d  # Reuse this computation
-    # TODO (1): check this clip
-    # Why is the max value 3.1622?
     ratio = np.clip(ratio, a_min=None, a_max=3.1622)  # Avoids overflow
     attrac = ratio ** 6
-    # TODO (1): check this clip
-    # Why is the max value 1000
     attrac = np.clip(attrac, a_min=None, a_max=1000)  # Avoids overflow
     
     return np.abs(6 * (2 * attrac ** 2 - attrac) / d)
@@ -77,16 +73,18 @@ def _elastic(es, neighbors, neighbors_dist):
     # Vectorized force computation
     forces = _force(sigma, neighbors_dist)
 
+    logger.debug(f'_elastic')
+    logger.debug(f'ES {es} <-> {neighbors}')
+    logger.debug(f'ND {neighbors_dist} {neighbors_dist[:, np.newaxis]}')
     # Vectorized displacement computation
-    #vecs = (es - neighbors) / neighbors_dist[:, np.newaxis]
-    vecs = (neighbors - es) / neighbors_dist[:, np.newaxis]
-    
+    vecs = (es - neighbors) / neighbors_dist[:, np.newaxis]
+    #vecs = (neighbors - es) / neighbors_dist[:, np.newaxis]
+    logger.debug(f'VEC {es} <-> {neighbors} <-> {vecs}')
     # Compute the directional force
     direc = np.sum(vecs * forces[:, np.newaxis], axis=0)
-    
-    #TODO (2): Changing to
-    # return -direc
-    # appears to work (right now is pulling towards the points) 
+    logger.debug(f'FORCES {forces}')
+    logger.debug(f'DIREC {direc}')
+
     return direc
 
 
@@ -138,7 +136,6 @@ def ess(samples, bounds, n:int=None, seed:int=None):
     return np.concatenate((samples, rv), axis=0)
 
 
-
 ### 2D TEST
 
 import matplotlib.pyplot as plt
@@ -147,13 +144,11 @@ logging.getLogger('PIL').setLevel(logging.WARNING)
 
 points = [[0,0], [5,5], 
 [5,0], [0,5], [2,2]]
-points2 = esa(points, np.array([[0,5], [0,5]]), 100)
+points2 = esa(points, np.array([[0,5], [0,5]]), 50)
 
 plt.scatter(*zip(*points))
 plt.scatter(*zip(*points2))
 plt.show()
-
-print(f'{points}')
 
 
 ### 3D TEST
