@@ -8,7 +8,16 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
 
-#@numba.jit(nopython=True)
+@numba.jit(nopython=True, parallel=True, fastmath=True)
+def clip(a, vmin, vmax):
+    return np.maximum(np.minimum(a, vmax), vmin)
+
+
+@numba.jit(nopython=True, parallel=True, fastmath=True)
+def mean(a):
+    return np.divide(np.sum(a), a.shape[0])
+
+
 def _scale(arr, min_val=None, max_val=None):
     if min_val is None:
         min_val = min(arr)
@@ -20,40 +29,42 @@ def _scale(arr, min_val=None, max_val=None):
     return scl_arr, min_val, max_val
 
 
-#@numba.jit(nopython=True)
 def _inv_scale(scl_arr, min_val, max_val):
     return scl_arr*(max_val - min_val) + min_val
 
 
-@numba.jit(nopython=True)
+@numba.jit(nopython=True, parallel=True, fastmath=True)
 def _force(sigma, d):
     """
     Optimized Force function.
     """
-    ratio = sigma / d  # Reuse this computation
-    np.clip(ratio, a_min=None, a_max=3.1622, out=ratio)  # Avoids overflow
-    attrac = ratio ** 6
-    np.clip(attrac, a_min=None, a_max=1000, out=attrac)  # Avoids overflow
+    #ratio = sigma / d # Reuse this computation
+    #np.clip(ratio, a_min=None, a_max=3.1622, out=ratio)  # Avoids overflow
+    #ratio = clip(sigma / d, 0, 3.1622)
+    ratio = np.minimum(sigma/d, 3.1622)
+    #attrac = ratio ** 6
+    #np.clip(attrac, a_min=None, a_max=1000, out=attrac)  # Avoids overflow
+    #attrac = clip(attrac, 0, 1000)
+    attrac = np.minimum(ratio ** 6, 1000)
     
     return np.abs(6 * (2 * attrac ** 2 - attrac) / d)
 
 
-#@numba.jit(nopython=True)
 def _elastic(es, neighbors, neighbors_dist):
     """
     Optimized Elastic force with vectorization.
     """
-    sigma = np.mean(neighbors_dist) / 5.0
-    neighbors_dist = np.clip(neighbors_dist, a_min=0.001, a_max=None)  # Avoids distances < 0.001
+    sigma = mean(neighbors_dist) / 5.0
+    neighbors_dist = np.maximum(neighbors_dist, 0.001)  # Avoids distances < 0.001
 
     # Vectorized force computation
     forces = _force(sigma, neighbors_dist)
 
     # Vectorized displacement computation
     vecs = (es - neighbors) / neighbors_dist[:, np.newaxis]
-    #vecs = (neighbors - es) / neighbors_dist[:, np.newaxis]
     
     # Compute the directional force
+    #TODO: check this one
     direc = np.sum(vecs * forces[:, np.newaxis], axis=0)
 
     return direc
@@ -65,7 +76,6 @@ def _empty_center(coor, data, neigh, movestep, iternum:int=100, bounds=np.array(
     """
     
     for i in range(iternum):
-        # TODO (3): Could we improve the code by using more than 1 neighboor?
         adjs_, distances_ = neigh.knn_query(coor, k=data.shape[1]+1)
 
         logger.debug(f'Empty Centers {adjs_} {distances_}')
@@ -134,6 +144,7 @@ def esa2(samples, bounds, n:int=None, seed:int=None):
     min_val = bounds[:,0]
     max_val = bounds[:,1]
     samples, _, _ = _scale(samples, min_val, max_val)
+    samples = samples.astype(np.float32)
 
     neigh = hnswlib.Index(space='l2', dim=samples.shape[1])
     if seed is not None:
@@ -143,7 +154,7 @@ def esa2(samples, bounds, n:int=None, seed:int=None):
         neigh.init_index(max_elements=len(samples)+n, ef_construction = 200, M=48)
     
     #TODO: apply seed number here
-    coors = np.random.uniform(0, 1, (n, samples.shape[1]))
+    coors = np.random.uniform(0, 1, (n, samples.shape[1])).astype(np.float32)
     # increase the sample pool and keep original size as idx
     idx = len(samples)
     samples = np.concatenate((samples, coors), axis=0)
@@ -154,15 +165,16 @@ def esa2(samples, bounds, n:int=None, seed:int=None):
 
     for _ in range(iternum):
         for i in range(idx, len(samples)):
-            
             p = samples[i]
             
-            adjs_, distances_ = neigh.knn_query(p, k=samples.shape[1]+1)        
-            direc = _elastic(p, samples[adjs_[0]], distances_[0])
+            adjs_, distances_ = neigh.knn_query(p, k=samples.shape[1]+2)        
+            direc = _elastic(p, samples[adjs_[0, 1:]], distances_[0, 1:])
             p += (direc/np.linalg.norm(direc)) * movestep
-            np.clip(p, 0, 1, out=p)
+            #p = clip(p, 0, 1)
             
             samples[i] = p
+        
+        samples = clip(samples, 0, 1)
         neigh = hnswlib.Index(space='l2', dim=samples.shape[1])
         if seed is not None:
             neigh.init_index(max_elements=len(samples)+n, ef_construction = 200, M=48, 
@@ -174,57 +186,11 @@ def esa2(samples, bounds, n:int=None, seed:int=None):
     rv = samples[idx:]
     rv = _inv_scale(rv, min_val=min_val, max_val=max_val)
     
-
     return rv
 
 
 def ess(samples, bounds, n:int=None, seed:int=None):
     if type(samples) is not np.ndarray:
-        samples = np.array(samples)
+        samples = np.array(samples).astype(np.float32)
     rv = esa(samples=samples, bounds=bounds, n=n, seed=seed)
     return np.concatenate((samples, rv), axis=0)
-
-
-### 2D TEST
-
-import matplotlib.pyplot as plt
-
-import cProfile, pstats
-
-
-
-plt.set_loglevel("error")
-logging.getLogger('PIL').setLevel(logging.WARNING)
-
-points = np.array([[0,0], [5,5], 
-[5,0], [0,5], [2,2]])
-logger.info(f'START')
-points2 = esa(points, np.array([[0,5], [0,5]]), 50)
-logger.info(f'ESA')
-with cProfile.Profile() as pr:
-    points3 = esa2(points, np.array([[0,5], [0,5]]), 50)
-    #pr.print_stats(sort='cumtime')
-    pstats.Stats(pr).sort_stats(pstats.SortKey.CUMULATIVE).print_stats(100)
-logger.info(f'ESA2')
-
-fig, (ax1, ax2) = plt.subplots(1, 2)
-
-ax1.scatter(*zip(*points))
-ax1.scatter(*zip(*points2))
-ax2.scatter(*zip(*points))
-ax2.scatter(*zip(*points3))
-plt.show()
-
-
-### 3D TEST
-
-"""points = [[0,0,0], [5,5,5], [5,0,0], [0,5,0], 
-[0,0,5], [0,5,5], [5,0,5], [5,5,0], [2,2,2]]
-points2 = esa(points, np.array([[0,5], [0,5], [0,5]]), 100)
-
-fig = plt.figure(figsize=(12, 12))
-ax = fig.add_subplot(projection='3d')
-
-ax.scatter(*zip(*points))
-ax.scatter(*zip(*points2))
-plt.show()"""
