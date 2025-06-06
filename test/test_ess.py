@@ -145,3 +145,10 @@ class TestESS(unittest.TestCase):
         coverage_b = calculate_grid_coverage(b, bounds=bounds, grid=grid)
 
         self.assertGreater(coverage_a, coverage_b)
+    
+    def test_ess_04(self):
+        points = np.array([[0,0,0], [5,5,5]])
+        bounds = np.array([[0, 5], [0, 5], [0, 5]])
+        n_points = 1
+
+        a = ess.esa(points, bounds, n_points)
