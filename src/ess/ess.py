@@ -70,7 +70,7 @@ def _elastic(es, neighbors, neighbors_dist):
     return direc
 
 
-def esa(samples, bounds, n:int=None, seed:int=None):
+def esa(samples, bounds, *, n:int=None, seed:int=None):
     '''
     apply esa in the experiment
     '''
@@ -79,6 +79,10 @@ def esa(samples, bounds, n:int=None, seed:int=None):
     samples, _, _ = _scale(samples, min_val, max_val)
     samples = samples.astype(np.float32)
 
+    # TODO deal with n and seed
+    if n is None:
+        n = len(samples)
+
     dim = samples.shape[1]
     # computed experimentally to get the values 
     # mentioned on the library
@@ -86,20 +90,21 @@ def esa(samples, bounds, n:int=None, seed:int=None):
     max_elements=len(samples)+n
 
     neigh = hnswlib.Index(space='l2', dim=dim)
-    if seed is not None:
+    if seed is None:
+        neigh.init_index(max_elements=max_elements, ef_construction=200, M=M)
+        rng = np.random.default_rng()
+    else:
         neigh.init_index(max_elements=max_elements, ef_construction=200, M=M, 
         random_seed = seed)
-    else:
-        neigh.init_index(max_elements=max_elements, ef_construction=200, M=M)
+        rng = np.random.default_rng(seed=seed)
     
-    #TODO: apply seed number here
-    coors = np.random.uniform(0, 1, (n, samples.shape[1])).astype(np.float32)
+    coors = rng.uniform(0, 1, (n, samples.shape[1])).astype(np.float32)
     # increase the sample pool and keep original size as idx
     idx = len(samples)
     samples = np.concatenate((samples, coors), axis=0)
     neigh.add_items(samples)
 
-    iternum = 128
+    iternum = 64
     movestep=0.01
 
     for _ in range(iternum):
@@ -127,7 +132,7 @@ def esa(samples, bounds, n:int=None, seed:int=None):
     return rv
 
 
-def ess(samples, bounds, n:int=None, seed:int=None):
+def ess(samples, bounds, *, n:int=None, seed:int=None):
     if type(samples) is not np.ndarray:
         samples = np.array(samples).astype(np.float32)
     rv = esa(samples=samples, bounds=bounds, n=n, seed=seed)

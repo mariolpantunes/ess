@@ -86,7 +86,7 @@ class TestESS(unittest.TestCase):
         size=(n_points, points.shape[1]))
         b = np.concatenate((points, rnd_points), axis=0)
         
-        a = ess.ess(points, bounds, n_points)
+        a = ess.ess(points, bounds, n=n_points, seed=42)
 
         coverage_a = calculate_grid_coverage(a, bounds=bounds, grid=grid)
         coverage_b = calculate_grid_coverage(b, bounds=bounds, grid=grid)
@@ -103,7 +103,7 @@ class TestESS(unittest.TestCase):
         size=(n_points, points.shape[1]))
         b = np.concatenate((points, rnd_points), axis=0)
         
-        a = ess.ess(points, bounds, n_points)
+        a = ess.ess(points, bounds, n=n_points, seed=42)
 
         coverage_a = calculate_grid_coverage(a, bounds=bounds, grid=grid)
         coverage_b = calculate_grid_coverage(b, bounds=bounds, grid=grid)
@@ -121,7 +121,7 @@ class TestESS(unittest.TestCase):
         size=(n_points, points.shape[1]))
         b = np.concatenate((points, rnd_points), axis=0)
         
-        a = ess.ess(points, bounds, n_points)
+        a = ess.ess(points, bounds, n=n_points, seed=42)
 
         coverage_a = calculate_grid_coverage(a, bounds=bounds, grid=grid)
         coverage_b = calculate_grid_coverage(b, bounds=bounds, grid=grid)
@@ -139,7 +139,7 @@ class TestESS(unittest.TestCase):
         size=(n_points, points.shape[1]))
         b = np.concatenate((points, rnd_points), axis=0)
         
-        a = ess.ess(points, bounds, n_points)
+        a = ess.ess(points, bounds, n=n_points, seed=42)
 
         coverage_a = calculate_grid_coverage(a, bounds=bounds, grid=grid)
         coverage_b = calculate_grid_coverage(b, bounds=bounds, grid=grid)
@@ -151,4 +151,4 @@ class TestESS(unittest.TestCase):
         bounds = np.array([[0, 5], [0, 5], [0, 5]])
         n_points = 1
 
-        a = ess.esa(points, bounds, n_points)
+        a = ess.esa(points, bounds, n=n_points, seed=42)
