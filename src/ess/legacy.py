@@ -1,5 +1,60 @@
+import hnswlib
+import logging
 import numpy as np
 
+
+logging.basicConfig(level=logging.INFO, format='%(message)s')
+logger = logging.getLogger(__name__)
+
+
+def _scale(arr, min_val=None, max_val=None):
+    if min_val is None:
+        min_val = min(arr)
+    
+    if max_val is None:
+        max_val = max(arr)
+
+    scl_arr = (arr - min_val) / (max_val - min_val)
+    return scl_arr, min_val, max_val
+
+
+def _inv_scale(scl_arr, min_val, max_val):
+    return scl_arr*(max_val - min_val) + min_val
+
+
+def _force(sigma, d):
+    """
+    Optimized Force function.
+    """
+    #ratio = sigma / d # Reuse this computation
+    #np.clip(ratio, a_min=None, a_max=3.1622, out=ratio)  # Avoids overflow
+    #ratio = clip(sigma / d, 0, 3.1622)
+    ratio = np.minimum(sigma/d, 3.1622)
+    #attrac = ratio ** 6
+    #np.clip(attrac, a_min=None, a_max=1000, out=attrac)  # Avoids overflow
+    #attrac = clip(attrac, 0, 1000)
+    attrac = np.minimum(ratio ** 6, 1000)
+    
+    return np.abs(6 * (2 * attrac ** 2 - attrac) / d)
+
+
+def _elastic(es, neighbors, neighbors_dist):
+    """
+    Optimized Elastic force with vectorization.
+    """
+    sigma = np.mean(neighbors_dist) / 5.0
+    neighbors_dist = np.maximum(neighbors_dist, 0.001)  # Avoids distances < 0.001
+
+    # Vectorized force computation
+    forces = _force(sigma, neighbors_dist)
+
+    # Vectorized displacement computation
+    vecs = (es - neighbors) / neighbors_dist[:, np.newaxis]
+    
+    # Compute the directional force
+    direc = np.sum(vecs * forces[:, np.newaxis], axis=0)
+
+    return direc
 
 
 def _empty_center(coor, data, neigh, movestep, iternum:int=100, bounds=np.array([[-1, 1]])):
