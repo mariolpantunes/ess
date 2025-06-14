@@ -105,7 +105,7 @@ def esa(samples, bounds, *, n:int=None, seed:int=None):
     neigh.add_items(samples)
 
     iternum = 64
-    movestep=0.01
+    movestep = 0.01
 
     for _ in range(iternum):
         for i in range(idx, len(samples)):
