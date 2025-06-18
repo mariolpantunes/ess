@@ -70,7 +70,7 @@ def _elastic(es, neighbors, neighbors_dist):
     return direc
 
 
-def esa(samples, bounds, *, n:int=None, seed:int=None):
+def esa(samples, bounds, *, n:int=None, epochs:int = 64, lr:float = 0.01, seed:int=None):
     '''
     apply esa in the experiment
     '''
@@ -79,7 +79,6 @@ def esa(samples, bounds, *, n:int=None, seed:int=None):
     samples, _, _ = _scale(samples, min_val, max_val)
     samples = samples.astype(np.float32)
 
-    # TODO deal with n and seed
     if n is None:
         n = len(samples)
 
@@ -104,16 +103,13 @@ def esa(samples, bounds, *, n:int=None, seed:int=None):
     samples = np.concatenate((samples, coors), axis=0)
     neigh.add_items(samples)
 
-    iternum = 64
-    movestep = 0.01
-
-    for _ in range(iternum):
+    for _ in range(epochs):
         for i in range(idx, len(samples)):
             p = samples[i]
             
             adjs_, distances_ = neigh.knn_query(p, k=min(samples.shape[1]+2, max_elements))        
             direc = _elastic(p, samples[adjs_[0, 1:]], distances_[0, 1:])
-            p += (direc/np.linalg.norm(direc)) * movestep
+            p += (direc/np.linalg.norm(direc)) * lr
             
             samples[i] = p
         
@@ -132,7 +128,7 @@ def esa(samples, bounds, *, n:int=None, seed:int=None):
     return rv
 
 
-def ess(samples, bounds, *, n:int=None, seed:int=None):
+def ess(samples, bounds, *, n:int=None, epochs:int = 64, lr:float = 0.01, seed:int=None):
     if type(samples) is not np.ndarray:
         samples = np.array(samples).astype(np.float32)
     rv = esa(samples=samples, bounds=bounds, n=n, seed=seed)
