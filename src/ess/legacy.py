@@ -57,7 +57,7 @@ def _elastic(es, neighbors, neighbors_dist):
     return direc
 
 
-def _empty_center(coor, data, neigh, movestep, iternum:int=100, bounds=np.array([[-1, 1]])):
+def _empty_center(coor, data, neigh, *, lr:int, epochs:int, bounds:np.ndarray):
     """
     Empty center search process.
     """
@@ -99,15 +99,16 @@ def _esa_01(samples, bounds, n:int=None, seed:int=None):
         neigh.init_index(max_elements=len(samples)+n, ef_construction = 200, M=48)
     neigh.add_items(samples)
     
-    #TODO (2): improve by adding one point at a time (avoiding clustering points together) 
     coors = np.random.uniform(0, 1, (n, samples.shape[1]))
     logger.debug(f'Coors({n}, {samples.shape[1]})\n{coors}')
+    
+    scaled_bounds = np.full(bounds.shape, [0, 1])
     es_params = []
     logger.debug(f'Samples\n{samples}')
     es_params = [_empty_center(coor.reshape(1, -1), samples, neigh, 
-    movestep=0.01, iternum=100, bounds=np.array([[0, 1]]))[0] for coor in coors]
+    lr=lr, epochs=epochs, bounds=scaled_bounds)[0] for coor in coors]
     logger.debug(f'Params({len(es_params)})\n{es_params}')
-    #rv = np.array(es_params)[:n]
+    
     rv = np.array(es_params)
     rv = _inv_scale(rv, min_val=min_val, max_val=max_val)
     
@@ -116,7 +117,7 @@ def _esa_01(samples, bounds, n:int=None, seed:int=None):
     return rv
 
 
-def _esa_02(samples, bounds, n:int=None, seed:int=None):
+def _esa_02(samples, bounds, *, n:int=None, epochs:int = 100, lr:float = 0.01, seed:int=None):
     '''
     apply esa in the experiment
     '''
@@ -132,14 +133,14 @@ def _esa_02(samples, bounds, n:int=None, seed:int=None):
         neigh.init_index(max_elements=len(samples)+n, ef_construction = 200, M=48)
     neigh.add_items(samples)
     
-    #TODO (2): improve by adding one point at a time (avoiding clustering points together) 
     coors = np.random.uniform(0, 1, (n, samples.shape[1]))
     logger.debug(f'Coors({n}, {samples.shape[1]})\n{coors}')
     es_params = []
     logger.debug(f'Samples\n{samples}')
+    scaled_bounds = np.full(bounds.shape, [0, 1])
     for c in coors:
-        es_param = _empty_center(c.reshape(1, -1), samples, neigh, 
-        movestep=0.01, iternum=100, bounds=np.array([[0, 1]]))
+        es_param = _empty_center(c.reshape(1, -1), samples, neigh,
+        lr=lr, epochs=epochs, bounds=scaled_bounds)
         es_params.append(es_param[0])
         samples = np.concatenate((samples, es_param), axis=0)
         #samples = np.append(samples, es_param)
