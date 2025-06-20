@@ -1,3 +1,3 @@
-import src.ess.ess as ess
-import src.ess.utils as utils
-import src.ess.legacy as legacy
+import ess.ess as ess
+import ess.utils as utils
+import ess.legacy as legacy
