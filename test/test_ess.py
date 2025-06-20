@@ -95,3 +95,10 @@ class TestESS(unittest.TestCase):
         n_points = 1
 
         a = ess.esa(points, bounds, n=n_points, seed=42)
+    
+    def test_ess_05(self):
+        points = np.array([[0,0,0], [5,5,5]])
+        bounds = np.array([[0, 5], [0, 5], [0, 5]])
+        n_points = 10
+
+        a = ess.esa(points, bounds, n=n_points)

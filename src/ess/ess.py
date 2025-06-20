@@ -83,7 +83,7 @@ lr:float = 0.01, k:int|str|None=None, seed:int|None=None):
     dim = samples.shape[1]
     # computed experimentally to get the values 
     # mentioned on the library
-    M = int(math.ceil(6*math.log2(dim)))
+    M = max(4, int(math.ceil(6*math.log2(dim))))
     max_elements=len(samples)+n
 
     if n is None:
