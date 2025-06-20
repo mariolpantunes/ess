@@ -80,6 +80,12 @@ lr:float = 0.01, k:int|str|None=None, seed:int|None=None):
     samples, _, _ = _scale(samples, min_val, max_val)
     samples = samples.astype(np.float32)
 
+    dim = samples.shape[1]
+    # computed experimentally to get the values 
+    # mentioned on the library
+    M = int(math.ceil(6*math.log2(dim)))
+    max_elements=len(samples)+n
+
     if n is None:
         n = len(samples)
 
@@ -88,12 +94,6 @@ lr:float = 0.01, k:int|str|None=None, seed:int|None=None):
     
     if k == 'auto':
         k = min(samples.shape[1]+2, max_elements)
-
-    dim = samples.shape[1]
-    # computed experimentally to get the values 
-    # mentioned on the library
-    M = int(math.ceil(6*math.log2(dim)))
-    max_elements=len(samples)+n
 
     neigh = hnswlib.Index(space='l2', dim=dim)
     if seed is None:
