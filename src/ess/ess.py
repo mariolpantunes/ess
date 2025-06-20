@@ -70,7 +70,8 @@ def _elastic(es, neighbors, neighbors_dist):
     return direc
 
 
-def esa(samples, bounds, *, n:int=None, epochs:int = 64, lr:float = 0.01, seed:int=None):
+def esa(samples, bounds, *, n:int|None=None, epochs:int = 64, 
+lr:float = 0.01, k:int|str|None=None, seed:int|None=None):
     '''
     apply esa in the experiment
     '''
@@ -81,6 +82,12 @@ def esa(samples, bounds, *, n:int=None, epochs:int = 64, lr:float = 0.01, seed:i
 
     if n is None:
         n = len(samples)
+
+    if k is None:
+        k= 'auto'
+    
+    if k == 'auto':
+        k = min(samples.shape[1]+2, max_elements)
 
     dim = samples.shape[1]
     # computed experimentally to get the values 
@@ -107,7 +114,7 @@ def esa(samples, bounds, *, n:int=None, epochs:int = 64, lr:float = 0.01, seed:i
         for i in range(idx, len(samples)):
             p = samples[i]
             
-            adjs_, distances_ = neigh.knn_query(p, k=min(samples.shape[1]+2, max_elements))        
+            adjs_, distances_ = neigh.knn_query(p, k = k)        
             direc = _elastic(p, samples[adjs_[0, 1:]], distances_[0, 1:])
             p += (direc/np.linalg.norm(direc)) * lr
             
