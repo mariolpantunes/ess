@@ -55,11 +55,12 @@ def _elastic(es, neighbors, neighbors_dist):
     """
     Optimized Elastic force with vectorization.
     """
-    sigma = mean(neighbors_dist) / 5.0
+    #sigma = mean(neighbors_dist) / 5.0
     neighbors_dist = np.maximum(neighbors_dist, 0.001)  # Avoids distances < 0.001
 
     # Vectorized force computation
-    forces = _force(sigma, neighbors_dist)
+    #forces = _force(sigma, neighbors_dist)
+    forces = 1.0/np.power(neighbors_dist,2.0)
 
     # Vectorized displacement computation
     vecs = (es - neighbors) / neighbors_dist[:, np.newaxis]
@@ -70,7 +71,7 @@ def _elastic(es, neighbors, neighbors_dist):
     return direc
 
 
-def esa(samples, bounds, *, n:int|None=None, epochs:int = 64, 
+def esa(samples, bounds, *, n:int|None=None, epochs:int = 32, 
 lr:float = 0.01, k:int|str|None=None, seed:int|None=None):
     '''
     apply esa in the experiment

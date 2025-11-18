@@ -1,7 +1,8 @@
 import logging
 import argparse
 import numpy as np
-import src.ess as ess
+import ess.ess as ess
+import ess.legacy as legacy
 import cProfile, pstats
 import matplotlib.pyplot as plt
 
@@ -16,12 +17,12 @@ logging.getLogger('PIL').setLevel(logging.WARNING)
 points = np.array([[0,0], [5,5], 
 [5,0], [0,5], [2.5,2.5]])
 logger.info(f'START')
-points2 = ess.esa(points, np.array([[0,5], [0,5]]), 10)
+points2 = ess.esa(points, np.array([[0,5], [0,5]]), n=300)
 logger.info(f'ESA')
-#with cProfile.Profile() as pr:
-#    points3 = ess.esa2(points, np.array([[0,10], [0,10]]), 300)
-#    pstats.Stats(pr).sort_stats(pstats.SortKey.CUMULATIVE).print_stats(10)
-points3 = ess.esa2(points, np.array([[0,5], [0,5]]), 10)
+with cProfile.Profile() as pr:
+    points3 = ess.esa(points, np.array([[0,10], [0,10]]), n=300)
+    pstats.Stats(pr).sort_stats(pstats.SortKey.CUMULATIVE).print_stats(10)
+#points3 = legacy._esa_02(points, np.array([[0,5], [0,5]]), 10)
 logger.info(f'ESA2')
 
 

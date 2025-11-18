@@ -61,8 +61,10 @@ def _empty_center(coor, data, neigh, *, lr:int, epochs:int, bounds:np.ndarray):
     """
     Empty center search process.
     """
+
+    movestep = 0.01
     
-    for i in range(iternum):
+    for i in range(epochs):
         adjs_, distances_ = neigh.knn_query(coor, k=data.shape[1]+1)
 
         logger.debug(f'Empty Centers {adjs_} {distances_}')
@@ -106,7 +108,7 @@ def _esa_01(samples, bounds, n:int=None, seed:int=None):
     es_params = []
     logger.debug(f'Samples\n{samples}')
     es_params = [_empty_center(coor.reshape(1, -1), samples, neigh, 
-    lr=lr, epochs=epochs, bounds=scaled_bounds)[0] for coor in coors]
+    lr=0.01, epochs=100, bounds=scaled_bounds)[0] for coor in coors]
     logger.debug(f'Params({len(es_params)})\n{es_params}')
     
     rv = np.array(es_params)
