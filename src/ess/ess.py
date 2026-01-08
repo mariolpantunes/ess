@@ -250,7 +250,7 @@ def _esa(
     **metric_kwargs,
 ) -> np.ndarray:
     """
-    Internal execution loop for the Electrostatic Search Algorithm.
+    Internal execution loop for the Empty Space Algorithm.
 
     Implements the batch-wise optimization strategy:
     1. Scale data to [0, 1].
@@ -360,16 +360,13 @@ def _esa(
     return _inv_scale(all_generated, min_val, max_val)
 
 
-# --- Core Logic ---
-
-
 def esa(
     samples: np.ndarray,
     bounds: np.ndarray,
     *,
     n: int,
     nn_instance: nn.NearestNeighbors | None = None,
-    epochs: int = 512,
+    epochs: int = 1024,
     lr: float = 0.01,
     decay: float = 0.9,
     batch_size: int = 50,
@@ -380,10 +377,11 @@ def esa(
     **metric_kwargs,
 ) -> np.ndarray:
     """
-    Electrostatic Search Algorithm (ESA).
+    Empty Space Algorithm (ESA).
 
     Generates 'n' spatially diverse points by simulating electrostatic repulsion
-    against existing 'samples'.
+    against existing 'samples'. This is a wrapper that prepares the dependencies
+    (NN instance, metric function) and calls the core logic.
 
     This method returns ONLY the new generated points.
 
@@ -419,91 +417,28 @@ def esa(
     else:
         metric_fn = metric
 
-    # 3. Scaling
-    min_val = bounds[:, 0]
-    max_val = bounds[:, 1]
-    scaled_samples, _, _ = _scale(samples, min_val, max_val)
-    scaled_samples = scaled_samples.astype(np.float32)
-
-    dim = samples.shape[1]
-    rng = np.random.default_rng(seed)
-
-    # 4. NN Setup
+    # 3. NN Factory
     if nn_instance is None:
+        dim = samples.shape[1]
         logger.debug(f"No NN instance provided. Defaulting to NumpyNN(dim={dim}).")
         nn_instance = nn.NumpyNN(dimension=dim, seed=seed)
 
-    nn_instance.clear()
-    nn_instance.add_static(scaled_samples)
-
-    search_k = 0
-    if k is None:
-        search_k = (2 * dim) + 1
-    else:
-        search_k = k
-
-    # 5. Batch Generation
-    generated_points = []
-    num_batches = math.ceil(n / batch_size)
-    bounds_01 = np.array([[0, 1]] * dim)
-
-    logger.debug(f"Starting ESA: {n} points, {num_batches} batches.")
-
-    for _ in range(num_batches):
-        current_n = min(batch_size, n - len(generated_points))
-        if current_n <= 0:
-            break
-
-        # 5a. Smart Initialization
-        active_batch = _smart_init(bounds_01, nn_instance, current_n, rng)
-        nn_instance.set_active(active_batch)
-
-        current_lr = lr
-
-        # 5b. Optimization Loop
-        for _ in range(epochs):
-            # Query neighbors
-            indices, dists = nn_instance.query_active(k=search_k)
-
-            # Map indices to coordinates
-            # View of all data: Static + Active
-            combined_data = np.vstack((scaled_samples, active_batch))
-
-            if np.max(indices) >= len(combined_data):
-                logger.error("NN returned indices out of bounds.")
-                break
-
-            neighbor_coords = combined_data[indices]  # Shape (M, k, D)
-
-            # Compute Forces
-            force_vecs = _compute_forces(
-                active_batch, neighbor_coords, dists, metric_fn, **metric_kwargs
-            )
-
-            # Update
-            prev_pos = active_batch.copy()
-            active_batch += force_vecs * current_lr
-            np.clip(active_batch, 0.0, 1.0, out=active_batch)
-
-            nn_instance.set_active(active_batch)
-
-            # Convergence
-            move_dist = np.linalg.norm(active_batch - prev_pos, axis=1)
-            if np.max(move_dist) < tol:
-                break
-
-            current_lr *= decay
-
-        # 5c. Consolidate Batch
-        nn_instance.consolidate()
-        scaled_samples = np.vstack((scaled_samples, active_batch))
-        generated_points.append(active_batch)
-
-    if not generated_points:
-        return np.empty((0, dim))
-
-    all_generated = np.vstack(generated_points)
-    return _inv_scale(all_generated, min_val, max_val)
+    # 4. Invoke Core Logic
+    return _esa(
+        samples=samples,
+        bounds=bounds,
+        nn_instance=nn_instance,
+        metric_fn=metric_fn,
+        n=n,
+        epochs=epochs,
+        lr=lr,
+        decay=decay,
+        batch_size=batch_size,
+        k=k,
+        tol=tol,
+        seed=seed,
+        **metric_kwargs,
+    )
 
 
 def ess(
@@ -522,7 +457,7 @@ def ess(
     **kwargs,
 ) -> np.ndarray:
     """
-    Electrostatic Search Strategy (ESS).
+    Empty Space Strategy (ESS).
 
     A high-level wrapper that runs ESA and returns the combined dataset
     (original samples + new points).
