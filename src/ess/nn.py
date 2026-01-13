@@ -1,7 +1,9 @@
 import abc
 import logging
-import numpy as np
+import typing
+
 import faiss
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -9,179 +11,116 @@ logger = logging.getLogger(__name__)
 class NearestNeighbors(abc.ABC):
     """
     Abstract Base Class for Nearest Neighbors implementations tailored for ESA.
-
-    This class distinguishes between 'static' points (anchors/obstacles) and 
-    'active' points (currently moving particles). This split allows for 
-    optimizations where the large static set is indexed once, while the small 
-    active set is updated frequently.
     """
 
     def __init__(self, dimension: int, seed: int = 42):
-        """
-        Initializes the NearestNeighbors index.
-
-        Args:
-            dimension (int): The dimensionality of the points (D).
-            seed (int): Random seed for reproducibility (where applicable).
-        """
         self.dimension = dimension
         self.seed = seed
 
     @abc.abstractmethod
     def add_static(self, points: np.ndarray) -> None:
-        """
-        Adds points to the static set (anchors).
-
-        These points are considered fixed obstacles that do not move during
-        the current optimization batch.
-
-        Args:
-            points (np.ndarray): A (N, D) array of coordinates.
-        """
+        """Adds points to the static set (anchors/obstacles)."""
         pass
 
     @abc.abstractmethod
     def set_active(self, points: np.ndarray) -> None:
-        """
-        Sets the current batch of active points.
-
-        Replaces any previously active points. These are the particles 
-        currently being optimized by the algorithm.
-
-        Args:
-            points (np.ndarray): A (M, D) array of coordinates.
-        """
+        """Sets the current batch of active points."""
         pass
 
     @abc.abstractmethod
     def consolidate(self) -> None:
-        """
-        Merges the current active points into the static set.
+        """Merges current active points into the static set."""
+        pass
 
-        This is typically called at the end of an optimization batch, freezing
-        the recently optimized points so they become obstacles for the next batch.
+    @abc.abstractmethod
+    def query_nn(self, k: int) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Finds k nearest neighbors for the CURRENT ACTIVE batch against (Static + Active).
+
+        Returns:
+            tuple: (indices, distances) where shape is (M, k).
+            The point itself (distance 0) is guaranteed to be at index 0.
         """
         pass
 
     @abc.abstractmethod
-    def query_active(self, k: int) -> tuple[np.ndarray, np.ndarray]:
+    def query_static(
+        self, query_points: np.ndarray, k: int
+    ) -> tuple[np.ndarray, np.ndarray]:
         """
-        Finds k nearest neighbors for each ACTIVE point.
-
-        Neighbors are drawn from the union of the Static set and the Active set.
-        The results are used to calculate repulsive forces acting on the active points.
-
-        Args:
-            k (int): The number of neighbors to find.
-
-        Returns:
-            tuple[np.ndarray, np.ndarray]: 
-                - **indices** (np.ndarray): Shape (M, k). Indices of neighbors. 
-                  Indices 0..N_static-1 refer to static points. 
-                  Indices N_static..Total-1 refer to active points.
-                - **distances** (np.ndarray): Shape (M, k). Euclidean distances.
+        Finds k nearest neighbors for ARBITRARY points against the STATIC set only.
         """
         pass
-    
+
     @abc.abstractmethod
-    def query_external(self, query_points: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
+    def range_search(self, radius: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Finds k nearest neighbors for arbitrary external points against the STATIC set only.
-
-        This is primarily used during the initialization phase (Smart Init) to find 
-        starting positions far from existing obstacles.
-
-        Args:
-            query_points (np.ndarray): Shape (Q, D). Points to query.
-            k (int): Number of neighbors.
+        Finds all neighbors within `radius` for the CURRENT ACTIVE batch against (Static + Active).
 
         Returns:
-            tuple[np.ndarray, np.ndarray]: 
-                - **indices** (np.ndarray): Shape (Q, k). Indices into the static set.
-                - **distances** (np.ndarray): Shape (Q, k). Euclidean distances.
+            tuple[lims, D, I]:
+                - lims (np.ndarray): Shape (M+1,). Start/end indices.
+                - D (np.ndarray): Flattened distances.
+                - I (np.ndarray): Flattened indices.
         """
         pass
 
     @abc.abstractmethod
     def clear(self) -> None:
-        """
-        Resets the internal state, removing all static and active points.
-        """
+        """Resets the internal state."""
         pass
-    
+
     @property
     @abc.abstractmethod
     def total_count(self) -> int:
-        """
-        Returns the total number of points currently tracked (static + active).
-
-        Returns:
-            int: Total count.
-        """
         pass
 
 
 class NumpyNN(NearestNeighbors):
     """
     Pure NumPy implementation using vectorized broadcasting.
-
-    Best suited for small to medium datasets (< 5000 points) where the overhead
-    of building a complex index (like HNSW) outweighs the brute-force cost.
+    Efficient for small to medium N (< 10,000).
     """
 
     def __init__(self, dimension: int, seed: int = 42):
-        """
-        Initializes the NumpyNN.
-
-        Args:
-            dimension (int): Dimensionality of data.
-            seed (int): Random seed.
-        """
         super().__init__(dimension, seed)
         self._static: np.ndarray = np.empty((0, dimension), dtype=np.float32)
         self._active: np.ndarray = np.empty((0, dimension), dtype=np.float32)
 
     def add_static(self, points: np.ndarray) -> None:
-        """Adds points to static set."""
         if points.shape[1] != self.dimension:
             raise ValueError(f"Dim mismatch: {points.shape[1]} vs {self.dimension}")
         self._static = np.vstack((self._static, points.astype(np.float32)))
 
     def set_active(self, points: np.ndarray) -> None:
-        """Sets active points."""
         if points.shape[1] != self.dimension:
             raise ValueError(f"Dim mismatch: {points.shape[1]} vs {self.dimension}")
         self._active = points.astype(np.float32)
 
     def consolidate(self) -> None:
-        """Moves active points to static."""
         if self._active.shape[0] > 0:
             self.add_static(self._active)
             self._active = np.empty((0, self.dimension), dtype=np.float32)
 
     def clear(self) -> None:
-        """Clears all data."""
         self._static = np.empty((0, self.dimension), dtype=np.float32)
         self._active = np.empty((0, self.dimension), dtype=np.float32)
 
     @property
     def total_count(self) -> int:
-        """Total point count."""
         return self._static.shape[0] + self._active.shape[0]
 
-    def query_external(self, query_points: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
-        """Queries against static points only."""
-        if self._static.shape[0] == 0:
-            return (np.zeros((len(query_points), k), dtype=int), 
-                    np.full((len(query_points), k), np.inf))
-        
-        return self._compute_knn(query_points, self._static, k)
+    def _sq_dist_matrix(self, A: np.ndarray, B: np.ndarray) -> np.ndarray:
+        """||A - B||^2 = ||A||^2 + ||B||^2 - 2AB^T"""
+        A_sq = np.sum(A**2, axis=1, keepdims=True)
+        B_sq = np.sum(B**2, axis=1, keepdims=True)
+        return A_sq + B_sq.T - 2 * np.dot(A, B.T)
 
-    def query_active(self, k: int) -> tuple[np.ndarray, np.ndarray]:
-        """Queries active points against (Static U Active)."""
+    def _compute_full_sq_dists(self) -> tuple[np.ndarray, np.ndarray]:
+        """Computes merged squared distances from Active to (Static + Active)."""
         n_active = self._active.shape[0]
         n_static = self._static.shape[0]
-        
+
         # 1. Active vs Static
         if n_static > 0:
             dists_s_sq = self._sq_dist_matrix(self._active, self._static)
@@ -190,85 +129,92 @@ class NumpyNN(NearestNeighbors):
             dists_s_sq = np.empty((n_active, 0), dtype=np.float32)
             indices_s = np.empty((n_active, 0), dtype=int)
 
-        # 2. Active vs Active (M, M)
+        # 2. Active vs Active
         dists_a_sq = self._sq_dist_matrix(self._active, self._active)
-        dists_a_sq = np.maximum(dists_a_sq, 0.0)
-        # Offset indices by static count
-        indices_a = np.broadcast_to(np.arange(n_active), (n_active, n_active)) + n_static
+        dists_a_sq = np.maximum(dists_a_sq, 0.0)  # Safety clamp
 
-        # 3. Concatenate
+        indices_a = (
+            np.broadcast_to(np.arange(n_active), (n_active, n_active)) + n_static
+        )
+
+        # 3. Merge
         full_dists_sq = np.hstack((dists_s_sq, dists_a_sq))
         full_indices = np.hstack((indices_s, indices_a))
+        full_dists_sq = np.maximum(full_dists_sq, 0.0)  # Safety clamp
 
-        # 4. Sort and Select Top K
+        return full_dists_sq, full_indices
+
+    def query_nn(self, k: int) -> tuple[np.ndarray, np.ndarray]:
+        full_dists_sq, full_indices = self._compute_full_sq_dists()
+
         k = min(k, full_dists_sq.shape[1])
-        
-        # argpartition for partial sort (faster)
-        part_idx = np.argpartition(full_dists_sq, k-1, axis=1)[:, :k]
-        
-        # Gather the top k
-        final_dists_sq = np.take_along_axis(full_dists_sq, part_idx, axis=1)
-        final_indices = np.take_along_axis(full_indices, part_idx, axis=1)
-        
-        # Final Sort within K
-        sort_order = np.argsort(final_dists_sq, axis=1)
-        final_dists_sq = np.take_along_axis(final_dists_sq, sort_order, axis=1)
-        final_indices = np.take_along_axis(final_indices, sort_order, axis=1)
+
+        # Partial sort
+        part_idx = np.argpartition(full_dists_sq, k - 1, axis=1)[:, :k]
+
+        top_dists_sq = np.take_along_axis(full_dists_sq, part_idx, axis=1)
+        top_indices = np.take_along_axis(full_indices, part_idx, axis=1)
+
+        # Strict sort (Index 0 is self)
+        sort_order = np.argsort(top_dists_sq, axis=1)
+        final_dists_sq = np.take_along_axis(top_dists_sq, sort_order, axis=1)
+        final_indices = np.take_along_axis(top_indices, sort_order, axis=1)
 
         return final_indices, np.sqrt(final_dists_sq)
 
-    def _sq_dist_matrix(self, A: np.ndarray, B: np.ndarray) -> np.ndarray:
-        """
-        Computes the squared Euclidean distance matrix between A and B.
-        Formula: ||A - B||^2 = ||A||^2 + ||B||^2 - 2AB^T
-        """
-        A_sq = np.sum(A**2, axis=1, keepdims=True)
-        B_sq = np.sum(B**2, axis=1, keepdims=True)
-        return A_sq + B_sq.T - 2 * np.dot(A, B.T)
-        
-    def _compute_knn(self, query: np.ndarray, target: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
-        """Internal helper for exact k-NN."""
-        k = min(k, target.shape[0])
-        dist_sq = self._sq_dist_matrix(query, target)
+    def query_static(
+        self, query_points: np.ndarray, k: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if self._static.shape[0] == 0:
+            return (
+                np.zeros((len(query_points), k), dtype=int),
+                np.full((len(query_points), k), np.inf),
+            )
+
+        k = min(k, self._static.shape[0])
+        dist_sq = self._sq_dist_matrix(query_points, self._static)
         dist_sq = np.maximum(dist_sq, 0.0)
-        
-        idx = np.argpartition(dist_sq, k-1, axis=1)[:, :k]
-        top_dists = np.take_along_axis(dist_sq, idx, axis=1)
-        
-        sort_idx = np.argsort(top_dists, axis=1)
-        final_dists = np.sqrt(np.take_along_axis(top_dists, sort_idx, axis=1))
-        final_idx = np.take_along_axis(idx, sort_idx, axis=1)
-        
+
+        part_idx = np.argpartition(dist_sq, k - 1, axis=1)[:, :k]
+        top_dists_sq = np.take_along_axis(dist_sq, part_idx, axis=1)
+
+        sort_idx = np.argsort(top_dists_sq, axis=1)
+        final_dists = np.sqrt(np.take_along_axis(top_dists_sq, sort_idx, axis=1))
+        final_idx = np.take_along_axis(part_idx, sort_idx, axis=1)
+
         return final_idx, final_dists
 
+    def range_search(self, radius: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        full_dists_sq, full_indices = self._compute_full_sq_dists()
 
-class FaissNN(NearestNeighbors):
-    """
-    Faiss-based implementation for high-performance similarity search (CPU Only).
+        radius_sq = radius * radius
+        mask = full_dists_sq < radius_sq
 
-    This implementation uses a persistent `IndexFlatL2` for the static points.
-    Active points are queried against this index and against themselves using 
-    brute-force (since the active batch is small), and the results are merged.
-    """
-    
-    def __init__(self, dimension: int, seed: int = 42):
-        """
-        Initializes the FaissNN.
+        counts = np.sum(mask, axis=1)
+        lims = np.zeros(len(counts) + 1, dtype=int)
+        lims[1:] = np.cumsum(counts)
 
-        Args:
-            dimension (int): Dimensionality.
-            seed (int): Random seed (unused by IndexFlatL2 but kept for interface).
-        """
+        D = np.sqrt(full_dists_sq[mask])
+        Idx = full_indices[mask]
+
+        return lims, D, Idx
+
+
+class FaissBaseNN(NearestNeighbors):
+    """Base class for Faiss implementations."""
+
+    def __init__(
+        self,
+        index_static: faiss.Index,
+        dimension: int,
+        seed: int = 42,
+    ):
         super().__init__(dimension, seed)
-        
-        # Strict CPU only
-        self._index_static = faiss.IndexFlatL2(dimension)
-        
         self._active: np.ndarray = np.empty((0, dimension), dtype=np.float32)
         self._static_count = 0
+        self._index_static: typing.Any = index_static
 
     def add_static(self, points: np.ndarray) -> None:
-        """Adds points to the Faiss static index."""
         data = np.ascontiguousarray(points.astype(np.float32))
         if data.shape[1] != self.dimension:
             raise ValueError(f"Dim mismatch: {data.shape[1]} vs {self.dimension}")
@@ -276,82 +222,148 @@ class FaissNN(NearestNeighbors):
         self._static_count += data.shape[0]
 
     def set_active(self, points: np.ndarray) -> None:
-        """Sets the active batch."""
         if points.shape[1] != self.dimension:
             raise ValueError("Dim mismatch")
         self._active = np.ascontiguousarray(points.astype(np.float32))
 
     def consolidate(self) -> None:
-        """Adds active points to the static index and clears active set."""
         if self._active.shape[0] > 0:
             self.add_static(self._active)
             self._active = np.empty((0, self.dimension), dtype=np.float32)
 
     def clear(self) -> None:
-        """Resets the Faiss index."""
         self._index_static.reset()
         self._static_count = 0
         self._active = np.empty((0, self.dimension), dtype=np.float32)
 
     @property
     def total_count(self) -> int:
-        """Total point count."""
         return self._static_count + self._active.shape[0]
 
-    def query_external(self, query_points: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
-        """Queries external points against the static index."""
-        if self._static_count == 0:
-            return (np.zeros((len(query_points), k), dtype=int), 
-                    np.full((len(query_points), k), np.inf))
-        
-        # Faiss search expects (x, k)
-        q_data = np.ascontiguousarray(query_points.astype(np.float32))
-        dists, idxs = self._index_static.search(q_data, k)
-        
-        return idxs, np.sqrt(dists)
-
-    def query_active(self, k: int) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Queries active points against Static index and Self.
-        
-        Strategy:
-        1. Search Static Index (Faiss).
-        2. Compute Active-Active distances (Numpy/Brute-force).
-        3. Merge, Sort, and Select Top-K.
-        """
+    def _merge_active_active_knn(
+        self, dists_s, idxs_s, k: int
+    ) -> tuple[np.ndarray, np.ndarray]:
         n_active = self._active.shape[0]
-        
+
+        # Active-Active (Brute Force)
+        A_sq = np.sum(self._active**2, axis=1, keepdims=True)
+        dists_a_sq = A_sq + A_sq.T - 2 * np.dot(self._active, self._active.T)
+        dists_a_sq = np.maximum(dists_a_sq, 0.0)
+
+        indices_a = (
+            np.broadcast_to(np.arange(n_active), (n_active, n_active))
+            + self._static_count
+        )
+
+        # Merge
+        full_dists = np.hstack((dists_s, dists_a_sq))
+        full_idxs = np.hstack((idxs_s, indices_a))
+        full_dists = np.maximum(full_dists, 0.0)
+
+        # Sort Top K
+        k_final = min(k, full_dists.shape[1])
+        part_idx = np.argpartition(full_dists, k_final - 1, axis=1)[:, :k_final]
+
+        final_dists_sq = np.take_along_axis(full_dists, part_idx, axis=1)
+        final_idxs = np.take_along_axis(full_idxs, part_idx, axis=1)
+
+        # Strict sort
+        sort_order = np.argsort(final_dists_sq, axis=1)
+        final_dists_sq = np.take_along_axis(final_dists_sq, sort_order, axis=1)
+        final_idxs = np.take_along_axis(final_idxs, sort_order, axis=1)
+
+        return final_idxs, np.sqrt(final_dists_sq)
+
+    def query_nn(self, k: int) -> tuple[np.ndarray, np.ndarray]:
+        n_active = self._active.shape[0]
+
         # 1. Query Static
         k_s = min(k, self._static_count)
         if k_s > 0:
             dists_s, idxs_s = self._index_static.search(self._active, k_s)
+            dists_s = np.maximum(dists_s, 0.0)
         else:
             dists_s = np.empty((n_active, 0), dtype=np.float32)
             idxs_s = np.empty((n_active, 0), dtype=int)
 
-        # 2. Query Active (Self)
+        return self._merge_active_active_knn(dists_s, idxs_s, k)
+
+    def query_static(
+        self, query_points: np.ndarray, k: int
+    ) -> tuple[np.ndarray, np.ndarray]:
+        if self._static_count == 0:
+            return (
+                np.zeros((len(query_points), k), dtype=int),
+                np.full((len(query_points), k), np.inf),
+            )
+
+        q_data = np.ascontiguousarray(query_points.astype(np.float32))
+        dists, idxs = self._index_static.search(q_data, k)
+        return idxs, np.sqrt(np.maximum(dists, 0.0))
+
+    def _merge_active_active_range(
+        self, lims_s, D_s, I_s, radius: float
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        n_active = self._active.shape[0]
+        radius_sq = radius * radius
+
+        # Active-Active (Brute Force)
         A_sq = np.sum(self._active**2, axis=1, keepdims=True)
         dists_a_sq = A_sq + A_sq.T - 2 * np.dot(self._active, self._active.T)
         dists_a_sq = np.maximum(dists_a_sq, 0.0)
-        
-        # Indices for active points need to be offset by static_count
-        indices_a = np.broadcast_to(np.arange(n_active), (n_active, n_active)) + self._static_count
 
-        # 3. Merge
-        # Note: dists_s from Faiss is squared L2 distance (IndexFlatL2 default)
-        full_dists = np.hstack((dists_s, dists_a_sq)) 
-        full_idxs = np.hstack((idxs_s, indices_a))
-        
-        # 4. Sort Top K
-        k_final = min(k, full_dists.shape[1])
-        
-        part_idx = np.argpartition(full_dists, k_final-1, axis=1)[:, :k_final]
-        
-        final_dists_sq = np.take_along_axis(full_dists, part_idx, axis=1)
-        final_idxs = np.take_along_axis(full_idxs, part_idx, axis=1)
-        
-        sort_order = np.argsort(final_dists_sq, axis=1)
-        final_dists_sq = np.take_along_axis(final_dists_sq, sort_order, axis=1)
-        final_idxs = np.take_along_axis(final_idxs, sort_order, axis=1)
-        
-        return final_idxs, np.sqrt(final_dists_sq)
+        mask_a = dists_a_sq < radius_sq
+
+        final_D_list = []
+        final_I_list = []
+
+        indices_a_base = np.arange(n_active) + self._static_count
+
+        for i in range(n_active):
+            s_start, s_end = lims_s[i], lims_s[i + 1]
+            d_s = D_s[s_start:s_end]
+            i_s = I_s[s_start:s_end]
+
+            a_mask = mask_a[i]
+            d_a = dists_a_sq[i][a_mask]
+            i_a = indices_a_base[a_mask]
+
+            d_combined = np.concatenate((d_s, d_a))
+            i_combined = np.concatenate((i_s, i_a))
+
+            final_D_list.append(np.sqrt(np.maximum(d_combined, 0.0)))
+            final_I_list.append(i_combined)
+
+        lens = [len(x) for x in final_D_list]
+        lims = np.zeros(n_active + 1, dtype=int)
+        lims[1:] = np.cumsum(lens)
+
+        if sum(lens) > 0:
+            D = np.concatenate(final_D_list)
+            Idx = np.concatenate(final_I_list)
+        else:
+            D = np.array([], dtype=np.float32)
+            Idx = np.array([], dtype=int)
+
+        return lims, D, Idx
+
+    def range_search(self, radius: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        # Faiss Range Search returns squared L2
+        lims_s, D_s, I_s = self._index_static.range_search(
+            self._active, radius * radius
+        )
+        return self._merge_active_active_range(lims_s, D_s, I_s, radius)
+
+
+class FaissFlatL2NN(FaissBaseNN):
+    """Faiss IndexFlatL2."""
+
+    def __init__(self, dimension: int, seed: int = 42):
+        super().__init__(faiss.IndexFlatL2(dimension), dimension, seed)
+
+
+class FaissHNSWFlatNN(FaissBaseNN):
+    """Faiss IndexHNSWFlat."""
+
+    def __init__(self, dimension: int, seed: int = 42, M: int = 32):
+        super().__init__(faiss.IndexHNSWFlat(dimension, M), dimension, seed)

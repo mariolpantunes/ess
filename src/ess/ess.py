@@ -96,8 +96,11 @@ def _scale(
     arr: np.ndarray,
     min_val: np.ndarray | np.number | float | int | None = None,
     max_val: np.ndarray | np.number | float | int | None = None,
-) -> tuple[np.ndarray, np.ndarray | np.number | float | int,
-    np.ndarray | np.number | float | int]:
+) -> tuple[
+    np.ndarray,
+    np.ndarray | np.number | float | int,
+    np.ndarray | np.number | float | int,
+]:
     """
     Scales the input array to the [0, 1] range.
 
@@ -128,7 +131,7 @@ def _scale(
 def _inv_scale(
     scl_arr: np.ndarray,
     min_val: np.ndarray | np.number | float | int,
-    max_val: np.ndarray | np.number | float | int
+    max_val: np.ndarray | np.number | float | int,
 ) -> np.ndarray:
     """
     Restores the scaled array to its original range.
@@ -195,39 +198,43 @@ def _smart_init(
     rng: np.random.Generator,
 ) -> np.ndarray:
     """
-    Generates new points using Best Candidate Sampling.
+    Generates new points using Best Candidate Sampling (Vectorized).
 
-    Candidates are generated uniformly and checked against existing static points.
-    The candidate with the largest distance to its nearest neighbor is chosen.
-
-    Args:
-        bounds_01 (np.ndarray): Normalized [0, 1] bounds.
-        nn_instance (nn.NearestNeighbors): The NN index containing obstacles.
-        n_new (int): Number of points to generate.
-        rng (np.random.Generator): Random number generator.
-
-    Returns:
-        np.ndarray: Shape (n_new, D). The initialized points.
+    Instead of looping per point, we generate all candidates for the entire
+    batch at once, query the NN once, and select the best candidates using
+    vectorized indexing.
     """
     dim = bounds_01.shape[1]
-    new_samples = []
-
-    # number of candidates to test per new point
     n_candidates = 15
 
-    for _ in range(n_new):
-        candidates = rng.uniform(
-            bounds_01[:, 0], bounds_01[:, 1], (n_candidates, dim)
-        ).astype(np.float32)
+    # 1. Generate ALL candidates at once
+    # Shape: (n_new * n_candidates, D)
+    total_candidates = n_new * n_candidates
+    candidates = rng.uniform(
+        bounds_01[:, 0], bounds_01[:, 1], (total_candidates, dim)
+    ).astype(np.float32)
 
-        # Check against STATIC points
-        _, dists = nn_instance.query_external(candidates, k=1)
-        dists = dists.flatten()
+    # 2. Query NN once for all candidates
+    # We only care about distance to the nearest STATIC point
+    _, dists = nn_instance.query_static(candidates, k=1)
+    dists = dists.flatten()  # Shape (total_candidates,)
 
-        best_idx = np.argmax(dists)
-        new_samples.append(candidates[best_idx])
+    # 3. Reshape to separate candidates per new point
+    # Shape: (n_new, n_candidates)
+    dists_reshaped = dists.reshape(n_new, n_candidates)
 
-    return np.array(new_samples, dtype=np.float32)
+    # Shape: (n_new, n_candidates, dim)
+    candidates_reshaped = candidates.reshape(n_new, n_candidates, dim)
+
+    # 4. Find index of best candidate for each new point
+    best_indices = np.argmax(dists_reshaped, axis=1)
+
+    # 5. Gather the best candidates
+    # Advanced indexing: pick the best candidate for each row
+    row_indices = np.arange(n_new)
+    best_samples = candidates_reshaped[row_indices, best_indices]
+
+    return best_samples
 
 
 # --- Core Logic ---
@@ -319,7 +326,7 @@ def _esa(
         # 2. Optimization Loop
         for _ in range(epochs):
             # Query neighbors
-            indices, dists = nn_instance.query_active(k=search_k)
+            indices, dists = nn_instance.query_nn(k=search_k)
 
             # Map indices to coordinates for vector calc
             # We construct a view of all data: Static + Active
