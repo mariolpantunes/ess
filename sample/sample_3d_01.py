@@ -1,47 +1,61 @@
-import time
-import logging
 import argparse
-import numpy as np
-import ess.ess as ess
-import ess.utils as utils
-import ess.legacy as legacy
-import matplotlib.pyplot as plt
+import logging
+import time
 
-logging.basicConfig(level=logging.INFO, format='%(message)s')
+import matplotlib.pyplot as plt
+import numpy as np
+
+import ess.ess as ess
+import ess.legacy as legacy
+import ess.utils as utils
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 plt.set_loglevel("error")
-logging.getLogger('PIL').setLevel(logging.WARNING)
+logging.getLogger("PIL").setLevel(logging.WARNING)
 
 
 def main(args):
-    points0 = [[0,0,0], [5,5,5], [5,0,0], [0,5,0], [0,0,5], [0,5,5], [5,0,5], [5,5,0], [2,2,2]]
-    bounds = np.array([[0,10], [0,10], [0,10]])
-    
-    s = time.process_time()
+    points0 = np.array(
+        [
+            [0, 0, 0],
+            [5, 5, 5],
+            [5, 0, 0],
+            [0, 5, 0],
+            [0, 0, 5],
+            [0, 5, 5],
+            [5, 0, 5],
+            [5, 5, 0],
+            [2, 2, 2],
+        ]
+    )
+    bounds = np.array([[0, 10], [0, 10], [0, 10]])
+
+    s = time.perf_counter()
     points1 = legacy._esa_01(points0, bounds, n=args.n)
-    e = time.process_time()
+    e = time.perf_counter()
     all_points = np.concatenate((points0, points1), axis=0)
     coverage = utils.calculate_grid_coverage(all_points, bounds=bounds, grid=args.g)
-    logger.info(f'ESA01 ({e-s:.3f} seconds) coverage {coverage:.2f}')
+    logger.info(f"ESA01 ({e - s:.3f} seconds) coverage {coverage:.2f}")
 
-    
-    s = time.process_time()
+    s = time.perf_counter()
     points2 = legacy._esa_02(points0, bounds, n=args.n)
-    e = time.process_time()
+    e = time.perf_counter()
     all_points = np.concatenate((points0, points2), axis=0)
     coverage = utils.calculate_grid_coverage(all_points, bounds=bounds, grid=args.g)
-    logger.info(f'ESA02 ({e-s:.3f} seconds) coverage {coverage:.2f}')
-    
-    s = time.process_time()
+    logger.info(f"ESA02 ({e - s:.3f} seconds) coverage {coverage:.2f}")
+
+    s = time.perf_counter()
     points3 = ess.esa(points0, bounds, n=args.n)
-    e = time.process_time()
+    e = time.perf_counter()
     all_points = np.concatenate((points0, points3), axis=0)
     coverage = utils.calculate_grid_coverage(all_points, bounds=bounds, grid=args.g)
-    logger.info(f'ESA03 ({e-s:.3f} seconds) coverage {coverage:.2f}')
-    
+    logger.info(f"ESA03 ({e - s:.3f} seconds) coverage {coverage:.2f}")
 
-    fig, (ax1, ax2, ax3) = plt.subplots(1, 3, subplot_kw={"projection": "3d"}, figsize=(15, 5))
+    _, (ax1, ax2, ax3) = plt.subplots(
+        1, 3, subplot_kw={"projection": "3d"}, figsize=(15, 5)
+    )
 
     ax1.scatter(*zip(*points0))
     ax1.scatter(*zip(*points1))
@@ -49,14 +63,14 @@ def main(args):
     ax2.scatter(*zip(*points2))
     ax3.scatter(*zip(*points0))
     ax3.scatter(*zip(*points3))
-    
+
     plt.show()
 
 
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Sample for 2D ESA')
-    parser.add_argument('-n', type=int, help='number of points', default=10)
-    parser.add_argument('-g', type=int, help='number of points in grid', default=5)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Sample for 2D ESA")
+    parser.add_argument("-n", type=int, help="number of points", default=10)
+    parser.add_argument("-g", type=int, help="number of points in grid", default=5)
     args = parser.parse_args()
-    
+
     main(args)

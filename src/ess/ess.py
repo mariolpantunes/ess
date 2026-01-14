@@ -10,9 +10,14 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 
+# --- Configuration Constants ---
+# Threshold to switch from brute-force NumPy to approximate Faiss HNSW.
+# NumpyNN is faster for small N due to zero setup overhead.
+# FaissHNSW becomes essential for N > ~4000 to avoid O(N^2) bottlenecks.
+NN_SWITCH_THRESHOLD = 4096
+
+
 # --- Force Functions ---
-
-
 def gaussian_force(d: np.ndarray, sigma: float = 0.2, alpha: float = 2.0) -> np.ndarray:
     """
     Computes a Gaussian repulsion force.
@@ -204,7 +209,7 @@ def _smart_init(
     batch at once, query the NN once, and select the best candidates using
     vectorized indexing.
     """
-    dim = bounds_01.shape[1]
+    dim = bounds_01.shape[0]
     n_candidates = 15
 
     # 1. Generate ALL candidates at once
@@ -427,8 +432,20 @@ def esa(
     # 3. NN Factory
     if nn_instance is None:
         dim = samples.shape[1]
-        logger.debug(f"No NN instance provided. Defaulting to NumpyNN(dim={dim}).")
-        nn_instance = nn.NumpyNN(dimension=dim, seed=seed)
+        # Estimate total scale to decide the engine
+        total_points = samples.shape[0] + n
+        if total_points > NN_SWITCH_THRESHOLD:
+            logger.debug(
+                f"High point count ({total_points} > {NN_SWITCH_THRESHOLD}). "
+                f"Defaulting to FaissHNSWFlatNN(dim={dim})."
+            )
+            nn_instance = nn.FaissHNSWFlatNN(dimension=dim, seed=seed)
+        else:
+            logger.debug(
+                f"Low point count ({total_points} <= {NN_SWITCH_THRESHOLD}). "
+                f"Defaulting to NumpyNN(dim={dim})."
+            )
+            nn_instance = nn.NumpyNN(dimension=dim, seed=seed)
 
     # 4. Invoke Core Logic
     return _esa(

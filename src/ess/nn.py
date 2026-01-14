@@ -257,20 +257,16 @@ class FaissBaseNN(NearestNeighbors):
 
         # Merge
         full_dists = np.hstack((dists_s, dists_a_sq))
-        full_idxs = np.hstack((idxs_s, indices_a))
         full_dists = np.maximum(full_dists, 0.0)
+        full_idxs = np.hstack((idxs_s, indices_a))
 
-        # Sort Top K
+        # Sort everything and take top k
         k_final = min(k, full_dists.shape[1])
-        part_idx = np.argpartition(full_dists, k_final - 1, axis=1)[:, :k_final]
+        sort_order = np.argsort(full_dists, axis=1)[:, :k_final]
 
-        final_dists_sq = np.take_along_axis(full_dists, part_idx, axis=1)
-        final_idxs = np.take_along_axis(full_idxs, part_idx, axis=1)
-
-        # Strict sort
-        sort_order = np.argsort(final_dists_sq, axis=1)
-        final_dists_sq = np.take_along_axis(final_dists_sq, sort_order, axis=1)
-        final_idxs = np.take_along_axis(final_idxs, sort_order, axis=1)
+        # Apply shuffle
+        final_dists_sq = np.take_along_axis(full_dists, sort_order, axis=1)
+        final_idxs = np.take_along_axis(full_idxs, sort_order, axis=1)
 
         return final_idxs, np.sqrt(final_dists_sq)
 
