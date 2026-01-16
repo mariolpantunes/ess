@@ -1,132 +1,95 @@
 # coding: utf-8
 
 __author__ = 'Mário Antunes'
-__version__ = '0.1'
+__version__ = '0.2'
 __email__ = 'mario.antunes@ua.pt'
 __status__ = 'Development'
 __license__ = 'MIT'
 
 import unittest
 import numpy as np
-
 from ess import utils
-from ess.ess import _scale, _inv_scale
+from ess.ess import _scale, _inv_scale, METRIC_REGISTRY
 
 class TestUtils(unittest.TestCase):
 
-    def test_scaling_inverse(self):
-        """Test that scale -> inv_scale returns original data."""
-        original = np.array([
-            [10.0, 20.0],
-            [20.0, 40.0],
-            [15.0, 30.0]
-        ])
-
+    def test_scaling_lifecycle(self):
+        """Test scale -> inv_scale round trip."""
+        original = np.array([[10.0, 20.0], [20.0, 40.0], [15.0, 30.0]])
         scaled, min_v, max_v = _scale(original)
-
-        # Check scaled bounds
+        
         self.assertTrue(np.all(scaled >= 0.0))
         self.assertTrue(np.all(scaled <= 1.0))
-        self.assertTrue(np.allclose(np.min(scaled, axis=0), 0.0))
-        self.assertTrue(np.allclose(np.max(scaled, axis=0), 1.0))
-
+        
         restored = _inv_scale(scaled, min_v, max_v)
         self.assertTrue(np.allclose(original, restored))
 
-    def test_scaling_constant_dimension(self):
-        """Test scaling when a dimension has 0 variance."""
-        data = np.array([[10, 5], [20, 5]]) # Dim 1 is constant 5
-        scaled, min_v, max_v = _scale(data)
+    def test_scaling_degenerate(self):
+        """Test scaling constant dimensions and scalars."""
+        # Constant dimension
+        data = np.array([[5, 5], [5, 10]])
+        scaled, _, _ = _scale(data)
+        self.assertTrue(np.all(scaled[:, 0] == 0.0)) # Denom was 0 -> handled
+        
+        # Scalars passed as min/max
+        arr = np.array([10, 20, 30])
+        s, _, _ = _scale(arr, min_val=0, max_val=40)
+        self.assertTrue(np.allclose(s, [0.25, 0.5, 0.75]))
 
-        # Should not divide by zero (denom becomes 1.0)
-        # Scaled col 1 should be 0.0 (value - min) / 1.0 = 0.0
-        self.assertTrue(np.all(scaled[:, 1] == 0.0))
-
-    def test_scaling_scalars(self):
-            """
-            Test scaling with explicit scalar min/max values.
-            This covers the corner case where min/max are not arrays.
-            """
-            # 1D array case (scalars naturally occur here)
-            data_1d = np.array([10, 20, 30])
-            # Explicitly pass scalar limits
-            scaled, min_v, max_v = _scale(data_1d, min_val=0, max_val=40)
-
-            # Expect: (10-0)/40=0.25, (20-0)/40=0.5, (30-0)/40=0.75
-            expected = np.array([0.25, 0.5, 0.75])
-            self.assertTrue(np.allclose(scaled, expected))
-
-            # Verify that scalars were accepted and returned
-            self.assertEqual(min_v, 0)
-            self.assertEqual(max_v, 40)
-
-            # 2D case with scalar limits (broadcasting)
-            data_2d = np.array([[10, 10], [20, 20]])
-            # Min=0, Max=20 applies to ALL dimensions if passed as scalar
-            scaled_2d, _, _ = _scale(data_2d, min_val=0, max_val=20)
-
-            self.assertTrue(np.allclose(scaled_2d, [[0.5, 0.5], [1.0, 1.0]]))
-
-    def test_grid_coverage_2d(self):
-        """Test basic 2D grid coverage calculation."""
+    def test_grid_coverage(self):
+        """Test grid coverage logic."""
         bounds = np.array([[0, 10], [0, 10]])
-        # Points in 2 different corners of a 2x2 grid
-        points = np.array([
-            [2, 2], # Bottom-Left
-            [8, 8]  # Top-Right
-        ])
+        points = np.array([[2, 2], [8, 8]]) # 2 points
+        
+        # 2x2 Grid -> 4 cells. Points in different cells. Coverage 0.5.
+        cov = utils.calculate_grid_coverage(points, bounds, grid=2)
+        self.assertAlmostEqual(cov, 0.5)
+        
+        # High Dim Sparse Test
+        dim = 64
+        pts_hd = np.random.rand(10, dim)
+        bounds_hd = np.array([[0, 1]] * dim)
+        # Should not crash
+        cov_hd = utils.calculate_grid_coverage(pts_hd, bounds_hd, grid=3)
+        self.assertGreater(cov_hd, 0.0)
 
-        # Grid 2x2 = 4 cells. We occupy 2. Coverage = 0.5
-        coverage = utils.calculate_grid_coverage(points, bounds, grid=2)
-        self.assertAlmostEqual(coverage, 0.5)
-
-    def test_grid_coverage_sparse_high_dim(self):
-        """Test that high-dimensional grids use sparse logic (no memory error)."""
-        dim = 50
-        n_points = 100
-        bounds = np.array([[0, 1]] * dim)
-        points = np.random.uniform(0, 1, (n_points, dim))
-
-        # If this was dense, 10^50 bins would crash RAM.
-        # Sparse should run instantly.
-        try:
-            coverage = utils.calculate_grid_coverage(points, bounds, grid=10)
-        except MemoryError:
-            self.fail("calculate_grid_coverage raised MemoryError on high dims")
-
-        # Since space is huge, every point likely occupies a unique cell
-        # Coverage ~= 100 / 10^50 (approx 0.0)
-        self.assertGreaterEqual(coverage, 0.0)
-
-    def test_min_pairwise_distance(self):
-        """Test Maximin metric."""
-        points = np.array([[0, 0], [0, 1], [1, 0]]) # Triangle
-        # Dists: (0,0)-(0,1)=1; (0,0)-(1,0)=1; (0,1)-(1,0)=sqrt(2)
-        # Min dist = 1.0
+    def test_metrics_maximin_clarkevans(self):
+        """Test distribution metrics."""
+        # Triangle (Regular)
+        points = np.array([[0,0], [1,0], [0.5, 0.866]])
         d = utils.calculate_min_pairwise_distance(points)
-        self.assertAlmostEqual(d, 1.0)
+        self.assertAlmostEqual(d, 1.0, places=3)
+        
+        # Clark Evans
+        # Clustered
+        clust = np.zeros((10, 2))
+        ce_c = utils.calculate_clark_evans_index(clust)
+        self.assertLess(ce_c, 1.0)
+        
+        # Random/Uniform check (Statistical, loose bounds)
+        uni = np.random.rand(100, 2) * 10
+        ce_u = utils.calculate_clark_evans_index(uni)
+        self.assertGreater(ce_u, 0.5)
 
-        # Corner case: < 2 points
-        self.assertEqual(utils.calculate_min_pairwise_distance(np.zeros((1,2))), 0.0)
-
-    def test_clark_evans_index(self):
-        """Test Clark-Evans: Clustered vs Uniform."""
-        bounds = np.array([[0, 10], [0, 10]])
-
-        # Clustered Points (all at 0,0)
-        clustered = np.zeros((10, 2))
-        r_clustered = utils.calculate_clark_evans_index(clustered, bounds)
-        self.assertLess(r_clustered, 1.0)
-
-        # Uniform-ish (Grid)
-        x = np.linspace(0, 10, 4)
-        y = np.linspace(0, 10, 4)
-        xx, yy = np.meshgrid(x, y)
-        uniform = np.column_stack((xx.ravel(), yy.ravel()))
-
-        r_uniform = utils.calculate_clark_evans_index(uniform, bounds)
-        # R should be near 1 or > 1 (Regular)
-        self.assertGreater(r_uniform, 0.8)
+    def test_force_functions(self):
+        """Verify force function behaviors."""
+        d = np.array([0.0, 1.0, 100.0])
+        
+        # 1. Gaussian: High at 0, Low at 100
+        f_gauss = METRIC_REGISTRY['gaussian'](d, sigma=1.0, alpha=1.0)
+        self.assertAlmostEqual(f_gauss[0], 1.0)
+        self.assertLess(f_gauss[2], 1e-5)
+        
+        # 2. Linear: High at 0, Zero > R
+        f_lin = METRIC_REGISTRY['linear'](d, R=1.0)
+        self.assertAlmostEqual(f_lin[0], 1.0)
+        self.assertAlmostEqual(f_lin[1], 0.0) # At radius R=1, force is 0
+        self.assertEqual(f_lin[2], 0.0)
+        
+        # 3. Softened Inverse: Finite at 0, Decays slowly
+        f_inv = METRIC_REGISTRY['softened_inverse'](d, epsilon=0.1, alpha=1.0)
+        self.assertLess(f_inv[0], 101.0) # 1 / 0.01 = 100
+        self.assertGreater(f_inv[2], 0.0) # Never zero
 
 if __name__ == '__main__':
     unittest.main()

@@ -53,15 +53,9 @@ class NearestNeighbors(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def range_search(self, radius: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def range_search(self, radius: float) -> tuple[np.ndarray, np.ndarray]:
         """
         Finds all neighbors within `radius` for the CURRENT ACTIVE batch against (Static + Active).
-
-        Returns:
-            tuple[lims, D, I]:
-                - lims (np.ndarray): Shape (M+1,). Start/end indices.
-                - D (np.ndarray): Flattened distances.
-                - I (np.ndarray): Flattened indices.
         """
         pass
 
@@ -79,18 +73,26 @@ class NearestNeighbors(abc.ABC):
 class NumpyNN(NearestNeighbors):
     """
     Pure NumPy implementation using vectorized broadcasting.
-    Efficient for small to medium N (< 10,000).
+    Optimized with caching for norms and implicit indexing.
     """
 
     def __init__(self, dimension: int, seed: int = 42):
         super().__init__(dimension, seed)
         self._static: np.ndarray = np.empty((0, dimension), dtype=np.float32)
+        # Cache squared norms of static points to avoid re-computing in loop
+        self._static_sq: np.ndarray = np.empty((0, 1), dtype=np.float32)
         self._active: np.ndarray = np.empty((0, dimension), dtype=np.float32)
 
     def add_static(self, points: np.ndarray) -> None:
         if points.shape[1] != self.dimension:
             raise ValueError(f"Dim mismatch: {points.shape[1]} vs {self.dimension}")
-        self._static = np.vstack((self._static, points.astype(np.float32)))
+        
+        points = points.astype(np.float32)
+        self._static = np.vstack((self._static, points))
+        
+        # Update cache: ||B||^2
+        points_sq = np.sum(points**2, axis=1, keepdims=True)
+        self._static_sq = np.vstack((self._static_sq, points_sq))
 
     def set_active(self, points: np.ndarray) -> None:
         if points.shape[1] != self.dimension:
@@ -104,61 +106,66 @@ class NumpyNN(NearestNeighbors):
 
     def clear(self) -> None:
         self._static = np.empty((0, self.dimension), dtype=np.float32)
+        self._static_sq = np.empty((0, 1), dtype=np.float32)
         self._active = np.empty((0, self.dimension), dtype=np.float32)
 
     @property
     def total_count(self) -> int:
         return self._static.shape[0] + self._active.shape[0]
 
-    def _sq_dist_matrix(self, A: np.ndarray, B: np.ndarray) -> np.ndarray:
-        """||A - B||^2 = ||A||^2 + ||B||^2 - 2AB^T"""
+    def _sq_dist_matrix_cached(self, A: np.ndarray, B: np.ndarray, B_sq: np.ndarray) -> np.ndarray:
+        """Computes ||A - B||^2 using cached ||B||^2."""
+        A_sq = np.sum(A**2, axis=1, keepdims=True)
+        # A_sq + B_sq.T - 2AB
+        return A_sq + B_sq.T - 2 * np.dot(A, B.T)
+
+    def _sq_dist_matrix_uncached(self, A: np.ndarray, B: np.ndarray) -> np.ndarray:
+        """Standard ||A - B||^2 computation."""
         A_sq = np.sum(A**2, axis=1, keepdims=True)
         B_sq = np.sum(B**2, axis=1, keepdims=True)
         return A_sq + B_sq.T - 2 * np.dot(A, B.T)
 
-    def _compute_full_sq_dists(self) -> tuple[np.ndarray, np.ndarray]:
+    def _compute_full_sq_dists(self) -> np.ndarray:
         """Computes merged squared distances from Active to (Static + Active)."""
         n_active = self._active.shape[0]
         n_static = self._static.shape[0]
 
-        # 1. Active vs Static
+        # 1. Active vs Static (Using Cache)
         if n_static > 0:
-            dists_s_sq = self._sq_dist_matrix(self._active, self._static)
-            indices_s = np.broadcast_to(np.arange(n_static), (n_active, n_static))
+            dists_s_sq = self._sq_dist_matrix_cached(self._active, self._static, self._static_sq)
         else:
             dists_s_sq = np.empty((n_active, 0), dtype=np.float32)
-            indices_s = np.empty((n_active, 0), dtype=int)
 
-        # 2. Active vs Active
-        dists_a_sq = self._sq_dist_matrix(self._active, self._active)
-        dists_a_sq = np.maximum(dists_a_sq, 0.0)  # Safety clamp
-
-        indices_a = (
-            np.broadcast_to(np.arange(n_active), (n_active, n_active)) + n_static
-        )
-
+        # 2. Active vs Active (Uncached)
+        dists_a_sq = self._sq_dist_matrix_uncached(self._active, self._active)
+        
         # 3. Merge
         full_dists_sq = np.hstack((dists_s_sq, dists_a_sq))
-        full_indices = np.hstack((indices_s, indices_a))
-        full_dists_sq = np.maximum(full_dists_sq, 0.0)  # Safety clamp
-
-        return full_dists_sq, full_indices
+        return np.maximum(full_dists_sq, 0.0)
 
     def query_nn(self, k: int) -> tuple[np.ndarray, np.ndarray]:
-        full_dists_sq, full_indices = self._compute_full_sq_dists()
-
+        full_dists_sq = self._compute_full_sq_dists()
+        n_samples = full_dists_sq.shape[0]
         k = min(k, full_dists_sq.shape[1])
 
-        # Partial sort
-        part_idx = np.argpartition(full_dists_sq, k - 1, axis=1)[:, :k]
+        # 1. Argpartition to find top-k (unsorted)
+        # Time: O(N * Total_Count)
+        unsorted_top_k_idx = np.argpartition(full_dists_sq, k - 1, axis=1)[:, :k]
 
-        top_dists_sq = np.take_along_axis(full_dists_sq, part_idx, axis=1)
-        top_indices = np.take_along_axis(full_indices, part_idx, axis=1)
+        # 2. Extract values (Optimized indexing)
+        # Create row indices: [[0,0,..], [1,1,..], ...]
+        row_indices = np.arange(n_samples)[:, None]
+        
+        # Fancy indexing is often faster than take_along_axis for simple 2D arrays
+        top_dists_sq = full_dists_sq[row_indices, unsorted_top_k_idx]
 
-        # Strict sort (Index 0 is self)
-        sort_order = np.argsort(top_dists_sq, axis=1)
-        final_dists_sq = np.take_along_axis(top_dists_sq, sort_order, axis=1)
-        final_indices = np.take_along_axis(top_indices, sort_order, axis=1)
+        # 3. Sort the top-k (Small sort: k * log k)
+        # We only sort the small k window, not the full array
+        local_sort_order = np.argsort(top_dists_sq, axis=1)
+        
+        # 4. Final Gather
+        final_indices = unsorted_top_k_idx[row_indices, local_sort_order]
+        final_dists_sq = top_dists_sq[row_indices, local_sort_order]
 
         return final_indices, np.sqrt(final_dists_sq)
 
@@ -172,8 +179,14 @@ class NumpyNN(NearestNeighbors):
             )
 
         k = min(k, self._static.shape[0])
-        dist_sq = self._sq_dist_matrix(query_points, self._static)
+        # Use cached static norms
+        dist_sq = self._sq_dist_matrix_cached(query_points, self._static, self._static_sq)
         dist_sq = np.maximum(dist_sq, 0.0)
+        
+        if k == 1:
+            final_idx = np.argmin(dist_sq, axis=1)[:, None]
+            final_dists = np.sqrt(np.take_along_axis(dist_sq, final_idx, axis=1))
+            return final_idx, final_dists
 
         part_idx = np.argpartition(dist_sq, k - 1, axis=1)[:, :k]
         top_dists_sq = np.take_along_axis(dist_sq, part_idx, axis=1)
@@ -184,21 +197,20 @@ class NumpyNN(NearestNeighbors):
 
         return final_idx, final_dists
 
-    def range_search(self, radius: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        full_dists_sq, full_indices = self._compute_full_sq_dists()
-
+    def range_search(self, radius: float) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Returns the full dense distance matrix and a validity mask.
+        """
+        # 1. Compute Full Matrix
+        full_dists_sq = self._compute_full_sq_dists()
+        
+        # 2. Compute Mask
         radius_sq = radius * radius
         mask = full_dists_sq < radius_sq
-
-        counts = np.sum(mask, axis=1)
-        lims = np.zeros(len(counts) + 1, dtype=int)
-        lims[1:] = np.cumsum(counts)
-
-        D = np.sqrt(full_dists_sq[mask])
-        Idx = full_indices[mask]
-
-        return lims, D, Idx
-
+        
+        # 3. Return (Dists, Mask) - No 'nonzero' or sorting required
+        # Return sqrt distances for metric compatibility
+        return np.sqrt(full_dists_sq), mask
 
 class FaissBaseNN(NearestNeighbors):
     """Base class for Faiss implementations."""
@@ -343,12 +355,53 @@ class FaissBaseNN(NearestNeighbors):
 
         return lims, D, Idx
 
-    def range_search(self, radius: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-        # Faiss Range Search returns squared L2
-        lims_s, D_s, I_s = self._index_static.range_search(
-            self._active, radius * radius
-        )
-        return self._merge_active_active_range(lims_s, D_s, I_s, radius)
+    def range_search(self, radius: float) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Optimized Path: Returns a DENSE (Batch, Total) matrix.
+        
+        This method internally merges:
+        1. Static Neighbors (retrieved via Faiss Sparse -> Scattered to Dense)
+        2. Active Neighbors (computed via Numpy Brute Force -> Filled in Dense)
+        """
+        n_active = self._active.shape[0]
+        n_static = self._static_count
+        n_total = n_static + n_active
+        
+        # 1. Allocate Unified Buffers (Batch x Total)
+        # Columns [0 : n_static] -> Static Neighbors
+        # Columns [n_static : n_total] -> Active Neighbors
+        dists_matrix = np.zeros((n_active, n_total), dtype=np.float32)
+        mask_matrix = np.zeros((n_active, n_total), dtype=bool)
+
+        # --- PART A: Static Neighbors (Faiss) ---
+        if n_static > 0:
+            lims, D, Idx = self._index_static.range_search(self._active, radius * radius)
+            if len(D) > 0:
+                counts = np.diff(lims.astype(np.int64))
+                row_indices = np.repeat(np.arange(n_active), counts)
+                col_indices = Idx  
+                dists_matrix[row_indices, col_indices] = np.sqrt(D)
+                mask_matrix[row_indices, col_indices] = True
+
+        # --- PART B: Active-Active Neighbors (Numpy) ---
+        # Compute distances for the active batch against itself
+        # Shape: (Batch, Batch)
+        A_sq = np.sum(self._active**2, axis=1, keepdims=True)
+        dists_sq_active = A_sq + A_sq.T - 2 * np.dot(self._active, self._active.T)
+        
+        # Avoid self-interaction and respect radius
+        # Note: We rely on the caller (physics engine) to handle epsilon/division-by-zero,
+        # but we must ensure self-interaction (dist=0) is masked out.
+        radius_sq = radius * radius
+        mask_active = (dists_sq_active < radius_sq) & (dists_sq_active > 1e-9)
+        
+        # Place into the right-side of the matrix
+        start_col = n_static
+        end_col = n_total
+        dists_matrix[:, start_col:end_col] = np.sqrt(np.maximum(dists_sq_active, 0.0))
+        mask_matrix[:, start_col:end_col] = mask_active
+            
+        return dists_matrix, mask_matrix
 
 
 class FaissFlatL2NN(FaissBaseNN):
