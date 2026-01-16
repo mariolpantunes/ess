@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <color id="bg-color" value="#f8fafc" /> <color id="border-color" value="#cbd5e1" /> <color id="p-center" value="#64748b" /> <color id="p-nw" value="#3b82f6" />     <color id="p-ne" value="#8b5cf6" />     <color id="p-sw" value="#06b6d4" />     <color id="p-se" value="#14b8a6" />     <color id="text-color" value="#1e3a8a" /> <style type="text/css">
+      .particle-core {
+        fill: currentColor;
+        stroke: white;
+        stroke-width: 2px;
+      }
+      .aura {
+        fill: currentColor;
+        opacity: 0.15;
+      }
+      .text-ess {
+        font-family: 'Arial', sans-serif;
+        font-weight: 900;
+        font-size: 26px;
+        fill: #1e3a8a; /* Deep Blue */
+        text-anchor: middle;
+        dominant-baseline: middle;
+        letter-spacing: 1px;
+      }
+    </style>
+    
+    <path id="droplet-aura" d="M 0,0 C -12,0 -20,-10 -20,-22 C -20,-34 0,-50 0,-50 C 0,-50 20,-34 20,-22 C 20,-10 12,0 0,0 Z" />
+  </defs>
+
+  <rect x="4" y="4" width="120" height="120" rx="24" fill="#f8fafc" stroke="#cbd5e1" stroke-width="4"/>
+
+  <g transform="translate(64, 58)" color="#64748b">
+    <circle class="aura" cx="0" cy="0" r="14" />
+    <circle class="particle-core" cx="0" cy="0" r="9" />
+  </g>
+
+  <g transform="translate(30, 30)" color="#3b82f6">
+    <use href="#droplet-aura" class="aura" transform="scale(0.85) rotate(135) translate(0, 8)"/>
+    <circle class="particle-core" cx="0" cy="0" r="8" />
+  </g>
+
+  <g transform="translate(98, 30)" color="#8b5cf6">
+    <use href="#droplet-aura" class="aura" transform="scale(0.85) rotate(-135) translate(0, 8)"/>
+    <circle class="particle-core" cx="0" cy="0" r="8" />
+  </g>
+
+  <g transform="translate(30, 86)" color="#06b6d4">
+    <use href="#droplet-aura" class="aura" transform="scale(0.85) rotate(45) translate(0, 8)"/>
+    <circle class="particle-core" cx="0" cy="0" r="8" />
+  </g>
+
+  <g transform="translate(98, 86)" color="#14b8a6">
+    <use href="#droplet-aura" class="aura" transform="scale(0.85) rotate(-45) translate(0, 8)"/>
+    <circle class="particle-core" cx="0" cy="0" r="8" />
+  </g>
+
+  <text x="64" y="110" class="text-ess">ESS</text>
+
+</svg>
