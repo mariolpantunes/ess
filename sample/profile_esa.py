@@ -7,7 +7,7 @@ import time
 
 import numpy as np
 
-import ess.ess as ess
+import ess
 
 # Disable logging to keep profile output clean
 logging.basicConfig(level=logging.CRITICAL)
@@ -104,7 +104,10 @@ def profile_esa_split(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Profile ESA Algorithm")
     parser.add_argument(
-        "--n", type=int, default=2000, help="Number of points to generate (default: 2000)"
+        "--n",
+        type=int,
+        default=2000,
+        help="Number of points to generate (default: 2000)",
     )
     parser.add_argument(
         "--search_mode",

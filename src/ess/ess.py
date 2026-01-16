@@ -8,28 +8,48 @@ import ess.nn as nn
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
+"""logging.Logger: Module-level logger for debugging ESA optimization steps."""
 
 
 # --- Configuration Constants ---
-# Dual Thresholds for optimal performance per mode
-KNN_SWITCH_THRESHOLD = 4096      # HNSW is great for small-k queries
-RADIUS_SWITCH_THRESHOLD = 50000  # HNSW is bad for large-radius; use Dense Matrix up to 50k
+KNN_SWITCH_THRESHOLD = 4096
+"""int: The point count threshold for switching k-NN search engines.
+
+If $N_{total} \\le$ this value, the algorithm uses a brute-force `NumpyNN` engine
+(exact, faster for small N). Above this, it switches to `FaissHNSWFlatNN`
+(approximate, faster for large N).
+"""
+
+RADIUS_SWITCH_THRESHOLD = 50000
+"""int: The point count threshold for switching Radius search engines.
+
+For radius searches, dense matrix operations (`NumpyNN`) are often faster than
+HNSW range search due to implementation overhead, up to a fairly large N.
+Above this value, the memory cost of the dense matrix becomes prohibitive.
+"""
 
 
 # --- Force Functions ---
 def gaussian_force(d: np.ndarray, sigma: float = 0.2, alpha: float = 2.0) -> np.ndarray:
     """
-    Computes a Gaussian repulsion force.
+    Computes a Gaussian repulsion force based on distance.
 
-    F = alpha * exp(-d^2 / 2sigma^2)
+    This function models a short-range repulsive force that decays exponentially with distance,
+    resembling a Gaussian distribution. It is useful for creating "soft" exclusion zones
+    around particles. The force magnitude $F$ is calculated as:
+
+    $ F(d) = \\alpha \\cdot \\exp\\left(-\\frac{d^2}{2\\sigma^2}\\right) $
+
+    where $d$ is the distance, $\\sigma$ controls the width of the repulsion (standard deviation),
+    and $\\alpha$ is the peak magnitude at $d=0$.
 
     Args:
-        d (np.ndarray): Array of distances.
-        sigma (float): Spread of the Gaussian.
-        alpha (float): Peak magnitude.
+        d (np.ndarray): Array of pairwise distances between points.
+        sigma (float): The spread parameter $\\sigma$. Larger values increase the range of influence.
+        alpha (float): The maximum force magnitude $\\alpha$ (at zero distance).
 
     Returns:
-        np.ndarray: Force magnitudes.
+        np.ndarray: An array of force magnitudes corresponding to the input distances.
     """
     s2 = 2 * (sigma * sigma)
     return alpha * np.exp(-(d * d) / s2)
@@ -39,48 +59,68 @@ def softened_inverse_force(
     d: np.ndarray, epsilon: float = 0.1, alpha: float = 0.1
 ) -> np.ndarray:
     """
-    Computes a softened inverse square repulsion.
+    Computes a softened inverse-square repulsion force.
 
-    F = alpha / (d^2 + epsilon^2)
+    This function mimics electrostatic or gravitational repulsion but introduces a softening
+    parameter $\\epsilon$ to prevent numerical singularities (division by zero) when particles
+    overlap ($d \\to 0$). The force decays algebraically rather than exponentially.
+
+    The magnitude is given by:
+
+    $ F(d) = \\frac{\\alpha}{d^2 + \\epsilon^2} $
+
+    This ensures that the maximum force is bounded at $\\alpha / \\epsilon^2$.
 
     Args:
         d (np.ndarray): Array of distances.
-        epsilon (float): Softening parameter to avoid division by zero.
-        alpha (float): Magnitude scaling factor.
+        epsilon (float): Softening parameter $\\epsilon$. Prevents infinite forces at $d=0$.
+        alpha (float): Magnitude scaling factor $\\alpha$.
 
     Returns:
-        np.ndarray: Force magnitudes.
+        np.ndarray: An array of force magnitudes.
     """
     return alpha * (1.0 / ((d * d) + (epsilon * epsilon)))
 
 
 def linear_force(d: np.ndarray, R: float = 0.5) -> np.ndarray:
     """
-    Computes a linear repulsive force within a radius R.
+    Computes a linear repulsive force that falls to zero at a specific radius.
 
-    F = max(0, 1 - d/R)
+    This force models a simple linear spring compression. It provides a constant stiffness
+    repulsion within a defined radius $R$ and is zero elsewhere. This creates a clear
+    "cutoff" for interactions.
+
+    The formula is:
+
+    $ F(d) = \\max\\left(0, 1 - \\frac{d}{R}\\right) $
 
     Args:
         d (np.ndarray): Array of distances.
-        R (float): Radius of influence.
+        R (float): The cutoff radius $R$. Forces are zero for $d \\ge R$.
 
     Returns:
-        np.ndarray: Force magnitudes.
+        np.ndarray: An array of normalized force magnitudes in $[0, 1]$.
     """
     return np.maximum(0.0, 1.0 - (d / R))
 
 
 def cauchy_force(d: np.ndarray) -> np.ndarray:
     """
-    Computes a Cauchy-distribution based repulsion.
+    Computes a long-tailed repulsion based on the Cauchy distribution.
 
-    F = 1 / (1 + d^2)
+    This function provides a heavy-tailed force distribution, which can be useful for
+    maintaining global separation between points as the force does not decay as rapidly
+    as a Gaussian.
+
+    The magnitude is defined as:
+
+    $ F(d) = \\frac{1}{1 + d^2} $
 
     Args:
         d (np.ndarray): Array of distances.
 
     Returns:
-        np.ndarray: Force magnitudes.
+        np.ndarray: An array of force magnitudes.
     """
     return 1.0 / (1.0 + (d * d))
 
@@ -104,20 +144,26 @@ def _scale(
     np.ndarray | np.number | float | int,
 ]:
     """
-    Scales the input array to the [0, 1] range.
+    Normalizes the input array to the unit hypercube $[0, 1]^D$.
 
-    Computes the minimum and maximum values along axis 0 if not provided,
-    and scales the array accordingly. Handles cases where min equals max
-    (constant dimension) by avoiding division by zero.
+    Min-max scaling is performed column-wise (per dimension). If explicit bounds are not
+    provided, they are inferred from the data. The transformation for a value $x$ is:
+
+    $ x' = \\frac{x - x_{min}}{x_{max} - x_{min}} $
+
+    This function handles constant dimensions (where $x_{max} = x_{min}$) by setting the
+    denominator to 1.0 to avoid division by zero.
 
     Args:
-        arr (np.ndarray): Input array of shape (N, D).
-        min_val (np.ndarray | np.number | None): Optional pre-computed minimums. Shape (D,).
-        max_val (np.ndarray | np.number | None): Optional pre-computed maximums. Shape (D,).
+        arr (np.ndarray): Input data array of shape $(N, D)$.
+        min_val (np.ndarray | np.number | None): Optional pre-computed minimum values.
+            If None, computed from `arr`.
+        max_val (np.ndarray | np.number | None): Optional pre-computed maximum values.
+            If None, computed from `arr`.
 
     Returns:
         tuple[np.ndarray, np.ndarray, np.ndarray]:
-            - **scaled_arr**: The scaled array in [0, 1].
+            - **scaled_arr**: The normalized data in range $[0, 1]$.
             - **min_val**: The minimum values used for scaling.
             - **max_val**: The maximum values used for scaling.
     """
@@ -136,15 +182,19 @@ def _inv_scale(
     max_val: np.ndarray | np.number | float | int,
 ) -> np.ndarray:
     """
-    Restores the scaled array to its original range.
+    Restores scaled data from $[0, 1]^D$ back to its original domain.
+
+    This applies the inverse of the min-max normalization:
+
+    $ x = x' \\cdot (x_{max} - x_{min}) + x_{min} $
 
     Args:
-        scl_arr (np.ndarray): Scaled array in [0, 1].
-        min_val (np.ndarray | np.number): Minimum values of the original data.
-        max_val (np.ndarray | np.number): Maximum values of the original data.
+        scl_arr (np.ndarray): Scaled input array in $[0, 1]$.
+        min_val (np.ndarray | np.number): The minimum values of the original domain.
+        max_val (np.ndarray | np.number): The maximum values of the original domain.
 
     Returns:
-        np.ndarray: The unscaled array in the original data range.
+        np.ndarray: The array projected back into the original bounds.
     """
     return scl_arr * (max_val - min_val) + min_val
 
@@ -156,11 +206,27 @@ def _smart_init(
     rng: np.random.Generator,
 ) -> np.ndarray:
     """
-    Generates new points using Best Candidate Sampling (Vectorized).
+    Initializes new points using a vectorized Best Candidate Sampling strategy.
 
-    Instead of looping per point, we generate all candidates for the entire
-    batch at once, query the NN once, and select the best candidates using
-    vectorized indexing.
+    Instead of placing points purely randomly, this method generates a pool of candidate
+    positions for each required new point and selects the one that is furthest from
+    the existing set of static points.
+
+    **Algorithm:**
+    1. For $N$ requested points, generate $N \\times k$ uniform candidates (where $k=15$).
+    2. Compute the distance $d_i$ from every candidate to its nearest static neighbor.
+    3. For each of the $N$ slots, select the candidate $c^*$ such that:
+        $ c^* = \\arg\\max_{c \\in \\text{candidates}} (\\min_{p \\in \\text{static}} ||c - p||) $
+    4. Apply a small jitter $\\xi \\sim U(-10^{-3}, 10^{-3})$ to avoid perfect overlaps.
+
+    Args:
+        bounds_01 (np.ndarray): Normalized boundaries $[0, 1]$.
+        nn_instance (nn.NearestNeighbors): The index containing static points.
+        n_new (int): Number of points to initialize.
+        rng (np.random.Generator): Random number generator.
+
+    Returns:
+        np.ndarray: Initial positions for the new points.
     """
     dim = bounds_01.shape[0]
     n_candidates = 15
@@ -196,55 +262,75 @@ def _smart_init(
     return np.clip(best_samples + jitter, 1e-5, 1.0 - 1e-5)
 
 
-def _compute_radius_heuristic(
-    bounds: np.ndarray, 
-    n_points: int 
-) -> float:
+def _compute_radius_heuristic(bounds: np.ndarray, n_points: int) -> float:
     """
-    Computes an adaptive interaction radius based on Density and Dimensionality.
-    
-    In High-D, we assume forces drop off rapidly (Inverse Square Law).
-    We define the radius as 2.5x the 'Mean Inter-Particle Distance'.
-    Anything beyond this is likely too far to exert meaningful repulsion.
+    Derives an adaptive interaction radius based on domain volume and point density.
+
+    In high-dimensional spaces, a fixed radius is often inappropriate. This heuristic
+    estimates the "Mean Inter-Particle Distance" assuming an ideal packing and scales
+    it to define a local neighborhood.
+
+    The estimated volume per point $V_p$ is:
+    $ V_p = \\frac{\\prod (side\\_lengths)}{N_{points}} $
+
+    The average neighbor distance $R_{avg}$ is then approximated as:
+    $ R_{avg} \\approx (V_p)^{1/D} $
+
+    The returned radius is $R = 1.25 \\times R_{avg}$, capped by the domain size.
 
     Args:
-        bounds: (D, 2) array of min/max values.
-        n_points: Total number of points (Static + Active).
-        min_cutoff: Minimum force magnitude we care about (used to derive scale).
+        bounds (np.ndarray): Domain boundaries of shape $(D, 2)$.
+        n_points (int): Total number of points (static + active) in the system.
 
     Returns:
-        float: Recommended radius.
+        float: A recommended radius for force interactions.
     """
     dim = bounds.shape[0]
     sides = bounds[:, 1] - bounds[:, 0]
     max_side = np.max(sides)
-    
+
     logger.debug(f"Dim {dim} sides {sides} max side {max_side}")
-    
+
     # Estimate volume per point
     log_vol = np.sum(np.log(sides + 1e-9))
     log_vol_per_point = log_vol - np.log(n_points)
-    
+
     # Mean distance to nearest neighbor in ideal packing
     avg_neighbor_dist = np.exp(log_vol_per_point / dim)
-    
+
     # FIXED FACTOR: 2.5
     # Previously, this scaled with sqrt(D), which exploded the radius in High-D.
     # 2.5 ensures we cover the immediate neighborhood without grabbing the entire world.
     radius = avg_neighbor_dist * 1.25
-    
+
     domain_cap = max_side * 0.25
     radius = min(radius, domain_cap)
-    
+
     return min(radius, np.linalg.norm(sides))
 
 
-def _compute_wall_forces(points, bounds, strategy='repulsive', radius=0.1):
+def _compute_wall_forces(points, bounds, strategy="repulsive", radius=0.1):
     """
-    Computes wall forces using a Soft Linear Spring.
+    Computes boundary containment forces using a soft linear spring model.
+
+    If `strategy` is 'repulsive', this function applies a restorative force to points
+    approaching the domain boundaries. The boundary acts as a Hookean spring with
+    stiffness $k = 1/R$.
+
+    For a point $x$ and boundary $B$, if the distance $d = |x - B| < R$:
+    $ F_{wall} = k \\cdot (R - d) $ directed inward.
+
+    Args:
+        points (np.ndarray): Current point coordinates.
+        bounds (np.ndarray): Domain boundaries.
+        strategy (str, optional): Strategy name. Returns zero forces if not 'repulsive'.
+        radius (float, optional): The distance from the wall at which the force activates.
+
+    Returns:
+        np.ndarray: Wall force vectors.
     """
     forces = np.zeros_like(points)
-    if strategy != 'repulsive':
+    if strategy != "repulsive":
         return forces
 
     bounds_min = bounds[:, 0].reshape(1, -1)
@@ -260,7 +346,7 @@ def _compute_wall_forces(points, bounds, strategy='repulsive', radius=0.1):
 
     if np.any(mask_min):
         forces[mask_min] += stiffness * (radius - dist_min[mask_min])
-        
+
     if np.any(mask_max):
         forces[mask_max] -= stiffness * (radius - dist_max[mask_max])
 
@@ -278,10 +364,39 @@ def _compute_radius_forces(
     **metric_kwargs,
 ) -> np.ndarray:
     """
-    Computes forces using a purely DENSE strategy.
+    Computes net repulsive forces using a Dense Matrix / Radius Search approach.
+
+    This method calculates forces for a batch of active points against all neighbors
+    within a given `radius`. It utilizes vector broadcasting to compute interactions
+    efficiently and handles singularities.
+
+    **Mathematical Operation:**
+    Let $P_i$ be an active point and $P_j$ be a neighbor. The displacement is
+    $\\vec{r}_{ij} = P_i - P_j$. The total force on $P_i$ is:
+
+    $ \\vec{F}_i = \\sum_{j \\in N(i), j \\neq i} \\frac{\\vec{r}_{ij}}{||\\vec{r}_{ij}||} \\cdot f(||\\vec{r}_{ij}||) $
+
+    **Key Steps:**
+    1. **Range Search:** Find all pairs $(i, j)$ where $||P_i - P_j|| < R$.
+    2. **Self-Masking:** Explicitly zero out interactions where $i = j$.
+    3. **Collision Handling:** If $||\\vec{r}_{ij}|| \\approx 0$ (stacking), a random noise vector is injected to break symmetry.
+    4. **Force Accumulation:** Forces are summed via matrix operations.
+
+    Args:
+        active_view (np.ndarray): The batch of points currently being optimized.
+        all_data (np.ndarray): Reference to the complete dataset (static + active).
+        nn_instance (nn.NearestNeighbors): Helper for range queries.
+        radius (float): Interaction cutoff radius.
+        metric_fn (Callable): The scalar force magnitude function $f(d)$.
+        batch_start_idx (int): Global index offset for the active batch.
+        rng (np.random.Generator): Random generator for collision noise.
+        **metric_kwargs: Arguments passed to `metric_fn`.
+
+    Returns:
+        np.ndarray: The net force vectors for the active batch.
     """
     all_dists, valid_mask = nn_instance.range_search(radius)
-        
+
     if not np.any(valid_mask):
         return np.zeros_like(active_view)
 
@@ -289,16 +404,16 @@ def _compute_radius_forces(
     # The matrix columns [0..Total] map 1:1 to all_data indices.
     # The active batch starts at 'batch_start_idx'.
     n_active = active_view.shape[0]
-    
+
     # Create diagonal coordinates: (0, start), (1, start+1), ...
     rows = np.arange(n_active)
     cols = batch_start_idx + rows
-    
+
     # Ensure we don't go out of bounds (sanity check)
     valid_cols_mask = cols < all_dists.shape[1]
     rows = rows[valid_cols_mask]
     cols = cols[valid_cols_mask]
-    
+
     # Mask out Self
     valid_mask[rows, cols] = False
 
@@ -307,7 +422,7 @@ def _compute_radius_forces(
     epsilon = 1e-9
     is_stacked_interaction = (all_dists < epsilon) & valid_mask
     particles_stacking = np.any(is_stacked_interaction, axis=1)
-    
+
     # --- 3. FORCE CALCULATION ---
     forces_mag = metric_fn(all_dists, **metric_kwargs) * valid_mask
     safe_dists = np.maximum(all_dists, epsilon)
@@ -319,19 +434,19 @@ def _compute_radius_forces(
     sum_coeffs = np.sum(coeffs, axis=1, keepdims=True)
     term1 = active_view * sum_coeffs
     term2 = np.dot(coeffs, valid_data)
-    
+
     forces = term1 - term2
-    
+
     if np.any(particles_stacking):
         # Generate noise for the shape of forces
         noise = rng.uniform(-1.0, 1.0, size=forces.shape).astype(np.float32)
-        
+
         # MASK: Zero out noise for particles that are NOT stacking
         # Broadcasting: (Batch, Dim) * (Batch, 1)
         noise *= particles_stacking[:, np.newaxis]
-        
+
         forces += noise
-    
+
     return forces
 
 
@@ -347,49 +462,74 @@ def _compute_knn_forces(
     **metric_kwargs,
 ) -> np.ndarray:
     """
-    Computes forces using k-NN strategy.
-    Separated for clarity and to fix the specific k-NN singularity issues.
+    Computes net repulsive forces using a k-Nearest Neighbors (k-NN) approach.
+
+    Unlike the radius approach, this method interacts with a fixed number ($k$) of
+    nearest neighbors, regardless of distance. This adapts well to varying densities.
+
+    **Mathematical Operation:**
+    The summation logic mirrors `_compute_radius_forces`, but the neighborhood set
+    $N(i)$ is defined by rank order of distance rather than absolute distance threshold:
+
+    $ N(i) = \\{ j \\mid \\text{rank}(||P_i - P_j||) \\le k \\} $
+
+    It includes specific logic to handle cases where the returned neighbor indices
+    refer to the point itself (self-interaction) or overlap perfectly (stacking).
+
+    Args:
+        active_view (np.ndarray): The batch of active points.
+        all_data (np.ndarray): The full dataset.
+        nn_instance (nn.NearestNeighbors): Helper for k-NN queries.
+        k_value (int): Number of neighbors to consider.
+        metric_fn (Callable): Force magnitude function.
+        rng (np.random.Generator): Random generator.
+        batch_start_idx (int): Global start index of the batch.
+        batch_end_idx (int): Global end index of the batch.
+        **metric_kwargs: Arguments passed to `metric_fn`.
+
+    Returns:
+        np.ndarray: The net force vectors for the active batch.
     """
     indices, dists = nn_instance.query_nn(k=k_value)
-        
+
     if np.max(indices) >= batch_end_idx:
         indices = np.clip(indices, 0, batch_end_idx - 1)
 
     # --- 1. INDEX-BASED SELF MASKING ---
     # We check: indices[i, j] == (batch_start_idx + i)
     global_idxs = np.arange(active_view.shape[0]) + batch_start_idx
-    
-    # Broadcast comparison: (M, K) vs (M, 1)
-    is_self = (indices == global_idxs[:, None])
 
-    neighbor_coords = all_data[indices] 
+    # Broadcast comparison: (M, K) vs (M, 1)
+    is_self = indices == global_idxs[:, None]
+
+    neighbor_coords = all_data[indices]
     disp_vecs = active_view[:, np.newaxis, :] - neighbor_coords
     norms = np.linalg.norm(disp_vecs, axis=2, keepdims=True)
-    
+
     # --- 2. COLLISION DETECTION ---
     # Any distance < epsilon that is NOT self is a collision (stacking)
     is_stacked = (norms < 1e-9) & (~is_self[:, :, None])
-    
+
     # Replace zero vectors with random unit vectors
     if np.any(is_stacked):
         random_dirs = rng.standard_normal(size=disp_vecs.shape, dtype=np.float32)
         rnd_norms = np.linalg.norm(random_dirs, axis=2, keepdims=True)
-        random_dirs /= (rnd_norms + 1e-9)
-        
+        random_dirs /= rnd_norms + 1e-9
+
         # Inject random direction where stacking occurred
         disp_vecs = np.where(is_stacked, random_dirs, disp_vecs)
-        norms = np.where(is_stacked, 1.0, norms) 
+        norms = np.where(is_stacked, 1.0, norms)
 
     # --- 3. FORCE CALCULATION ---
     forces_mag = metric_fn(dists, **metric_kwargs)
-    
+
     # Explicitly zero out self-force magnitude
     forces_mag[is_self] = 0.0
-    
+
     # Safe Norm division
     safe_norms = np.maximum(norms, 1e-9)
     force_vectors = (disp_vecs / safe_norms) * forces_mag[:, :, None]
-    
+
     return np.sum(force_vectors, axis=1)
 
 
@@ -402,52 +542,55 @@ def _esa(
     n: int,
     epochs: int = 512,
     lr: float = 0.01,
-    search_mode: str = 'k_nn',
+    search_mode: str = "k_nn",
     decay: float = 0.9,
     batch_size: int = 50,
     k: int | None = None,
     radius: float | None = None,
     tol: float = 1e-3,
     metric_fn: collections.abc.Callable = softened_inverse_force,
-    border_strategy: str = 'clip',
+    border_strategy: str = "clip",
     seed: int = 42,
     **metric_kwargs,
 ) -> np.ndarray:
     """
-    Internal execution loop for the Empty Space Algorithm (ESA).
-    
-    Implements a batch-wise optimization strategy to generate points in empty regions.
-    Supports both k-NN and Radius-based search, elastic borders, and automatic
-    learning rate decay.
+    Executes the Empty Space Algorithm (ESA) optimization loop.
+
+    This function performs the core iterative position updates. It treats the problem
+    as a physics simulation where new points (charged particles) are introduced into
+    a field of static points and repel each other to maximize spacing.
+
+    **Process:**
+    1. **Scale:** Map input domain to unit hypercube $[0, 1]^D$.
+    2. **Batching:** Process $N$ new points in mini-batches to manage complexity.
+    3. **Optimization:** For each epoch $t$:
+        - Calculate total force $\\vec{F}_{total} = \\vec{F}_{particle} + \\vec{F}_{wall}$.
+        - Update positions: $\\mathbf{x}_{t+1} = \\mathbf{x}_t + \\eta_t \\cdot \\vec{F}_{total}$.
+        - Decay learning rate: $\\eta_{t+1} = \\eta_t \\cdot \\gamma$.
+        - Check convergence: Stop if $||\\mathbf{x}_{t+1} - \\mathbf{x}_t|| < \\text{tol}$.
+    4. **Consolidation:** Once a batch converges, it becomes "static" for subsequent batches.
+    5. **Unscale:** Map results back to the original domain.
 
     Args:
-        samples (np.ndarray): Existing static points (N, D).
-        bounds (np.ndarray): Boundary box constraints (D, 2).
-        nn_instance (nn.NearestNeighbors): The Nearest Neighbors index instance.
-        n (int): Total number of new points to generate.
-        epochs (int, optional): Maximum optimization steps per batch. Defaults to 512.
-        lr (float, optional): Initial learning rate (step size). Defaults to 0.01.
-        search_mode (str, optional): Neighborhood search mode ('knn' or 'radius'). 
-            Defaults to 'radius'.
-        decay (float, optional): Multiplicative decay factor for LR per epoch. 
-            Defaults to 0.99.
-        batch_size (int, optional): Number of points to optimize simultaneously. 
-            Defaults to 50.
-        k (int | None, optional): Number of neighbors for 'knn' mode. 
-            Defaults to 2*dim + 1 if None.
-        radius (float | None, optional): Interaction radius for 'radius' mode. 
-            Auto-computed if None.
-        tol (float, optional): Convergence tolerance for early stopping. 
-            Defaults to 1e-4.
-        metric_fn (collections.abc.Callable, optional): Function to compute force magnitude 
-            from distances. Defaults to `softened_inverse_force`.
-        border_strategy (str, optional): Boundary behavior ('clip' or 'repulsive'). 
-            Defaults to 'repulsive'.
-        seed (int, optional): Random seed for initialization. Defaults to 42.
-        **metric_kwargs: Additional keyword arguments passed to `metric_fn`.
+        samples (np.ndarray): Existing static points.
+        bounds (np.ndarray): Domain boundaries.
+        nn_instance (nn.NearestNeighbors): Index structure.
+        n (int): Number of points to generate.
+        epochs (int): Maximum update steps.
+        lr (float): Initial step size $\\eta_0$.
+        search_mode (str): 'k_nn' or 'radius'.
+        decay (float): Learning rate decay factor $\\gamma$.
+        batch_size (int): Size of optimization groups.
+        k (int | None): Neighbors for k-NN mode.
+        radius (float | None): Interaction radius.
+        tol (float): Convergence tolerance.
+        metric_fn (Callable): Force function.
+        border_strategy (str): 'clip' or 'repulsive'.
+        seed (int): Random seed.
+        **metric_kwargs: Metric parameters.
 
     Returns:
-        np.ndarray: The generated points, unscaled to original bounds.
+        np.ndarray: The generated points in the original coordinate system.
     """
     # 1. Scaling & Pre-allocation
     min_val = bounds[:, 0]
@@ -459,7 +602,7 @@ def _esa(
     rng = np.random.default_rng(seed)
 
     all_data = np.empty((total_points, dim), dtype=np.float32)
-    all_data[:samples.shape[0]] = scaled_samples.astype(np.float32)
+    all_data[: samples.shape[0]] = scaled_samples.astype(np.float32)
     cursor = samples.shape[0]
 
     # 2. Setup NN
@@ -475,14 +618,16 @@ def _esa(
     num_batches = math.ceil(n / batch_size)
     bounds_01 = np.array([[0, 1]] * dim)
 
-    logger.debug(f"Starting ESA: {n} points, {num_batches} batches. Mode={search_mode}. Border Strategy={border_strategy}")
+    logger.debug(
+        f"Starting ESA: {n} points, {num_batches} batches. Mode={search_mode}. Border Strategy={border_strategy}"
+    )
     for _ in range(num_batches):
         # Calculate batch size (handle last partial batch)
         remaining = n - (cursor - samples.shape[0])
         current_n = min(batch_size, remaining)
         if current_n <= 0:
             break
-        
+
         # Define the memory slice for this batch in the Master Buffer
         batch_start = cursor
         batch_end = cursor + current_n
@@ -490,11 +635,11 @@ def _esa(
         # A. Smart Initialization
         active_batch_init = _smart_init(bounds_01, nn_instance, current_n, rng)
         all_data[batch_start:batch_end] = active_batch_init
-        
+
         # Create a VIEW of the master buffer for optimization
         # Modifying 'active_view' modifies 'all_data' in place.
         active_view = all_data[batch_start:batch_end]
-        
+
         nn_instance.set_active(active_view)
         current_lr = lr
 
@@ -503,24 +648,35 @@ def _esa(
             # Coordinate Retrieval:
             # We need neighbors from the "Valid" part of the buffer.
             # When NN returns indices, they map directly to rows in 'all_data'.
-            
+
             # --- Force Calculation ---
-            if search_mode == 'radius':
+            if search_mode == "radius":
                 particle_forces = _compute_radius_forces(
-                    active_view, all_data, nn_instance, radius_value, 
-                    metric_fn, batch_start_idx=batch_start, rng=rng, **metric_kwargs
+                    active_view,
+                    all_data,
+                    nn_instance,
+                    radius_value,
+                    metric_fn,
+                    batch_start_idx=batch_start,
+                    rng=rng,
+                    **metric_kwargs,
                 )
             else:
                 particle_forces = _compute_knn_forces(
-                    active_view, all_data, nn_instance, k_value,
-                    metric_fn, rng=rng, batch_start_idx=batch_start, batch_end_idx=batch_end, **metric_kwargs
+                    active_view,
+                    all_data,
+                    nn_instance,
+                    k_value,
+                    metric_fn,
+                    rng=rng,
+                    batch_start_idx=batch_start,
+                    batch_end_idx=batch_end,
+                    **metric_kwargs,
                 )
 
             # --- Wall Forces (Elastic Borders) ---
             wall_forces = _compute_wall_forces(
-                active_view, bounds_01, 
-                strategy=border_strategy, 
-                radius=radius_value
+                active_view, bounds_01, strategy=border_strategy, radius=radius_value
             )
 
             # --- Total Force & Update ---
@@ -547,13 +703,13 @@ def _esa(
         # The batch is already in 'all_data' at the correct position.
         # Tell NN to treat these indices as Static now.
         nn_instance.consolidate()
-        
+
         # Advance cursor
         cursor = batch_end
 
     # 5. Inverse Scaling & Return
     # We only return the generated portion (from len(samples) onwards)
-    generated_slice = all_data[len(samples):cursor]
+    generated_slice = all_data[len(samples) : cursor]
     return _inv_scale(generated_slice, min_val, max_val)
 
 
@@ -565,44 +721,47 @@ def esa(
     nn_instance: nn.NearestNeighbors | None = None,
     epochs: int = 1024,
     lr: float = 0.01,
-    search_mode: str = 'k_nn',
+    search_mode: str = "k_nn",
     decay: float = 0.9,
     batch_size: int = 50,
     k: int | None = None,
     radius: float | None = None,
     tol: float = 1e-3,
     metric: str | collections.abc.Callable = "softened_inverse",
-    border_strategy: str = 'clip',
+    border_strategy: str = "clip",
     seed: int = 42,
     **metric_kwargs,
 ) -> np.ndarray:
     """
-    Empty Space Algorithm (ESA).
+    Wrapper for the Empty Space Algorithm (ESA) that returns only generated points.
 
-    Generates 'n' spatially diverse points by simulating electrostatic repulsion
-    against existing 'samples'. This is a wrapper that prepares the dependencies
-    (NN instance, metric function) and calls the core logic.
-
-    This method returns ONLY the new generated points.
+    This acts as the public API for the algorithm. It handles infrastructure setup
+    that the internal loop `_esa` requires, specifically:
+    1. **Heuristic Calculation:** Auto-computes interaction radius if not provided.
+    2. **Metric Scaling:** Scales force parameters (like $\\sigma$) relative to the radius.
+    3. **Engine Selection:** Automatically chooses between a Dense Numpy engine (small $N$)
+        and an Approximate Nearest Neighbor (HNSW) engine (large $N$) for performance.
 
     Args:
-        samples (np.ndarray): Existing points.
-        bounds (np.ndarray): Boundary box.
-        n (int): Number of points to generate.
-        nn_instance (nn.NearestNeighbors | None): NN implementation instance.
-                                                  Created if None.
-        epochs (int): Max optimization steps per batch.
+        samples (np.ndarray): Existing points to avoid.
+        bounds (np.ndarray): Bounding box constraints.
+        n (int): Number of new points to create.
+        nn_instance (nn.NearestNeighbors | None): Optional custom NN engine.
+        epochs (int): Max iterations.
         lr (float): Initial learning rate.
-        decay (float): Learning rate decay per step.
-        batch_size (int): Points to optimize simultaneously.
-        k (int | None): Neighbors to consider. Defaults to 2*dim + 1.
-        tol (float): Convergence tolerance.
-        metric (str | collections.abc.Callable): Force function name or callable.
+        search_mode (str): 'k_nn' (adaptive) or 'radius' (fixed range).
+        decay (float): LR decay per epoch.
+        batch_size (int): Optimization batch size.
+        k (int | None): Neighbors to use (if mode is 'k_nn').
+        radius (float | None): Force radius (if mode is 'radius').
+        tol (float): Early stopping tolerance.
+        metric (str | Callable): Name of force function or callable object.
+        border_strategy (str): 'clip' (hard stop) or 'repulsive' (soft walls).
         seed (int): Random seed.
         **metric_kwargs: Arguments for the metric function.
 
     Returns:
-        np.ndarray: The generated points (unscaled).
+        np.ndarray: An array of size $(n, D)$ containing only the newly generated points.
     """
 
     if not isinstance(samples, np.ndarray):
@@ -611,18 +770,18 @@ def esa(
     if isinstance(metric, str):
         metric_name = metric.lower()
         metric_fn = METRIC_REGISTRY.get(metric_name)
-        if metric_fn is None: 
+        if metric_fn is None:
             raise ValueError(f"Unknown metric '{metric}'")
     else:
         metric_fn = metric
-        metric_name = getattr(metric, '__name__', 'unknown')
+        metric_name = getattr(metric, "__name__", "unknown")
 
     # 1. AUTO-COMPUTE Radius (if needed)
     # We do this here so we can use it to auto-scale metric parameters.
     final_radius = radius
-    if search_mode == 'radius' and radius is None:
+    if search_mode == "radius" and radius is None:
         total_capacity = samples.shape[0] + n
-        
+
         # Calculate heuristic in Unit Space
         # Bounds are just needed for dimensionality and side ratios
         unit_bounds = np.array([[0.0, 1.0]] * samples.shape[1])
@@ -631,23 +790,23 @@ def esa(
 
     # 2. AUTO-SCALE Metric Parameters
     # Ensure sigma/R matches the search radius for physical consistency
-    if search_mode == 'radius' and final_radius is not None:
-        if metric_name == 'gaussian' and 'sigma' not in metric_kwargs:
-            metric_kwargs['sigma'] = final_radius / 3.0
-        elif metric_name == 'linear' and 'R' not in metric_kwargs:
-            metric_kwargs['R'] = final_radius
+    if search_mode == "radius" and final_radius is not None:
+        if metric_name == "gaussian" and "sigma" not in metric_kwargs:
+            metric_kwargs["sigma"] = final_radius / 3.0
+        elif metric_name == "linear" and "R" not in metric_kwargs:
+            metric_kwargs["R"] = final_radius
 
     # 3. NN Factory with DUAL THRESHOLDS
     if nn_instance is None:
         dim = samples.shape[1]
         total = samples.shape[0] + n
-        
+
         # Select Threshold based on Search Mode
-        if search_mode == 'radius':
+        if search_mode == "radius":
             threshold = RADIUS_SWITCH_THRESHOLD
         else:
             threshold = KNN_SWITCH_THRESHOLD
-            
+
         if total > threshold:
             logger.debug(f"Using FAISS (HNSW) engine. (N={total} > {threshold})")
             nn_instance = nn.FaissHNSWFlatNN(dimension=dim, seed=seed)
@@ -656,10 +815,22 @@ def esa(
             nn_instance = nn.NumpyNN(dimension=dim, seed=seed)
 
     return _esa(
-        samples=samples, bounds=bounds, nn_instance=nn_instance, metric_fn=metric_fn,
-        n=n, epochs=epochs, lr=lr, decay=decay, batch_size=batch_size, k=k,
-        radius=final_radius, search_mode=search_mode, border_strategy=border_strategy,
-        tol=tol, seed=seed, **metric_kwargs,
+        samples=samples,
+        bounds=bounds,
+        nn_instance=nn_instance,
+        metric_fn=metric_fn,
+        n=n,
+        epochs=epochs,
+        lr=lr,
+        decay=decay,
+        batch_size=batch_size,
+        k=k,
+        radius=final_radius,
+        search_mode=search_mode,
+        border_strategy=border_strategy,
+        tol=tol,
+        seed=seed,
+        **metric_kwargs,
     )
 
 
@@ -671,39 +842,46 @@ def ess(
     nn_instance: nn.NearestNeighbors | None = None,
     epochs: int = 1024,
     lr: float = 0.01,
-    search_mode: str = 'k_nn',
+    search_mode: str = "k_nn",
     decay: float = 0.95,
     batch_size: int = 50,
     k: int | None = None,
     radius: float | None = None,
     tol: float = 1e-3,
     metric: str | collections.abc.Callable = "softened_inverse",
-    border_strategy: str = 'clip',
+    border_strategy: str = "clip",
     seed: int = 42,
-    **kwargs
+    **kwargs,
 ) -> np.ndarray:
     """
-    Empty Space Strategy (ESS).
+    High-level Empty Space Strategy (ESS) wrapper returning the full dataset.
 
-    A high-level wrapper that runs ESA and returns the combined dataset
-    (original samples + new points).
+    This convenience function runs the ESA algorithm and concatenates the results
+    with the original input samples. It is useful for iterative design of experiments
+    or sequential sampling workflows where the complete set of points is needed.
+
+    $$ \\text{Result} = \\text{samples} \\cup \\text{ESA}(\\text{samples}, \\dots) $$
 
     Args:
-        samples (np.ndarray | list): Existing points (obstacles). Shape (N, D).
-        bounds (np.ndarray): Bounding box. Shape (D, 2).
+        samples (np.ndarray | list): Existing points.
+        bounds (np.ndarray): Domain boundaries.
         n (int): Number of new points to generate.
-        nn_instance (nn.NearestNeighbors | None): NN instance.
-        epochs (int): Max optimization epochs.
-        lr (float): Initial learning rate.
-        decay (float): Decay factor.
+        nn_instance (nn.NearestNeighbors | None): NN engine.
+        epochs (int): Optimization steps.
+        lr (float): Learning rate.
+        search_mode (str): Neighborhood search strategy.
+        decay (float): Decay rate.
         batch_size (int): Batch size.
+        k (int | None): Neighbors count.
+        radius (float | None): Interaction radius.
+        tol (float): Convergence tolerance.
+        metric (str | Callable): Force metric.
+        border_strategy (str): Boundary handling.
         seed (int): Random seed.
-        tol (float): Tolerance.
-        metric (str | collections.abc.Callable): Metric name or function.
-        **kwargs: Metric arguments.
+        **kwargs: Additional metric args.
 
     Returns:
-        np.ndarray: Array containing original samples + n generated points.
+        np.ndarray: A combined array of shape $(N + n, D)$ containing original and new points.
     """
 
     if not isinstance(samples, np.ndarray):

@@ -5,7 +5,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 
-import ess.ess as ess
+import ess
 import ess.legacy as legacy
 import ess.utils as utils
 
@@ -35,7 +35,9 @@ def main(args):
     logger.info(f"ESA02 ({e - s:.3f} seconds) coverage {coverage:.2f}")
 
     s = time.perf_counter()
-    points3 = ess.esa(points0, bounds, n=args.n)
+    points3 = ess.esa(
+        points0, bounds, n=args.n, border_strategy="repulsive", search_mode="radius"
+    )
     e = time.perf_counter()
     all_points = np.concatenate((points0, points3), axis=0)
     coverage = utils.calculate_grid_coverage(all_points, bounds=bounds, grid=args.g)

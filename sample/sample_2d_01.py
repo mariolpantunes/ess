@@ -5,7 +5,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 
-import ess.ess as ess
+import ess
 import ess.legacy as legacy
 import ess.utils as utils
 
