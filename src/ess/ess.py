@@ -550,7 +550,7 @@ def _esa(
     tol: float = 1e-3,
     metric_fn: collections.abc.Callable = softened_inverse_force,
     border_strategy: str = "clip",
-    seed: int = 42,
+    seed: int | np.random.Generator | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
     """
@@ -586,7 +586,10 @@ def _esa(
         tol (float): Convergence tolerance.
         metric_fn (Callable): Force function.
         border_strategy (str): 'clip' or 'repulsive'.
-        seed (int): Random seed.
+        seed (int | np.random.Generator | None): Random seed or Generator instance.
+            If None, a new Generator is created with entropy.
+            If int, it seeds a new Generator.
+            If np.random.Generator, it is used directly.
         **metric_kwargs: Metric parameters.
 
     Returns:
@@ -599,7 +602,11 @@ def _esa(
     scaled_samples = scaled_samples.astype(np.float32)
     dim = samples.shape[1]
     total_points = samples.shape[0] + n
-    rng = np.random.default_rng(seed)
+    
+    if isinstance(seed, np.random.Generator):
+        rng = seed
+    else:
+        rng = np.random.default_rng(seed)
 
     all_data = np.empty((total_points, dim), dtype=np.float32)
     all_data[: samples.shape[0]] = scaled_samples.astype(np.float32)
@@ -729,7 +736,7 @@ def esa(
     tol: float = 1e-3,
     metric: str | collections.abc.Callable = "softened_inverse",
     border_strategy: str = "clip",
-    seed: int = 42,
+    seed: int | np.random.Generator | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
     """
@@ -757,7 +764,10 @@ def esa(
         tol (float): Early stopping tolerance.
         metric (str | Callable): Name of force function or callable object.
         border_strategy (str): 'clip' (hard stop) or 'repulsive' (soft walls).
-        seed (int): Random seed.
+        seed (int | np.random.Generator | None): Random seed or Generator instance.
+            If None, a new Generator is created with entropy.
+            If int, it seeds a new Generator.
+            If np.random.Generator, it is used directly.
         **metric_kwargs: Arguments for the metric function.
 
     Returns:
@@ -809,10 +819,10 @@ def esa(
 
         if total > threshold:
             logger.debug(f"Using FAISS (HNSW) engine. (N={total} > {threshold})")
-            nn_instance = nn.FaissHNSWFlatNN(dimension=dim, seed=seed)
+            nn_instance = nn.FaissHNSWFlatNN(dimension=dim)
         else:
             logger.debug(f"Using NUMPY (Dense) engine. (N={total} <= {threshold})")
-            nn_instance = nn.NumpyNN(dimension=dim, seed=seed)
+            nn_instance = nn.NumpyNN(dimension=dim)
 
     return _esa(
         samples=samples,
@@ -850,7 +860,7 @@ def ess(
     tol: float = 1e-3,
     metric: str | collections.abc.Callable = "softened_inverse",
     border_strategy: str = "clip",
-    seed: int = 42,
+    seed: int | np.random.Generator | None = None,
     **kwargs,
 ) -> np.ndarray:
     """
@@ -877,7 +887,10 @@ def ess(
         tol (float): Convergence tolerance.
         metric (str | Callable): Force metric.
         border_strategy (str): Boundary handling.
-        seed (int): Random seed.
+        seed (int | np.random.Generator | None): Random seed or Generator instance.
+            If None, a new Generator is created with entropy.
+            If int, it seeds a new Generator.
+            If np.random.Generator, it is used directly.
         **kwargs: Additional metric args.
 
     Returns:

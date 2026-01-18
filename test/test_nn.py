@@ -28,7 +28,7 @@ class SharedNNTests(unittest.TestCase):
             self.skipTest("SharedNNTests should not be run directly.")
 
         self.dim = 3
-        self.model = self.nn_class(dimension=self.dim, seed=42)
+        self.model = self.nn_class(dimension=self.dim)
 
         # Standard orthogonal setup
         self.static_points = np.array(
@@ -129,7 +129,7 @@ class SharedNNTests(unittest.TestCase):
     def test_high_dimensions(self):
         """Verify functionality in high dimensions (e.g., 64D)."""
         dim = 64
-        model = self.nn_class(dimension=dim, seed=123)
+        model = self.nn_class(dimension=dim)
 
         # Random data
         rng = np.random.default_rng(123)

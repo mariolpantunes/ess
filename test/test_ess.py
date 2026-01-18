@@ -134,14 +134,14 @@ class TestESS(unittest.TestCase):
         This ensures the 'fast path' isn't broken compared to the 'scalable path'.
         """
         # Force Numpy
-        numpy_nn = nn.NumpyNN(dimension=2, seed=42)
+        numpy_nn = nn.NumpyNN(dimension=2)
         res_numpy = ess.ess(
             self.samples, self.bounds, n=20, nn_instance=numpy_nn, seed=42
         )
         dist_numpy = utils.calculate_min_pairwise_distance(res_numpy[1:])
 
         # Force Faiss
-        faiss_nn = nn.FaissHNSWFlatNN(dimension=2, seed=42)
+        faiss_nn = nn.FaissHNSWFlatNN(dimension=2)
         res_faiss = ess.ess(
             self.samples, self.bounds, n=20, nn_instance=faiss_nn, seed=42
         )

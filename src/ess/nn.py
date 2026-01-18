@@ -23,9 +23,8 @@ class NearestNeighbors(abc.ABC):
     union of both sets: $P_{query} \\in Active \\to \\{P_{static} \\cup P_{active}\\}$.
     """
 
-    def __init__(self, dimension: int, seed: int = 42):
+    def __init__(self, dimension: int):
         self.dimension = dimension
-        self.seed = seed
 
     @abc.abstractmethod
     def add_static(self, points: np.ndarray) -> None:
@@ -157,10 +156,9 @@ class NumpyNN(NearestNeighbors):
     to avoid recomputation during iterative optimization steps.
     """
 
-    def __init__(self, dimension: int, seed: int = 42):
-        super().__init__(dimension, seed)
+    def __init__(self, dimension: int):
+        super().__init__(dimension)
         self._static: np.ndarray = np.empty((0, dimension), dtype=np.float32)
-        # Cache squared norms of static points to avoid re-computing in loop
         self._static_sq: np.ndarray = np.empty((0, 1), dtype=np.float32)
         self._active: np.ndarray = np.empty((0, dimension), dtype=np.float32)
 
@@ -369,13 +367,8 @@ class FaissBaseNN(NearestNeighbors):
     $ N(x) = \\text{SelectTopK}( \\text{FaissQuery}(x, S) \\cup \\text{BruteForce}(x, A) ) $
     """
 
-    def __init__(
-        self,
-        index_static: faiss.Index,
-        dimension: int,
-        seed: int = 42,
-    ):
-        super().__init__(dimension, seed)
+    def __init__(self, index_static: faiss.Index, dimension: int):
+        super().__init__(dimension)
         self._active: np.ndarray = np.empty((0, dimension), dtype=np.float32)
         self._static_count = 0
         self._index_static: typing.Any = index_static
@@ -621,8 +614,8 @@ class FaissFlatL2NN(FaissBaseNN):
     optimizations and multithreading, but slower than HNSW.
     """
 
-    def __init__(self, dimension: int, seed: int = 42):
-        super().__init__(faiss.IndexFlatL2(dimension), dimension, seed)
+    def __init__(self, dimension: int):
+        super().__init__(faiss.IndexFlatL2(dimension), dimension)
 
 
 class FaissHNSWFlatNN(FaissBaseNN):
@@ -635,10 +628,9 @@ class FaissHNSWFlatNN(FaissBaseNN):
 
     Args:
         dimension (int): Dimensionality of the data.
-        seed (int): Random seed.
         M (int): Number of edges per node in the graph (default 32). Higher $M$ improves
             recall at the cost of memory and build time.
     """
 
-    def __init__(self, dimension: int, seed: int = 42, M: int = 32):
-        super().__init__(faiss.IndexHNSWFlat(dimension, M), dimension, seed)
+    def __init__(self, dimension: int, M: int = 32):
+        super().__init__(faiss.IndexHNSWFlat(dimension, M), dimension)
