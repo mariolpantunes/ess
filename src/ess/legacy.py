@@ -177,7 +177,7 @@ def _esa_01(samples, bounds, n: int | None = None, seed: int | None = None):
 
     # Initialize NN with original samples
     seed_value = seed if seed is not None else 42
-    neigh = nn.NumpyNN(dimension=scaled_samples.shape[1], seed=seed_value)
+    neigh = nn.NumpyNN(dimension=scaled_samples.shape[1])
     neigh.add_static(scaled_samples)
 
     rng = np.random.default_rng(seed_value)
@@ -251,11 +251,12 @@ def _esa_02(
     samples, _, _ = _scale(samples, min_val, max_val)
     n_value = n if n is not None else samples.shape[0]
 
-    seed_value = seed if seed is not None else 42
-    neigh = nn.NumpyNN(dimension=samples.shape[1], seed=seed_value)
+    neigh = nn.NumpyNN(dimension=samples.shape[1])
     neigh.add_static(samples)
 
-    coors = np.random.uniform(0, 1, (n_value, samples.shape[1]))
+    seed_value = seed if seed is not None else 42
+    rng = np.random.default_rng(seed_value)
+    coors = rng.uniform(0, 1, (n_value, samples.shape[1]))
     es_params = []
 
     scaled_bounds = np.array([[0, 1]] * samples.shape[1])
