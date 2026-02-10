@@ -6,11 +6,12 @@
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/mariolpantunes/ess/main.yml)
 ![GitHub last commit](https://img.shields.io/github/last-commit/mariolpantunes/ess)
 
-**ESS** is a high-performance Python library that implements the Electrostatic Search Algorithm (ESA), a novel method for generating spatially diverse point distributions. It simulates electrostatic repulsive forces to "relax" new points into the empty spaces of a high-dimensional domain, making it ideal for sampling, coverage optimization, and exploratory data analysis.
+**ESS** is a high-performance Python library that implements the Empty Space Algorithm (ESA), a novel method for generating spatially diverse point distributions.
+It simulates electrostatic repulsive forces to "relax" new points into the empty spaces of a high-dimensional domain, making it ideal for sampling, coverage optimization, and exploratory data analysis.
 
 ## Features
 
-* **Electrostatic Search Algorithm (ESA)**: Uses physics-inspired repulsive forces (Gaussian, Softened Inverse, etc.) to maximize the separation between points.
+* **Empty Space Algorithm (ESA)**: Uses physics-inspired repulsive forces (Gaussian, Softened Inverse, etc.) to maximize the separation between points.
 * **Radius-Based Interactions (New in v0.3.0)**: Supports physical range searches (interacting with *all* neighbors within a radius) alongside standard k-NN, with automatic radius estimation for high-dimensional spaces.
 * **Repulsive Boundaries**: Implements "soft walls" that exert restorative forces at domain edges, preventing the edge-clumping artifacts common in hard-clipped optimization.
 * **Scalable Architecture**:
@@ -60,7 +61,6 @@ bounds = np.array([[0, 1], [0, 1]])
 result = ess.ess(obstacles, bounds, n=100, seed=42, border_strategy='repulsive')
 
 print(f"Total points: {len(result)}")
-
 ```
 
 ### Advanced Usage with Faiss & Radius Search
@@ -91,15 +91,14 @@ new_points = esa(
     batch_size=100, 
     epochs=256
 )
-
 ```
 
 ## Algorithms
 
-**ESA (Electrostatic Search Algorithm)** treats existing points as fixed charged particles and new points as free moving charges.
+**ESA (Empty Space Algorithm)** treats existing points as fixed charged particles and new points as free moving charges.
 
 1. **k-NN Mode**: Points are repelled by their  nearest neighbors. Good for maintaining local uniformity.
-2. **Radius Mode (New)**: Points are repelled by **all** neighbors within a specific cutoff radius . This mimics real electrostatic fields and prevents "tunneling" in high-density regions.
+2. **Radius Mode (New)**: Points are repelled by **all** neighbors within a specific cutoff radius. This mimics real electrostatic fields and prevents "tunneling" in high-density regions.
 
 **Force Functions**:
 
@@ -120,7 +119,6 @@ To generate the documentation locally using [pdoc](https://pdoc.dev/):
 pdoc --math -d google -o docs src/ess \
     --logo assets/ess_logo.svg \
     --favicon assets/ess_logo.svg
-
 ```
 
 ## Authors
