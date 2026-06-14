@@ -1,3 +1,32 @@
 [build-system]
-requires = ['setuptools>=61.0']
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "EmptySpaceSearch"
+version = "0.3.1"
+authors = [
+    {name = "Mário Antunes", email = "mario.antunes@ua.pt"}
+]
+description = "Empty Space Search"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy>=2.0.0",
+    "faiss-cpu>=1.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mariolpantunes/ess"
+Documentation = "https://mariolpantunes.github.io/ess/"
+Repository = "https://github.com/mariolpantunes/ess"
+Issues = "https://github.com/mariolpantunes/ess/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]

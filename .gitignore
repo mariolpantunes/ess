@@ -172,3 +172,12 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Plans folder
+plans/
+
+# Agent hints
+.goosehints
+
+# Generated documentation
+docs/

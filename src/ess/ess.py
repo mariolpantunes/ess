@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-import ess.nn as nn
+from . import nn, samplers
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -30,99 +30,85 @@ Above this value, the memory cost of the dense matrix becomes prohibitive.
 
 
 # --- Force Functions ---
-def gaussian_force(d: np.ndarray, sigma: float = 0.2, alpha: float = 2.0) -> np.ndarray:
-    """
-    Computes a Gaussian repulsion force based on distance.
+def gaussian_force(
+    d: np.ndarray, sigma: float = 0.2, alpha: float = 2.0, **kwargs
+) -> np.ndarray:
+    r"""
+    Computes a Gaussian repulsion force in log-space based on distance.
 
-    This function models a short-range repulsive force that decays exponentially with distance,
-    resembling a Gaussian distribution. It is useful for creating "soft" exclusion zones
-    around particles. The force magnitude $F$ is calculated as:
-
-    $ F(d) = \\alpha \\cdot \\exp\\left(-\\frac{d^2}{2\\sigma^2}\\right) $
-
-    where $d$ is the distance, $\\sigma$ controls the width of the repulsion (standard deviation),
-    and $\\alpha$ is the peak magnitude at $d=0$.
+    The force magnitude $F$ is calculated as:
+    $ \log F(d) = \log \alpha - \frac{d^2}{2\sigma^2} $
 
     Args:
         d (np.ndarray): Array of pairwise distances between points.
-        sigma (float): The spread parameter $\\sigma$. Larger values increase the range of influence.
-        alpha (float): The maximum force magnitude $\\alpha$ (at zero distance).
+        sigma (float): The spread parameter $\sigma$.
+        alpha (float): The maximum force magnitude $\alpha$ (at zero distance).
 
     Returns:
-        np.ndarray: An array of force magnitudes corresponding to the input distances.
+        np.ndarray: An array of log-force magnitudes.
     """
-    s2 = 2 * (sigma * sigma)
-    return alpha * np.exp(-(d * d) / s2)
+    s2 = 2.0 * (sigma * sigma)
+    return np.log(alpha) - (d * d) / s2
 
 
 def softened_inverse_force(
-    d: np.ndarray, epsilon: float = 0.1, alpha: float = 0.1
+    d: np.ndarray, epsilon: float = 0.1, alpha: float = 0.1, dim: int = 2, **kwargs
 ) -> np.ndarray:
-    """
-    Computes a softened inverse-square repulsion force.
+    r"""
+    Computes a softened dimension-dependent inverse-power repulsion force in log-space.
 
-    This function mimics electrostatic or gravitational repulsion but introduces a softening
-    parameter $\\epsilon$ to prevent numerical singularities (division by zero) when particles
-    overlap ($d \\to 0$). The force decays algebraically rather than exponentially.
-
-    The magnitude is given by:
-
-    $ F(d) = \\frac{\\alpha}{d^2 + \\epsilon^2} $
-
-    This ensures that the maximum force is bounded at $\\alpha / \\epsilon^2$.
+    The force magnitude $F$ decays as $d^{-(D-1)}$ in high dimensions $D$ (minimum decay of $d^{-2}$):
+    $ \log F(d) = \log \alpha - \frac{\max(2, D - 1)}{2} \log(d^2 + \epsilon^2) $
 
     Args:
         d (np.ndarray): Array of distances.
-        epsilon (float): Softening parameter $\\epsilon$. Prevents infinite forces at $d=0$.
-        alpha (float): Magnitude scaling factor $\\alpha$.
+        epsilon (float): Softening parameter $\epsilon$. Prevents infinite forces at $d=0$.
+        alpha (float): Magnitude scaling factor $\alpha$.
+        dim (int): The dimension of the space $D$.
 
     Returns:
-        np.ndarray: An array of force magnitudes.
+        np.ndarray: An array of log-force magnitudes.
     """
-    return alpha * (1.0 / ((d * d) + (epsilon * epsilon)))
+    power = max(2, dim - 1)
+    return np.log(alpha) - 0.5 * power * np.log((d * d) + (epsilon * epsilon))
 
 
-def linear_force(d: np.ndarray, R: float = 0.5) -> np.ndarray:
-    """
-    Computes a linear repulsive force that falls to zero at a specific radius.
-
-    This force models a simple linear spring compression. It provides a constant stiffness
-    repulsion within a defined radius $R$ and is zero elsewhere. This creates a clear
-    "cutoff" for interactions.
+def linear_force(
+    d: np.ndarray, R: float = 0.5, eps: float = 1e-9, **kwargs
+) -> np.ndarray:
+    r"""
+    Computes a linear repulsive force in log-space.
 
     The formula is:
-
-    $ F(d) = \\max\\left(0, 1 - \\frac{d}{R}\\right) $
-
-    Args:
-        d (np.ndarray): Array of distances.
-        R (float): The cutoff radius $R$. Forces are zero for $d \\ge R$.
-
-    Returns:
-        np.ndarray: An array of normalized force magnitudes in $[0, 1]$.
-    """
-    return np.maximum(0.0, 1.0 - (d / R))
-
-
-def cauchy_force(d: np.ndarray) -> np.ndarray:
-    """
-    Computes a long-tailed repulsion based on the Cauchy distribution.
-
-    This function provides a heavy-tailed force distribution, which can be useful for
-    maintaining global separation between points as the force does not decay as rapidly
-    as a Gaussian.
-
-    The magnitude is defined as:
-
-    $ F(d) = \\frac{1}{1 + d^2} $
+    $ \log F(d) = \log \max(\epsilon, 1 - d/R) $
 
     Args:
         d (np.ndarray): Array of distances.
+        R (float): The cutoff radius $R$.
+        eps (float): Small epsilon value to avoid log(0).
 
     Returns:
-        np.ndarray: An array of force magnitudes.
+        np.ndarray: An array of log-force magnitudes.
     """
-    return 1.0 / (1.0 + (d * d))
+    return np.log(np.maximum(eps, 1.0 - (d / R)))
+
+
+def cauchy_force(d: np.ndarray, dim: int = 2, **kwargs) -> np.ndarray:
+    r"""
+    Computes a long-tailed Cauchy repulsion force in log-space.
+
+    The magnitude decays as $d^{-(D-1)}$ in high dimensions $D$ (minimum decay of $d^{-2}$):
+    $ \log F(d) = -0.5 \cdot \max(2, D - 1) \cdot \log(1 + d^2) $
+
+    Args:
+        d (np.ndarray): Array of distances.
+        dim (int): The dimension of the space $D$.
+
+    Returns:
+        np.ndarray: An array of log-force magnitudes.
+    """
+    power = max(2, dim - 1)
+    return -0.5 * power * np.log(1.0 + (d * d))
 
 
 METRIC_REGISTRY = {
@@ -204,26 +190,28 @@ def _smart_init(
     nn_instance: nn.NearestNeighbors,
     n_new: int,
     rng: np.random.Generator,
+    init_sampler: samplers.Sampler,
 ) -> np.ndarray:
-    """
+    r"""
     Initializes new points using a vectorized Best Candidate Sampling strategy.
 
     Instead of placing points purely randomly, this method generates a pool of candidate
-    positions for each required new point and selects the one that is furthest from
-    the existing set of static points.
+    positions for each required new point using the provided space-filling sampler (e.g. LHS)
+    and selects the one that is furthest from the existing set of static points.
 
     **Algorithm:**
-    1. For $N$ requested points, generate $N \\times k$ uniform candidates (where $k=15$).
+    1. For $N$ requested points, generate $N \times k$ candidates using init_sampler (where $k=15$).
     2. Compute the distance $d_i$ from every candidate to its nearest static neighbor.
     3. For each of the $N$ slots, select the candidate $c^*$ such that:
-        $ c^* = \\arg\\max_{c \\in \\text{candidates}} (\\min_{p \\in \\text{static}} ||c - p||) $
-    4. Apply a small jitter $\\xi \\sim U(-10^{-3}, 10^{-3})$ to avoid perfect overlaps.
+        $ c^* = \arg\max_{c \in \text{candidates}} (\min_{p \in \text{static}} ||c - p||) $
+    4. Apply a small jitter $\xi \sim U(-10^{-3}, 10^{-3})$ to avoid perfect overlaps.
 
     Args:
         bounds_01 (np.ndarray): Normalized boundaries $[0, 1]$.
         nn_instance (nn.NearestNeighbors): The index containing static points.
         n_new (int): Number of points to initialize.
         rng (np.random.Generator): Random number generator.
+        init_sampler (samplers.Sampler): Sampler used to generate candidate positions.
 
     Returns:
         np.ndarray: Initial positions for the new points.
@@ -231,12 +219,10 @@ def _smart_init(
     dim = bounds_01.shape[0]
     n_candidates = 15
 
-    # 1. Generate ALL candidates at once
+    # 1. Generate ALL candidates at once using the provided space-filling sampler
     # Shape: (n_new * n_candidates, D)
     total_candidates = n_new * n_candidates
-    candidates = rng.uniform(
-        bounds_01[:, 0], bounds_01[:, 1], (total_candidates, dim)
-    ).astype(np.float32)
+    candidates = init_sampler.sample(total_candidates, dim, rng).astype(np.float32)
 
     # 2. Query NN once for all candidates
     # We only care about distance to the nearest STATIC point
@@ -379,7 +365,8 @@ def _compute_radius_forces(
     **Key Steps:**
     1. **Range Search:** Find all pairs $(i, j)$ where $||P_i - P_j|| < R$.
     2. **Self-Masking:** Explicitly zero out interactions where $i = j$.
-    3. **Collision Handling:** If $||\\vec{r}_{ij}|| \\approx 0$ (stacking), a random noise vector is injected to break symmetry.
+    3. **Collision Handling:** If $||\vec{r}_{ij}|| \approx 0$ (stacking),
+       a random noise vector is injected to break symmetry.
     4. **Force Accumulation:** Forces are summed via matrix operations.
 
     Args:
@@ -424,9 +411,24 @@ def _compute_radius_forces(
     particles_stacking = np.any(is_stacked_interaction, axis=1)
 
     # --- 3. FORCE CALCULATION ---
-    forces_mag = metric_fn(all_dists, **metric_kwargs) * valid_mask
+    # Retrieve dimension D
+    dim = active_view.shape[1]
+
+    # Calculate log-force magnitude
+    log_forces_mag = metric_fn(all_dists, dim=dim, **metric_kwargs)
+
+    # Apply valid mask (setting invalid ones to -inf so they don't affect max)
+    log_forces_mag = np.where(valid_mask, log_forces_mag, -np.inf)
+
+    # Find local max log-force for each particle
+    M_i = np.max(log_forces_mag, axis=1, keepdims=True)
+    M_i = np.where(M_i == -np.inf, 0.0, M_i)
+
+    # Exponentiate with subtraction to prevent overflow
+    safe_exp_forces = np.exp(log_forces_mag - M_i) * valid_mask
+
     safe_dists = np.maximum(all_dists, epsilon)
-    coeffs = forces_mag / safe_dists
+    coeffs = safe_exp_forces / safe_dists
 
     n_valid = all_dists.shape[1]
     valid_data = all_data[:n_valid]
@@ -435,7 +437,12 @@ def _compute_radius_forces(
     term1 = active_view * sum_coeffs
     term2 = np.dot(coeffs, valid_data)
 
-    forces = term1 - term2
+    dir_forces = term1 - term2
+
+    # Restore scale with cap
+    force_cap = 1000.0
+    restored_scales = np.exp(np.minimum(M_i, np.log(force_cap)))
+    forces = restored_scales * dir_forces
 
     if np.any(particles_stacking):
         # Generate noise for the shape of forces
@@ -492,23 +499,22 @@ def _compute_knn_forces(
     """
     indices, dists = nn_instance.query_nn(k=k_value)
 
-    if np.max(indices) >= batch_end_idx:
-        indices = np.clip(indices, 0, batch_end_idx - 1)
-
-    # --- 1. INDEX-BASED SELF MASKING ---
-    # We check: indices[i, j] == (batch_start_idx + i)
+    # Find valid and self indices using original indices
+    valid_indices = (indices >= 0) & (indices < batch_end_idx)
     global_idxs = np.arange(active_view.shape[0]) + batch_start_idx
-
-    # Broadcast comparison: (M, K) vs (M, 1)
     is_self = indices == global_idxs[:, None]
 
-    neighbor_coords = all_data[indices]
+    # Clip indices to a safe range only for indexing without crash
+    safe_indices = np.clip(indices, 0, batch_end_idx - 1)
+
+    # --- 1. INDEX-BASED SELF MASKING ---
+    neighbor_coords = all_data[safe_indices]
     disp_vecs = active_view[:, np.newaxis, :] - neighbor_coords
     norms = np.linalg.norm(disp_vecs, axis=2, keepdims=True)
 
     # --- 2. COLLISION DETECTION ---
-    # Any distance < epsilon that is NOT self is a collision (stacking)
-    is_stacked = (norms < 1e-9) & (~is_self[:, :, None])
+    # Any distance < epsilon that is NOT self and is valid is a collision (stacking)
+    is_stacked = (norms < 1e-9) & (~is_self[:, :, None]) & valid_indices[:, :, None]
 
     # Replace zero vectors with random unit vectors
     if np.any(is_stacked):
@@ -521,16 +527,32 @@ def _compute_knn_forces(
         norms = np.where(is_stacked, 1.0, norms)
 
     # --- 3. FORCE CALCULATION ---
-    forces_mag = metric_fn(dists, **metric_kwargs)
+    # Retrieve dimension D
+    dim = active_view.shape[1]
 
-    # Explicitly zero out self-force magnitude
-    forces_mag[is_self] = 0.0
+    # Calculate log-force magnitude
+    log_forces_mag = metric_fn(dists, dim=dim, **metric_kwargs)
+
+    # Apply valid mask (setting self and invalid ones to -inf so they don't affect max)
+    log_forces_mag = np.where(is_self | ~valid_indices, -np.inf, log_forces_mag)
+
+    # Find local max log-force for each particle
+    M_i = np.max(log_forces_mag, axis=1, keepdims=True)
+    M_i = np.where(M_i == -np.inf, 0.0, M_i)
+
+    # Exponentiate with subtraction to prevent overflow
+    safe_exp_forces = np.exp(log_forces_mag - M_i)
+    safe_exp_forces[is_self | ~valid_indices] = 0.0
 
     # Safe Norm division
     safe_norms = np.maximum(norms, 1e-9)
-    force_vectors = (disp_vecs / safe_norms) * forces_mag[:, :, None]
+    force_vectors = (disp_vecs / safe_norms) * safe_exp_forces[:, :, None]
+    dir_forces = np.sum(force_vectors, axis=1)
 
-    return np.sum(force_vectors, axis=1)
+    # Restore scale with cap
+    force_cap = 1000.0
+    restored_scales = np.exp(np.minimum(M_i, np.log(force_cap)))
+    return restored_scales * dir_forces
 
 
 # --- Core Logic ---
@@ -551,6 +573,7 @@ def _esa(
     metric_fn: collections.abc.Callable = softened_inverse_force,
     border_strategy: str = "clip",
     seed: int | np.random.Generator | None = None,
+    init_sampler: samplers.Sampler | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
     """
@@ -602,11 +625,13 @@ def _esa(
     scaled_samples = scaled_samples.astype(np.float32)
     dim = samples.shape[1]
     total_points = samples.shape[0] + n
-    
+
     if isinstance(seed, np.random.Generator):
         rng = seed
     else:
         rng = np.random.default_rng(seed)
+
+    resolved_sampler = samplers.check_sampler(init_sampler, default_random_state=rng)
 
     all_data = np.empty((total_points, dim), dtype=np.float32)
     all_data[: samples.shape[0]] = scaled_samples.astype(np.float32)
@@ -640,7 +665,14 @@ def _esa(
         batch_end = cursor + current_n
 
         # A. Smart Initialization
-        active_batch_init = _smart_init(bounds_01, nn_instance, current_n, rng)
+        if samples.shape[0] == 0 and batch_start == 0:
+            # First batch of a run starting from scratch: use LHS directly
+            active_batch_init = resolved_sampler.sample(current_n, dim, rng)
+        else:
+            # Subsequent batches or when initial samples exist: use Smart Init with LHS candidate generation
+            active_batch_init = _smart_init(
+                bounds_01, nn_instance, current_n, rng, resolved_sampler
+            )
         all_data[batch_start:batch_end] = active_batch_init
 
         # Create a VIEW of the master buffer for optimization
@@ -716,7 +748,8 @@ def _esa(
 
     # 5. Inverse Scaling & Return
     # We only return the generated portion (from len(samples) onwards)
-    generated_slice = all_data[len(samples) : cursor]
+    start_idx = len(samples)
+    generated_slice = all_data[start_idx:cursor]
     return _inv_scale(generated_slice, min_val, max_val)
 
 
@@ -737,6 +770,7 @@ def esa(
     metric: str | collections.abc.Callable = "softened_inverse",
     border_strategy: str = "clip",
     seed: int | np.random.Generator | None = None,
+    init_sampler: samplers.Sampler | int | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
     """
@@ -840,6 +874,7 @@ def esa(
         border_strategy=border_strategy,
         tol=tol,
         seed=seed,
+        init_sampler=init_sampler,
         **metric_kwargs,
     )
 
@@ -861,6 +896,7 @@ def ess(
     metric: str | collections.abc.Callable = "softened_inverse",
     border_strategy: str = "clip",
     seed: int | np.random.Generator | None = None,
+    init_sampler: samplers.Sampler | int | None = None,
     **kwargs,
 ) -> np.ndarray:
     """
@@ -916,6 +952,7 @@ def ess(
         tol=tol,
         metric=metric,
         seed=seed,
+        init_sampler=init_sampler,
         **kwargs,
     )
 

@@ -179,7 +179,9 @@ def calculate_clark_evans_index(
     mean observed distance. The expected distance $\\bar{r}_E$ for density $\\rho = N/V$
     in $D$ dimensions is derived from the volume of a $D$-dimensional unit ball ($V_D$):
 
-    $ \\bar{r}_E = \\frac{\\Gamma(1/D + 1)}{(\\rho \\cdot V_D)^{1/D}} \\quad \\text{where} \\quad V_D = \\frac{\\pi^{D/2}}{\\Gamma(D/2 + 1)} $
+    $ \\bar{r}_E = \\frac{\\Gamma(1/D + 1)}{(\\rho \\cdot V_D)^{1/D}}
+      \\quad \\text{where} \\quad
+      V_D = \\frac{\\pi^{D/2}}{\\Gamma(D/2 + 1)} $
 
     Interpretation:
     * $R < 1$: Aggregated (clustered) distribution.

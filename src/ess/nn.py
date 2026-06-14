@@ -594,7 +594,7 @@ class FaissBaseNN(NearestNeighbors):
         # Note: We rely on the caller (physics engine) to handle epsilon/division-by-zero,
         # but we must ensure self-interaction (dist=0) is masked out.
         radius_sq = radius * radius
-        mask_active = (dists_sq_active < radius_sq) & (dists_sq_active > 1e-9)
+        mask_active = dists_sq_active < radius_sq
 
         # Place into the right-side of the matrix
         start_col = n_static

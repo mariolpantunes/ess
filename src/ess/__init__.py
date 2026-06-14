@@ -34,13 +34,16 @@ Modules
 """
 
 # 1. Internal Module Imports
-from . import legacy, nn, utils
+from . import legacy, nn, utils, samplers
 
 # 2. Main API Exports
 from .ess import esa, ess
 
 # 3. NN Engine Exports
 from .nn import FaissFlatL2NN, FaissHNSWFlatNN, NearestNeighbors, NumpyNN
+
+# 4. Sampler Exports
+from .samplers import LHCSampler, Sampler, UniformSampler, check_sampler
 
 # Define __all__ to control what 'from ess import *' exports
 __all__ = [
@@ -50,7 +53,12 @@ __all__ = [
     "NumpyNN",
     "FaissFlatL2NN",
     "FaissHNSWFlatNN",
+    "Sampler",
+    "LHCSampler",
+    "UniformSampler",
+    "check_sampler",
     "nn",
     "utils",
     "legacy",
+    "samplers",
 ]

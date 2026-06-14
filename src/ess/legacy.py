@@ -2,7 +2,7 @@ import logging
 
 import numpy as np
 
-import ess.nn as nn
+from . import nn
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -39,7 +39,8 @@ def _force(sigma, d):
     $ V(r) \\propto \\left(\\frac{\\sigma}{r}\\right)^{12} - \\left(\\frac{\\sigma}{r}\\right)^6 $
 
     The force $F = -\\nabla V$ is proportional to:
-    $ F(r) \\propto \\frac{1}{r} \\left[ 2\\left(\\frac{\\sigma}{r}\\right)^{12} - \\left(\\frac{\\sigma}{r}\\right)^6 \\right] $
+    $ F(r) \\propto \\frac{1}{r} \\left[ 2\\left(\\frac{\\sigma}{r}\\right)^{12}
+      - \\left(\\frac{\\sigma}{r}\\right)^6 \\right] $
 
     The implementation computes this as:
     $ \\text{ratio} = \\frac{\\sigma}{d}, \\quad A = \\text{ratio}^6 $
@@ -71,7 +72,9 @@ def _elastic(es, neighbors, neighbors_dist):
     This function aggregates the repulsive forces from a set of neighbors. The force
     direction is the unit vector pointing from the neighbor to the current point.
 
-    $ \\vec{F}_{total} = \\sum_{j \\in \\text{neighbors}} \\underbrace{f(|| \\vec{r}_{j} ||)}_{\\text{magnitude}} \\cdot \\underbrace{\\frac{\\vec{x} - \\vec{p}_j}{|| \\vec{x} - \\vec{p}_j ||}}_{\\text{direction}} $
+    $ \\vec{F}_{total} = \\sum_{j \\in \\text{neighbors}}
+      \\underbrace{f(|| \\vec{r}_{j} ||)}_{\\text{magnitude}} \\cdot
+      \\underbrace{\\frac{\\vec{x} - \\vec{p}_j}{|| \\vec{x} - \\vec{p}_j ||}}_{\\text{direction}} $
 
     where $f(d)$ is the magnitude function defined in `_force` and $\\sigma$ is locally
     determined as $\\frac{1}{5}$ of the mean neighbor distance.
