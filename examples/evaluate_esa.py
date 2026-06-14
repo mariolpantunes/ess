@@ -13,7 +13,8 @@ def run_benchmark():
     results = []
 
     print(
-        f"{'Dim':>4} | {'N':>4} | {'Legacy(s)':>10} | {'Current(s)':>10} | {'Speedup':>8} | {'L-Quality':>10} | {'C-Quality':>10}"
+        f"{'Dim':>4} | {'N':>4} | {'Legacy(s)':>10} | {'Current(s)':>10} | "
+        f"{'Speedup':>8} | {'L-Quality':>10} | {'C-Quality':>10}"
     )
     print("-" * 75)
 
@@ -52,7 +53,8 @@ def run_benchmark():
             results.append(row)
 
             print(
-                f"{d:4d} | {n:4d} | {time_legacy:10.4f} | {time_current:10.4f} | {speedup:7.2f}x | {quality_legacy:10.4f} | {quality_current:10.4f}"
+                f"{d:4d} | {n:4d} | {time_legacy:10.4f} | {time_current:10.4f} | "
+                f"{speedup:7.2f}x | {quality_legacy:10.4f} | {quality_current:10.4f}"
             )
 
     return results
@@ -76,7 +78,10 @@ def print_markdown(data):
     print(sep_line)
 
     for r in data:
-        line = f"| {r['Dim']} | {r['N']} | {r['Legacy_T']:.4f} | {r['Current_T']:.4f} | {r['Speedup']:.2f}x | {r['Legacy_Q']:.4f} | {r['Current_Q']:.4f} |"
+        line = (
+            f"| {r['Dim']} | {r['N']} | {r['Legacy_T']:.4f} | {r['Current_T']:.4f} | "
+            f"{r['Speedup']:.2f}x | {r['Legacy_Q']:.4f} | {r['Current_Q']:.4f} |"
+        )
         print(line)
 
     # 2. Aggregated Metrics

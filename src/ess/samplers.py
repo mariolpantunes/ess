@@ -1,6 +1,7 @@
 import abc
 import numpy as np
 
+
 class Sampler(abc.ABC):
     """Abstract Base Class for Samplers."""
 
@@ -18,7 +19,9 @@ class Sampler(abc.ABC):
             self.rng = np.random.default_rng(random_state)
 
     @abc.abstractmethod
-    def sample(self, n: int, dim: int, rng: np.random.Generator | None = None) -> np.ndarray:
+    def sample(
+        self, n: int, dim: int, rng: np.random.Generator | None = None
+    ) -> np.ndarray:
         """
         Generates n samples in a dim-dimensional unit hypercube [0, 1]^dim.
 
@@ -36,7 +39,9 @@ class Sampler(abc.ABC):
 class LHCSampler(Sampler):
     """Latin Hypercube Sampler (LHS) in pure NumPy."""
 
-    def sample(self, n: int, dim: int, rng: np.random.Generator | None = None) -> np.ndarray:
+    def sample(
+        self, n: int, dim: int, rng: np.random.Generator | None = None
+    ) -> np.ndarray:
         if n <= 0:
             return np.empty((0, dim), dtype=np.float32)
 
@@ -52,7 +57,9 @@ class LHCSampler(Sampler):
 class UniformSampler(Sampler):
     """Uniform Random Sampler in pure NumPy."""
 
-    def sample(self, n: int, dim: int, rng: np.random.Generator | None = None) -> np.ndarray:
+    def sample(
+        self, n: int, dim: int, rng: np.random.Generator | None = None
+    ) -> np.ndarray:
         if n <= 0:
             return np.empty((0, dim), dtype=np.float32)
 
@@ -62,7 +69,7 @@ class UniformSampler(Sampler):
 
 def check_sampler(
     sampler: Sampler | int | None,
-    default_random_state: int | np.random.Generator | None = None
+    default_random_state: int | np.random.Generator | None = None,
 ) -> Sampler:
     """
     Validates and returns a Sampler instance.
@@ -84,4 +91,6 @@ def check_sampler(
         return LHCSampler(random_state=int(sampler))
     if isinstance(sampler, Sampler):
         return sampler
-    raise TypeError(f"Invalid sampler type: {type(sampler)}. Must be None, int, or an instance of Sampler.")
+    raise TypeError(
+        f"Invalid sampler type: {type(sampler)}. Must be None, int, or an instance of Sampler."
+    )

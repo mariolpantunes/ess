@@ -176,7 +176,7 @@ class TestESS(unittest.TestCase):
     def test_knn_forces_with_invalid_indices(self):
         """Verify that _compute_knn_forces handles invalid neighbor indices (e.g. -1, out-of-bounds) gracefully."""
         from ess.ess import _compute_knn_forces, softened_inverse_force
-        
+
         # Mock NN engine that returns invalid/out-of-bounds indices
         class MockNN:
             def query_nn(self, k):
@@ -187,17 +187,20 @@ class TestESS(unittest.TestCase):
                 return indices, dists
 
         nn_instance = MockNN()
-        
+
         # 1 active point, 3 dimensions
         active_view = np.array([[0.5, 0.5, 0.5]], dtype=np.float32)
         # all_data contains 1 static point at index 0, and the active point at index 1
-        all_data = np.array([
-            [0.4, 0.5, 0.5], # static point (index 0)
-            [0.5, 0.5, 0.5], # active point (index 1)
-        ], dtype=np.float32)
-        
+        all_data = np.array(
+            [
+                [0.4, 0.5, 0.5],  # static point (index 0)
+                [0.5, 0.5, 0.5],  # active point (index 1)
+            ],
+            dtype=np.float32,
+        )
+
         rng = np.random.default_rng(42)
-        
+
         # Call _compute_knn_forces
         # batch_start_idx = 1, batch_end_idx = 2
         forces = _compute_knn_forces(
@@ -208,9 +211,9 @@ class TestESS(unittest.TestCase):
             metric_fn=softened_inverse_force,
             rng=rng,
             batch_start_idx=1,
-            batch_end_idx=2
+            batch_end_idx=2,
         )
-        
+
         # The forces should not raise an IndexError and should be calculated only from the valid neighbor at index 0.
         # Neighbor at -1 and 999 are invalid, so their force magnitude should be zeroed out.
         # Since active_view is [0.5, 0.5, 0.5] and static neighbor is [0.4, 0.5, 0.5],
@@ -221,19 +224,19 @@ class TestESS(unittest.TestCase):
         self.assertAlmostEqual(forces[0, 1], 0.0)
         self.assertAlmostEqual(forces[0, 2], 0.0)
 
-
     def test_samplers(self):
         """Test basic functionality of LHCSampler and UniformSampler."""
         from ess.samplers import LHCSampler, UniformSampler
+
         rng = np.random.default_rng(42)
-        
+
         # Test LHCSampler
         lhc = LHCSampler(random_state=42)
         pts_lhc = lhc.sample(10, 3)
         self.assertEqual(pts_lhc.shape, (10, 3))
         self.assertTrue(np.all(pts_lhc >= 0.0))
         self.assertTrue(np.all(pts_lhc <= 1.0))
-        
+
         # Test UniformSampler
         uni = UniformSampler(random_state=rng)
         pts_uni = uni.sample(10, 3)
@@ -244,18 +247,24 @@ class TestESS(unittest.TestCase):
     def test_ess_with_samplers(self):
         """Test running ESS with different samplers, both with and without initial samples."""
         from ess import LHCSampler, UniformSampler
-        
+
         # 1. With initial samples using LHCSampler (default)
-        res_lhc = ess.ess(self.samples, self.bounds, n=10, init_sampler=LHCSampler(), seed=42)
+        res_lhc = ess.ess(
+            self.samples, self.bounds, n=10, init_sampler=LHCSampler(), seed=42
+        )
         self.assertEqual(len(res_lhc), 11)
-        
+
         # 2. With initial samples using UniformSampler
-        res_uni = ess.ess(self.samples, self.bounds, n=10, init_sampler=UniformSampler(), seed=42)
+        res_uni = ess.ess(
+            self.samples, self.bounds, n=10, init_sampler=UniformSampler(), seed=42
+        )
         self.assertEqual(len(res_uni), 11)
-        
+
         # 3. From scratch (no initial samples) using LHCSampler
         empty_samples = np.empty((0, 2), dtype=np.float32)
-        res_scratch = ess.ess(empty_samples, self.bounds, n=15, init_sampler=LHCSampler(), seed=42)
+        res_scratch = ess.ess(
+            empty_samples, self.bounds, n=15, init_sampler=LHCSampler(), seed=42
+        )
         self.assertEqual(len(res_scratch), 15)
         self.assertTrue(np.all(res_scratch >= 0.0))
         self.assertTrue(np.all(res_scratch <= 1.0))

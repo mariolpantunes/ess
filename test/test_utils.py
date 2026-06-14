@@ -6,16 +6,16 @@ import numpy as np
 from ess import utils
 from ess.ess import _scale, _inv_scale, METRIC_REGISTRY
 
-class TestUtils(unittest.TestCase):
 
+class TestUtils(unittest.TestCase):
     def test_scaling_lifecycle(self):
         """Test scale -> inv_scale round trip."""
         original = np.array([[10.0, 20.0], [20.0, 40.0], [15.0, 30.0]])
         scaled, min_v, max_v = _scale(original)
-        
+
         self.assertTrue(np.all(scaled >= 0.0))
         self.assertTrue(np.all(scaled <= 1.0))
-        
+
         restored = _inv_scale(scaled, min_v, max_v)
         self.assertTrue(np.allclose(original, restored))
 
@@ -24,8 +24,8 @@ class TestUtils(unittest.TestCase):
         # Constant dimension
         data = np.array([[5, 5], [5, 10]])
         scaled, _, _ = _scale(data)
-        self.assertTrue(np.all(scaled[:, 0] == 0.0)) # Denom was 0 -> handled
-        
+        self.assertTrue(np.all(scaled[:, 0] == 0.0))  # Denom was 0 -> handled
+
         # Scalars passed as min/max
         arr = np.array([10, 20, 30])
         s, _, _ = _scale(arr, min_val=0, max_val=40)
@@ -34,12 +34,12 @@ class TestUtils(unittest.TestCase):
     def test_grid_coverage(self):
         """Test grid coverage logic."""
         bounds = np.array([[0, 10], [0, 10]])
-        points = np.array([[2, 2], [8, 8]]) # 2 points
-        
+        points = np.array([[2, 2], [8, 8]])  # 2 points
+
         # 2x2 Grid -> 4 cells. Points in different cells. Coverage 0.5.
         cov = utils.calculate_grid_coverage(points, bounds, grid=2)
         self.assertAlmostEqual(cov, 0.5)
-        
+
         # High Dim Sparse Test
         dim = 64
         pts_hd = np.random.rand(10, dim)
@@ -51,16 +51,16 @@ class TestUtils(unittest.TestCase):
     def test_metrics_maximin_clarkevans(self):
         """Test distribution metrics."""
         # Triangle (Regular)
-        points = np.array([[0,0], [1,0], [0.5, 0.866]])
+        points = np.array([[0, 0], [1, 0], [0.5, 0.866]])
         d = utils.calculate_min_pairwise_distance(points)
         self.assertAlmostEqual(d, 1.0, places=3)
-        
+
         # Clark Evans
         # Clustered
         clust = np.zeros((10, 2))
         ce_c = utils.calculate_clark_evans_index(clust)
         self.assertLess(ce_c, 1.0)
-        
+
         # Random/Uniform check (Statistical, loose bounds)
         uni = np.random.rand(100, 2) * 10
         ce_u = utils.calculate_clark_evans_index(uni)
@@ -69,22 +69,25 @@ class TestUtils(unittest.TestCase):
     def test_force_functions(self):
         """Verify force function behaviors."""
         d = np.array([0.0, 1.0, 100.0])
-        
+
         # 1. Gaussian: High at 0, Low at 100
-        f_gauss = METRIC_REGISTRY['gaussian'](d, sigma=1.0, alpha=1.0)
+        f_gauss = METRIC_REGISTRY["gaussian"](d, sigma=1.0, alpha=1.0)
         self.assertAlmostEqual(f_gauss[0], 0.0)
         self.assertLess(f_gauss[2], -100.0)
-        
-        # 2. Linear: High at 0, Zero > R
-        f_lin = METRIC_REGISTRY['linear'](d, R=1.0)
-        self.assertAlmostEqual(f_lin[0], 0.0)
-        self.assertTrue(np.isneginf(f_lin[1])) # At radius R=1, force is 0 (log(0) = -inf)
-        self.assertTrue(np.isneginf(f_lin[2]))
-        
-        # 3. Softened Inverse: Finite at 0, Decays slowly
-        f_inv = METRIC_REGISTRY['softened_inverse'](d, epsilon=0.1, alpha=1.0, dim=2)
-        self.assertLess(f_inv[0], 5.0) # log(10) ~ 2.3
-        self.assertTrue(np.isfinite(f_inv[2])) # Never negative infinity
 
-if __name__ == '__main__':
+        # 2. Linear: High at 0, Zero > R
+        f_lin = METRIC_REGISTRY["linear"](d, R=1.0)
+        self.assertAlmostEqual(f_lin[0], 0.0)
+        self.assertTrue(
+            np.isneginf(f_lin[1])
+        )  # At radius R=1, force is 0 (log(0) = -inf)
+        self.assertTrue(np.isneginf(f_lin[2]))
+
+        # 3. Softened Inverse: Finite at 0, Decays slowly
+        f_inv = METRIC_REGISTRY["softened_inverse"](d, epsilon=0.1, alpha=1.0, dim=2)
+        self.assertLess(f_inv[0], 5.0)  # log(10) ~ 2.3
+        self.assertTrue(np.isfinite(f_inv[2]))  # Never negative infinity
+
+
+if __name__ == "__main__":
     unittest.main()
