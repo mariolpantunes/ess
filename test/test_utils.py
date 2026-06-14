@@ -72,19 +72,19 @@ class TestUtils(unittest.TestCase):
         
         # 1. Gaussian: High at 0, Low at 100
         f_gauss = METRIC_REGISTRY['gaussian'](d, sigma=1.0, alpha=1.0)
-        self.assertAlmostEqual(f_gauss[0], 1.0)
-        self.assertLess(f_gauss[2], 1e-5)
+        self.assertAlmostEqual(f_gauss[0], 0.0)
+        self.assertLess(f_gauss[2], -100.0)
         
         # 2. Linear: High at 0, Zero > R
         f_lin = METRIC_REGISTRY['linear'](d, R=1.0)
-        self.assertAlmostEqual(f_lin[0], 1.0)
-        self.assertAlmostEqual(f_lin[1], 0.0) # At radius R=1, force is 0
-        self.assertEqual(f_lin[2], 0.0)
+        self.assertAlmostEqual(f_lin[0], 0.0)
+        self.assertTrue(np.isneginf(f_lin[1])) # At radius R=1, force is 0 (log(0) = -inf)
+        self.assertTrue(np.isneginf(f_lin[2]))
         
         # 3. Softened Inverse: Finite at 0, Decays slowly
-        f_inv = METRIC_REGISTRY['softened_inverse'](d, epsilon=0.1, alpha=1.0)
-        self.assertLess(f_inv[0], 101.0) # 1 / 0.01 = 100
-        self.assertGreater(f_inv[2], 0.0) # Never zero
+        f_inv = METRIC_REGISTRY['softened_inverse'](d, epsilon=0.1, alpha=1.0, dim=2)
+        self.assertLess(f_inv[0], 5.0) # log(10) ~ 2.3
+        self.assertTrue(np.isfinite(f_inv[2])) # Never negative infinity
 
 if __name__ == '__main__':
     unittest.main()
