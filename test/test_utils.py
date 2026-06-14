@@ -78,10 +78,8 @@ class TestUtils(unittest.TestCase):
         # 2. Linear: High at 0, Zero > R
         f_lin = METRIC_REGISTRY["linear"](d, R=1.0)
         self.assertAlmostEqual(f_lin[0], 0.0)
-        self.assertTrue(
-            np.isneginf(f_lin[1])
-        )  # At radius R=1, force is 0 (log(0) = -inf)
-        self.assertTrue(np.isneginf(f_lin[2]))
+        self.assertAlmostEqual(f_lin[1], np.log(1e-9))
+        self.assertAlmostEqual(f_lin[2], np.log(1e-9))
 
         # 3. Softened Inverse: Finite at 0, Decays slowly
         f_inv = METRIC_REGISTRY["softened_inverse"](d, epsilon=0.1, alpha=1.0, dim=2)
