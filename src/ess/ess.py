@@ -30,99 +30,78 @@ Above this value, the memory cost of the dense matrix becomes prohibitive.
 
 
 # --- Force Functions ---
-def gaussian_force(d: np.ndarray, sigma: float = 0.2, alpha: float = 2.0) -> np.ndarray:
-    """
-    Computes a Gaussian repulsion force based on distance.
+def gaussian_force(d: np.ndarray, sigma: float = 0.2, alpha: float = 2.0, **kwargs) -> np.ndarray:
+    r"""
+    Computes a Gaussian repulsion force in log-space based on distance.
 
-    This function models a short-range repulsive force that decays exponentially with distance,
-    resembling a Gaussian distribution. It is useful for creating "soft" exclusion zones
-    around particles. The force magnitude $F$ is calculated as:
-
-    $ F(d) = \\alpha \\cdot \\exp\\left(-\\frac{d^2}{2\\sigma^2}\\right) $
-
-    where $d$ is the distance, $\\sigma$ controls the width of the repulsion (standard deviation),
-    and $\\alpha$ is the peak magnitude at $d=0$.
+    The force magnitude $F$ is calculated as:
+    $ \log F(d) = \log \alpha - \frac{d^2}{2\sigma^2} $
 
     Args:
         d (np.ndarray): Array of pairwise distances between points.
-        sigma (float): The spread parameter $\\sigma$. Larger values increase the range of influence.
-        alpha (float): The maximum force magnitude $\\alpha$ (at zero distance).
+        sigma (float): The spread parameter $\sigma$.
+        alpha (float): The maximum force magnitude $\alpha$ (at zero distance).
 
     Returns:
-        np.ndarray: An array of force magnitudes corresponding to the input distances.
+        np.ndarray: An array of log-force magnitudes.
     """
-    s2 = 2 * (sigma * sigma)
-    return alpha * np.exp(-(d * d) / s2)
+    s2 = 2.0 * (sigma * sigma)
+    return np.log(alpha) - (d * d) / s2
 
 
 def softened_inverse_force(
-    d: np.ndarray, epsilon: float = 0.1, alpha: float = 0.1
+    d: np.ndarray, epsilon: float = 0.1, alpha: float = 0.1, dim: int = 2, **kwargs
 ) -> np.ndarray:
-    """
-    Computes a softened inverse-square repulsion force.
+    r"""
+    Computes a softened dimension-dependent inverse-power repulsion force in log-space.
 
-    This function mimics electrostatic or gravitational repulsion but introduces a softening
-    parameter $\\epsilon$ to prevent numerical singularities (division by zero) when particles
-    overlap ($d \\to 0$). The force decays algebraically rather than exponentially.
-
-    The magnitude is given by:
-
-    $ F(d) = \\frac{\\alpha}{d^2 + \\epsilon^2} $
-
-    This ensures that the maximum force is bounded at $\\alpha / \\epsilon^2$.
+    The force magnitude $F$ decays as $d^{-(D-1)}$ in high dimensions $D$ (minimum decay of $d^{-2}$):
+    $ \log F(d) = \log \alpha - \frac{\max(2, D - 1)}{2} \log(d^2 + \epsilon^2) $
 
     Args:
         d (np.ndarray): Array of distances.
-        epsilon (float): Softening parameter $\\epsilon$. Prevents infinite forces at $d=0$.
-        alpha (float): Magnitude scaling factor $\\alpha$.
+        epsilon (float): Softening parameter $\epsilon$. Prevents infinite forces at $d=0$.
+        alpha (float): Magnitude scaling factor $\alpha$.
+        dim (int): The dimension of the space $D$.
 
     Returns:
-        np.ndarray: An array of force magnitudes.
+        np.ndarray: An array of log-force magnitudes.
     """
-    return alpha * (1.0 / ((d * d) + (epsilon * epsilon)))
+    power = max(2, dim - 1)
+    return np.log(alpha) - 0.5 * power * np.log((d * d) + (epsilon * epsilon))
 
 
-def linear_force(d: np.ndarray, R: float = 0.5) -> np.ndarray:
-    """
-    Computes a linear repulsive force that falls to zero at a specific radius.
-
-    This force models a simple linear spring compression. It provides a constant stiffness
-    repulsion within a defined radius $R$ and is zero elsewhere. This creates a clear
-    "cutoff" for interactions.
+def linear_force(d: np.ndarray, R: float = 0.5, **kwargs) -> np.ndarray:
+    r"""
+    Computes a linear repulsive force in log-space.
 
     The formula is:
-
-    $ F(d) = \\max\\left(0, 1 - \\frac{d}{R}\\right) $
+    $ \log F(d) = \log \max(0, 1 - d/R) $
 
     Args:
         d (np.ndarray): Array of distances.
-        R (float): The cutoff radius $R$. Forces are zero for $d \\ge R$.
+        R (float): The cutoff radius $R$.
 
     Returns:
-        np.ndarray: An array of normalized force magnitudes in $[0, 1]$.
+        np.ndarray: An array of log-force magnitudes (contains -inf where $d \ge R$).
     """
-    return np.maximum(0.0, 1.0 - (d / R))
+    return np.log(np.maximum(0.0, 1.0 - (d / R)))
 
 
-def cauchy_force(d: np.ndarray) -> np.ndarray:
-    """
-    Computes a long-tailed repulsion based on the Cauchy distribution.
-
-    This function provides a heavy-tailed force distribution, which can be useful for
-    maintaining global separation between points as the force does not decay as rapidly
-    as a Gaussian.
+def cauchy_force(d: np.ndarray, **kwargs) -> np.ndarray:
+    r"""
+    Computes a long-tailed Cauchy repulsion force in log-space.
 
     The magnitude is defined as:
-
-    $ F(d) = \\frac{1}{1 + d^2} $
+    $ \log F(d) = -\log(1 + d^2) $
 
     Args:
         d (np.ndarray): Array of distances.
 
     Returns:
-        np.ndarray: An array of force magnitudes.
+        np.ndarray: An array of log-force magnitudes.
     """
-    return 1.0 / (1.0 + (d * d))
+    return -np.log(1.0 + (d * d))
 
 
 METRIC_REGISTRY = {
@@ -424,9 +403,24 @@ def _compute_radius_forces(
     particles_stacking = np.any(is_stacked_interaction, axis=1)
 
     # --- 3. FORCE CALCULATION ---
-    forces_mag = metric_fn(all_dists, **metric_kwargs) * valid_mask
+    # Retrieve dimension D
+    dim = active_view.shape[1]
+
+    # Calculate log-force magnitude
+    log_forces_mag = metric_fn(all_dists, dim=dim, **metric_kwargs)
+
+    # Apply valid mask (setting invalid ones to -inf so they don't affect max)
+    log_forces_mag = np.where(valid_mask, log_forces_mag, -np.inf)
+
+    # Find local max log-force for each particle
+    M_i = np.max(log_forces_mag, axis=1, keepdims=True)
+    M_i = np.where(M_i == -np.inf, 0.0, M_i)
+
+    # Exponentiate with subtraction to prevent overflow
+    safe_exp_forces = np.exp(log_forces_mag - M_i) * valid_mask
+
     safe_dists = np.maximum(all_dists, epsilon)
-    coeffs = forces_mag / safe_dists
+    coeffs = safe_exp_forces / safe_dists
 
     n_valid = all_dists.shape[1]
     valid_data = all_data[:n_valid]
@@ -435,7 +429,12 @@ def _compute_radius_forces(
     term1 = active_view * sum_coeffs
     term2 = np.dot(coeffs, valid_data)
 
-    forces = term1 - term2
+    dir_forces = term1 - term2
+
+    # Restore scale with cap
+    force_cap = 1000.0
+    restored_scales = np.exp(np.minimum(M_i, np.log(force_cap)))
+    forces = restored_scales * dir_forces
 
     if np.any(particles_stacking):
         # Generate noise for the shape of forces
@@ -520,17 +519,32 @@ def _compute_knn_forces(
         norms = np.where(is_stacked, 1.0, norms)
 
     # --- 3. FORCE CALCULATION ---
-    forces_mag = metric_fn(dists, **metric_kwargs)
+    # Retrieve dimension D
+    dim = active_view.shape[1]
 
-    # Explicitly zero out self-force magnitude and invalid indices
-    forces_mag[is_self] = 0.0
-    forces_mag[~valid_indices] = 0.0
+    # Calculate log-force magnitude
+    log_forces_mag = metric_fn(dists, dim=dim, **metric_kwargs)
+
+    # Apply valid mask (setting self and invalid ones to -inf so they don't affect max)
+    log_forces_mag = np.where(is_self | ~valid_indices, -np.inf, log_forces_mag)
+
+    # Find local max log-force for each particle
+    M_i = np.max(log_forces_mag, axis=1, keepdims=True)
+    M_i = np.where(M_i == -np.inf, 0.0, M_i)
+
+    # Exponentiate with subtraction to prevent overflow
+    safe_exp_forces = np.exp(log_forces_mag - M_i)
+    safe_exp_forces[is_self | ~valid_indices] = 0.0
 
     # Safe Norm division
     safe_norms = np.maximum(norms, 1e-9)
-    force_vectors = (disp_vecs / safe_norms) * forces_mag[:, :, None]
+    force_vectors = (disp_vecs / safe_norms) * safe_exp_forces[:, :, None]
+    dir_forces = np.sum(force_vectors, axis=1)
 
-    return np.sum(force_vectors, axis=1)
+    # Restore scale with cap
+    force_cap = 1000.0
+    restored_scales = np.exp(np.minimum(M_i, np.log(force_cap)))
+    return restored_scales * dir_forces
 
 
 # --- Core Logic ---
