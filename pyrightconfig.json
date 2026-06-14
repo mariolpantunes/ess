@@ -1,0 +1,16 @@
+{
+  "include": [
+    "src",
+    "test",
+    "examples"
+  ],
+  "venvPath": ".",
+  "venv": "venv",
+  "reportImportCycles": "none",
+  "reportMissingTypeArgument": "none",
+  "reportConstantRedefinition": "none",
+  "reportUninitializedInstanceVariable": "none",
+  "reportCallIssue": "none",
+  "reportArgumentType": "none",
+  "reportGeneralTypeIssues": "none"
+}

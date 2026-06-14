@@ -73,22 +73,24 @@ def softened_inverse_force(
     return np.log(alpha) - 0.5 * power * np.log((d * d) + (epsilon * epsilon))
 
 
-def linear_force(d: np.ndarray, R: float = 0.5, **kwargs) -> np.ndarray:
+def linear_force(
+    d: np.ndarray, R: float = 0.5, eps: float = 1e-9, **kwargs
+) -> np.ndarray:
     r"""
     Computes a linear repulsive force in log-space.
 
     The formula is:
-    $ \log F(d) = \log \max(0, 1 - d/R) $
+    $ \log F(d) = \log \max(\epsilon, 1 - d/R) $
 
     Args:
         d (np.ndarray): Array of distances.
         R (float): The cutoff radius $R$.
+        eps (float): Small epsilon value to avoid log(0).
 
     Returns:
-        np.ndarray: An array of log-force magnitudes (contains -inf where $d \ge R$).
+        np.ndarray: An array of log-force magnitudes.
     """
-    with np.errstate(divide="ignore"):
-        return np.log(np.maximum(0.0, 1.0 - (d / R)))
+    return np.log(np.maximum(eps, 1.0 - (d / R)))
 
 
 def cauchy_force(d: np.ndarray, dim: int = 2, **kwargs) -> np.ndarray:
