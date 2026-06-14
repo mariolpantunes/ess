@@ -178,3 +178,6 @@ plans/
 
 # Agent hints
 .goosehints
+
+# Generated documentation
+docs/
