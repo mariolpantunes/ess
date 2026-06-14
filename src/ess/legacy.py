@@ -2,7 +2,7 @@ import logging
 
 import numpy as np
 
-import ess.nn as nn
+from . import nn
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)

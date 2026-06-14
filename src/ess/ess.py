@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-import ess.nn as nn
+from . import nn, samplers
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -204,26 +204,28 @@ def _smart_init(
     nn_instance: nn.NearestNeighbors,
     n_new: int,
     rng: np.random.Generator,
+    init_sampler: samplers.Sampler,
 ) -> np.ndarray:
-    """
+    r"""
     Initializes new points using a vectorized Best Candidate Sampling strategy.
 
     Instead of placing points purely randomly, this method generates a pool of candidate
-    positions for each required new point and selects the one that is furthest from
-    the existing set of static points.
+    positions for each required new point using the provided space-filling sampler (e.g. LHS)
+    and selects the one that is furthest from the existing set of static points.
 
     **Algorithm:**
-    1. For $N$ requested points, generate $N \\times k$ uniform candidates (where $k=15$).
+    1. For $N$ requested points, generate $N \times k$ candidates using init_sampler (where $k=15$).
     2. Compute the distance $d_i$ from every candidate to its nearest static neighbor.
     3. For each of the $N$ slots, select the candidate $c^*$ such that:
-        $ c^* = \\arg\\max_{c \\in \\text{candidates}} (\\min_{p \\in \\text{static}} ||c - p||) $
-    4. Apply a small jitter $\\xi \\sim U(-10^{-3}, 10^{-3})$ to avoid perfect overlaps.
+        $ c^* = \arg\max_{c \in \text{candidates}} (\min_{p \in \text{static}} ||c - p||) $
+    4. Apply a small jitter $\xi \sim U(-10^{-3}, 10^{-3})$ to avoid perfect overlaps.
 
     Args:
         bounds_01 (np.ndarray): Normalized boundaries $[0, 1]$.
         nn_instance (nn.NearestNeighbors): The index containing static points.
         n_new (int): Number of points to initialize.
         rng (np.random.Generator): Random number generator.
+        init_sampler (samplers.Sampler): Sampler used to generate candidate positions.
 
     Returns:
         np.ndarray: Initial positions for the new points.
@@ -231,12 +233,10 @@ def _smart_init(
     dim = bounds_01.shape[0]
     n_candidates = 15
 
-    # 1. Generate ALL candidates at once
+    # 1. Generate ALL candidates at once using the provided space-filling sampler
     # Shape: (n_new * n_candidates, D)
     total_candidates = n_new * n_candidates
-    candidates = rng.uniform(
-        bounds_01[:, 0], bounds_01[:, 1], (total_candidates, dim)
-    ).astype(np.float32)
+    candidates = init_sampler.sample(total_candidates, dim, rng).astype(np.float32)
 
     # 2. Query NN once for all candidates
     # We only care about distance to the nearest STATIC point
@@ -492,23 +492,22 @@ def _compute_knn_forces(
     """
     indices, dists = nn_instance.query_nn(k=k_value)
 
-    if np.max(indices) >= batch_end_idx:
-        indices = np.clip(indices, 0, batch_end_idx - 1)
-
-    # --- 1. INDEX-BASED SELF MASKING ---
-    # We check: indices[i, j] == (batch_start_idx + i)
+    # Find valid and self indices using original indices
+    valid_indices = (indices >= 0) & (indices < batch_end_idx)
     global_idxs = np.arange(active_view.shape[0]) + batch_start_idx
-
-    # Broadcast comparison: (M, K) vs (M, 1)
     is_self = indices == global_idxs[:, None]
 
-    neighbor_coords = all_data[indices]
+    # Clip indices to a safe range only for indexing without crash
+    safe_indices = np.clip(indices, 0, batch_end_idx - 1)
+
+    # --- 1. INDEX-BASED SELF MASKING ---
+    neighbor_coords = all_data[safe_indices]
     disp_vecs = active_view[:, np.newaxis, :] - neighbor_coords
     norms = np.linalg.norm(disp_vecs, axis=2, keepdims=True)
 
     # --- 2. COLLISION DETECTION ---
-    # Any distance < epsilon that is NOT self is a collision (stacking)
-    is_stacked = (norms < 1e-9) & (~is_self[:, :, None])
+    # Any distance < epsilon that is NOT self and is valid is a collision (stacking)
+    is_stacked = (norms < 1e-9) & (~is_self[:, :, None]) & valid_indices[:, :, None]
 
     # Replace zero vectors with random unit vectors
     if np.any(is_stacked):
@@ -523,8 +522,9 @@ def _compute_knn_forces(
     # --- 3. FORCE CALCULATION ---
     forces_mag = metric_fn(dists, **metric_kwargs)
 
-    # Explicitly zero out self-force magnitude
+    # Explicitly zero out self-force magnitude and invalid indices
     forces_mag[is_self] = 0.0
+    forces_mag[~valid_indices] = 0.0
 
     # Safe Norm division
     safe_norms = np.maximum(norms, 1e-9)
@@ -551,6 +551,7 @@ def _esa(
     metric_fn: collections.abc.Callable = softened_inverse_force,
     border_strategy: str = "clip",
     seed: int | np.random.Generator | None = None,
+    init_sampler: samplers.Sampler | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
     """
@@ -608,6 +609,8 @@ def _esa(
     else:
         rng = np.random.default_rng(seed)
 
+    resolved_sampler = samplers.check_sampler(init_sampler, default_random_state=rng)
+
     all_data = np.empty((total_points, dim), dtype=np.float32)
     all_data[: samples.shape[0]] = scaled_samples.astype(np.float32)
     cursor = samples.shape[0]
@@ -640,7 +643,12 @@ def _esa(
         batch_end = cursor + current_n
 
         # A. Smart Initialization
-        active_batch_init = _smart_init(bounds_01, nn_instance, current_n, rng)
+        if samples.shape[0] == 0 and batch_start == 0:
+            # First batch of a run starting from scratch: use LHS directly
+            active_batch_init = resolved_sampler.sample(current_n, dim, rng)
+        else:
+            # Subsequent batches or when initial samples exist: use Smart Init with LHS candidate generation
+            active_batch_init = _smart_init(bounds_01, nn_instance, current_n, rng, resolved_sampler)
         all_data[batch_start:batch_end] = active_batch_init
 
         # Create a VIEW of the master buffer for optimization
@@ -737,6 +745,7 @@ def esa(
     metric: str | collections.abc.Callable = "softened_inverse",
     border_strategy: str = "clip",
     seed: int | np.random.Generator | None = None,
+    init_sampler: samplers.Sampler | int | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
     """
@@ -840,6 +849,7 @@ def esa(
         border_strategy=border_strategy,
         tol=tol,
         seed=seed,
+        init_sampler=init_sampler,
         **metric_kwargs,
     )
 
@@ -861,6 +871,7 @@ def ess(
     metric: str | collections.abc.Callable = "softened_inverse",
     border_strategy: str = "clip",
     seed: int | np.random.Generator | None = None,
+    init_sampler: samplers.Sampler | int | None = None,
     **kwargs,
 ) -> np.ndarray:
     """
@@ -916,6 +927,7 @@ def ess(
         tol=tol,
         metric=metric,
         seed=seed,
+        init_sampler=init_sampler,
         **kwargs,
     )
 

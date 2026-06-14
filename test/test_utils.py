@@ -1,10 +1,5 @@
 # coding: utf-8
 
-__author__ = 'Mário Antunes'
-__version__ = '0.2'
-__email__ = 'mario.antunes@ua.pt'
-__status__ = 'Development'
-__license__ = 'MIT'
 
 import unittest
 import numpy as np
