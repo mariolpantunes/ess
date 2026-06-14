@@ -62,6 +62,7 @@
                     <li><a href="ess/nn.html">nn</a></li>
                     <li><a href="ess/utils.html">utils</a></li>
                     <li><a href="ess/legacy.html">legacy</a></li>
+                    <li><a href="ess/samplers.html">samplers</a></li>
             </ul>
 
             <h2>API Documentation</h2>
@@ -155,6 +156,42 @@
                         </li>
                 </ul>
 
+            </li>
+            <li>
+                    <a class="class" href="#Sampler">Sampler</a>
+                            <ul class="memberlist">
+                        <li>
+                                <a class="function" href="#Sampler.__init__">Sampler</a>
+                        </li>
+                        <li>
+                                <a class="variable" href="#Sampler.random_state">random_state</a>
+                        </li>
+                        <li>
+                                <a class="function" href="#Sampler.sample">sample</a>
+                        </li>
+                </ul>
+
+            </li>
+            <li>
+                    <a class="class" href="#LHCSampler">LHCSampler</a>
+                            <ul class="memberlist">
+                        <li>
+                                <a class="function" href="#LHCSampler.sample">sample</a>
+                        </li>
+                </ul>
+
+            </li>
+            <li>
+                    <a class="class" href="#UniformSampler">UniformSampler</a>
+                            <ul class="memberlist">
+                        <li>
+                                <a class="function" href="#UniformSampler.sample">sample</a>
+                        </li>
+                </ul>
+
+            </li>
+            <li>
+                    <a class="function" href="#check_sampler">check_sampler</a>
             </li>
     </ul>
 
@@ -256,7 +293,7 @@ forces efficiently across different scales:</p>
 </span><span id="L-34"><a href="#L-34"><span class="linenos">34</span></a><span class="sd">&quot;&quot;&quot;</span>
 </span><span id="L-35"><a href="#L-35"><span class="linenos">35</span></a>
 </span><span id="L-36"><a href="#L-36"><span class="linenos">36</span></a><span class="c1"># 1. Internal Module Imports</span>
-</span><span id="L-37"><a href="#L-37"><span class="linenos">37</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">legacy</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">utils</span>
+</span><span id="L-37"><a href="#L-37"><span class="linenos">37</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.</span><span class="w"> </span><span class="kn">import</span> <span class="n">legacy</span><span class="p">,</span> <span class="n">nn</span><span class="p">,</span> <span class="n">utils</span><span class="p">,</span> <span class="n">samplers</span>
 </span><span id="L-38"><a href="#L-38"><span class="linenos">38</span></a>
 </span><span id="L-39"><a href="#L-39"><span class="linenos">39</span></a><span class="c1"># 2. Main API Exports</span>
 </span><span id="L-40"><a href="#L-40"><span class="linenos">40</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.ess</span><span class="w"> </span><span class="kn">import</span> <span class="n">esa</span><span class="p">,</span> <span class="n">ess</span>
@@ -264,18 +301,26 @@ forces efficiently across different scales:</p>
 </span><span id="L-42"><a href="#L-42"><span class="linenos">42</span></a><span class="c1"># 3. NN Engine Exports</span>
 </span><span id="L-43"><a href="#L-43"><span class="linenos">43</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.nn</span><span class="w"> </span><span class="kn">import</span> <span class="n">FaissFlatL2NN</span><span class="p">,</span> <span class="n">FaissHNSWFlatNN</span><span class="p">,</span> <span class="n">NearestNeighbors</span><span class="p">,</span> <span class="n">NumpyNN</span>
 </span><span id="L-44"><a href="#L-44"><span class="linenos">44</span></a>
-</span><span id="L-45"><a href="#L-45"><span class="linenos">45</span></a><span class="c1"># Define __all__ to control what &#39;from ess import *&#39; exports</span>
-</span><span id="L-46"><a href="#L-46"><span class="linenos">46</span></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
-</span><span id="L-47"><a href="#L-47"><span class="linenos">47</span></a>    <span class="s2">&quot;esa&quot;</span><span class="p">,</span>
-</span><span id="L-48"><a href="#L-48"><span class="linenos">48</span></a>    <span class="s2">&quot;ess&quot;</span><span class="p">,</span>
-</span><span id="L-49"><a href="#L-49"><span class="linenos">49</span></a>    <span class="s2">&quot;NearestNeighbors&quot;</span><span class="p">,</span>
-</span><span id="L-50"><a href="#L-50"><span class="linenos">50</span></a>    <span class="s2">&quot;NumpyNN&quot;</span><span class="p">,</span>
-</span><span id="L-51"><a href="#L-51"><span class="linenos">51</span></a>    <span class="s2">&quot;FaissFlatL2NN&quot;</span><span class="p">,</span>
-</span><span id="L-52"><a href="#L-52"><span class="linenos">52</span></a>    <span class="s2">&quot;FaissHNSWFlatNN&quot;</span><span class="p">,</span>
-</span><span id="L-53"><a href="#L-53"><span class="linenos">53</span></a>    <span class="s2">&quot;nn&quot;</span><span class="p">,</span>
-</span><span id="L-54"><a href="#L-54"><span class="linenos">54</span></a>    <span class="s2">&quot;utils&quot;</span><span class="p">,</span>
-</span><span id="L-55"><a href="#L-55"><span class="linenos">55</span></a>    <span class="s2">&quot;legacy&quot;</span><span class="p">,</span>
-</span><span id="L-56"><a href="#L-56"><span class="linenos">56</span></a><span class="p">]</span>
+</span><span id="L-45"><a href="#L-45"><span class="linenos">45</span></a><span class="c1"># 4. Sampler Exports</span>
+</span><span id="L-46"><a href="#L-46"><span class="linenos">46</span></a><span class="kn">from</span><span class="w"> </span><span class="nn">.samplers</span><span class="w"> </span><span class="kn">import</span> <span class="n">LHCSampler</span><span class="p">,</span> <span class="n">Sampler</span><span class="p">,</span> <span class="n">UniformSampler</span><span class="p">,</span> <span class="n">check_sampler</span>
+</span><span id="L-47"><a href="#L-47"><span class="linenos">47</span></a>
+</span><span id="L-48"><a href="#L-48"><span class="linenos">48</span></a><span class="c1"># Define __all__ to control what &#39;from ess import *&#39; exports</span>
+</span><span id="L-49"><a href="#L-49"><span class="linenos">49</span></a><span class="n">__all__</span> <span class="o">=</span> <span class="p">[</span>
+</span><span id="L-50"><a href="#L-50"><span class="linenos">50</span></a>    <span class="s2">&quot;esa&quot;</span><span class="p">,</span>
+</span><span id="L-51"><a href="#L-51"><span class="linenos">51</span></a>    <span class="s2">&quot;ess&quot;</span><span class="p">,</span>
+</span><span id="L-52"><a href="#L-52"><span class="linenos">52</span></a>    <span class="s2">&quot;NearestNeighbors&quot;</span><span class="p">,</span>
+</span><span id="L-53"><a href="#L-53"><span class="linenos">53</span></a>    <span class="s2">&quot;NumpyNN&quot;</span><span class="p">,</span>
+</span><span id="L-54"><a href="#L-54"><span class="linenos">54</span></a>    <span class="s2">&quot;FaissFlatL2NN&quot;</span><span class="p">,</span>
+</span><span id="L-55"><a href="#L-55"><span class="linenos">55</span></a>    <span class="s2">&quot;FaissHNSWFlatNN&quot;</span><span class="p">,</span>
+</span><span id="L-56"><a href="#L-56"><span class="linenos">56</span></a>    <span class="s2">&quot;Sampler&quot;</span><span class="p">,</span>
+</span><span id="L-57"><a href="#L-57"><span class="linenos">57</span></a>    <span class="s2">&quot;LHCSampler&quot;</span><span class="p">,</span>
+</span><span id="L-58"><a href="#L-58"><span class="linenos">58</span></a>    <span class="s2">&quot;UniformSampler&quot;</span><span class="p">,</span>
+</span><span id="L-59"><a href="#L-59"><span class="linenos">59</span></a>    <span class="s2">&quot;check_sampler&quot;</span><span class="p">,</span>
+</span><span id="L-60"><a href="#L-60"><span class="linenos">60</span></a>    <span class="s2">&quot;nn&quot;</span><span class="p">,</span>
+</span><span id="L-61"><a href="#L-61"><span class="linenos">61</span></a>    <span class="s2">&quot;utils&quot;</span><span class="p">,</span>
+</span><span id="L-62"><a href="#L-62"><span class="linenos">62</span></a>    <span class="s2">&quot;legacy&quot;</span><span class="p">,</span>
+</span><span id="L-63"><a href="#L-63"><span class="linenos">63</span></a>    <span class="s2">&quot;samplers&quot;</span><span class="p">,</span>
+</span><span id="L-64"><a href="#L-64"><span class="linenos">64</span></a><span class="p">]</span>
 </span></pre></div>
 
 
@@ -285,134 +330,136 @@ forces efficiently across different scales:</p>
 <div class="attr function">
             
         <span class="def">def</span>
-        <span class="name">esa</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">samples</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>,</span><span class="param">	<span class="n">bounds</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>,</span><span class="param">	<span class="o">*</span>,</span><span class="param">	<span class="n">n</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">nn_instance</span><span class="p">:</span> <span class="n"><a href="#NearestNeighbors">NearestNeighbors</a></span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">epochs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1024</span>,</span><span class="param">	<span class="n">lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span>,</span><span class="param">	<span class="n">search_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;k_nn&#39;</span>,</span><span class="param">	<span class="n">decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.9</span>,</span><span class="param">	<span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span>,</span><span class="param">	<span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">radius</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.001</span>,</span><span class="param">	<span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s1">&#39;softened_inverse&#39;</span>,</span><span class="param">	<span class="n">border_strategy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;clip&#39;</span>,</span><span class="param">	<span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">numpy</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">_generator</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="o">**</span><span class="n">metric_kwargs</span></span><span class="return-annotation">) -> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>:</span></span>
+        <span class="name">esa</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">samples</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>,</span><span class="param">	<span class="n">bounds</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>,</span><span class="param">	<span class="o">*</span>,</span><span class="param">	<span class="n">n</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">nn_instance</span><span class="p">:</span> <span class="n"><a href="#NearestNeighbors">NearestNeighbors</a></span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">epochs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1024</span>,</span><span class="param">	<span class="n">lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span>,</span><span class="param">	<span class="n">search_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;k_nn&#39;</span>,</span><span class="param">	<span class="n">decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.9</span>,</span><span class="param">	<span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span>,</span><span class="param">	<span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">radius</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.001</span>,</span><span class="param">	<span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s1">&#39;softened_inverse&#39;</span>,</span><span class="param">	<span class="n">border_strategy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;clip&#39;</span>,</span><span class="param">	<span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">numpy</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">_generator</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">init_sampler</span><span class="p">:</span> <span class="n"><a href="#Sampler">Sampler</a></span> <span class="o">|</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="o">**</span><span class="n">metric_kwargs</span></span><span class="return-annotation">) -> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>:</span></span>
 
                 <label class="view-source-button" for="esa-view-source"><span>View Source</span></label>
 
     </div>
     <a class="headerlink" href="#esa"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="esa-724"><a href="#esa-724"><span class="linenos">724</span></a><span class="k">def</span><span class="w"> </span><span class="nf">esa</span><span class="p">(</span>
-</span><span id="esa-725"><a href="#esa-725"><span class="linenos">725</span></a>    <span class="n">samples</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-</span><span id="esa-726"><a href="#esa-726"><span class="linenos">726</span></a>    <span class="n">bounds</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-</span><span id="esa-727"><a href="#esa-727"><span class="linenos">727</span></a>    <span class="o">*</span><span class="p">,</span>
-</span><span id="esa-728"><a href="#esa-728"><span class="linenos">728</span></a>    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-</span><span id="esa-729"><a href="#esa-729"><span class="linenos">729</span></a>    <span class="n">nn_instance</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">NearestNeighbors</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="esa-730"><a href="#esa-730"><span class="linenos">730</span></a>    <span class="n">epochs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1024</span><span class="p">,</span>
-</span><span id="esa-731"><a href="#esa-731"><span class="linenos">731</span></a>    <span class="n">lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
-</span><span id="esa-732"><a href="#esa-732"><span class="linenos">732</span></a>    <span class="n">search_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;k_nn&quot;</span><span class="p">,</span>
-</span><span id="esa-733"><a href="#esa-733"><span class="linenos">733</span></a>    <span class="n">decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.9</span><span class="p">,</span>
-</span><span id="esa-734"><a href="#esa-734"><span class="linenos">734</span></a>    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
-</span><span id="esa-735"><a href="#esa-735"><span class="linenos">735</span></a>    <span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="esa-736"><a href="#esa-736"><span class="linenos">736</span></a>    <span class="n">radius</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="esa-737"><a href="#esa-737"><span class="linenos">737</span></a>    <span class="n">tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-3</span><span class="p">,</span>
-</span><span id="esa-738"><a href="#esa-738"><span class="linenos">738</span></a>    <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">collections</span><span class="o">.</span><span class="n">abc</span><span class="o">.</span><span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;softened_inverse&quot;</span><span class="p">,</span>
-</span><span id="esa-739"><a href="#esa-739"><span class="linenos">739</span></a>    <span class="n">border_strategy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;clip&quot;</span><span class="p">,</span>
-</span><span id="esa-740"><a href="#esa-740"><span class="linenos">740</span></a>    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="esa-741"><a href="#esa-741"><span class="linenos">741</span></a>    <span class="o">**</span><span class="n">metric_kwargs</span><span class="p">,</span>
-</span><span id="esa-742"><a href="#esa-742"><span class="linenos">742</span></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-</span><span id="esa-743"><a href="#esa-743"><span class="linenos">743</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="esa-744"><a href="#esa-744"><span class="linenos">744</span></a><span class="sd">    Wrapper for the Empty Space Algorithm (ESA) that returns only generated points.</span>
-</span><span id="esa-745"><a href="#esa-745"><span class="linenos">745</span></a>
-</span><span id="esa-746"><a href="#esa-746"><span class="linenos">746</span></a><span class="sd">    This acts as the public API for the algorithm. It handles infrastructure setup</span>
-</span><span id="esa-747"><a href="#esa-747"><span class="linenos">747</span></a><span class="sd">    that the internal loop `_esa` requires, specifically:</span>
-</span><span id="esa-748"><a href="#esa-748"><span class="linenos">748</span></a><span class="sd">    1. **Heuristic Calculation:** Auto-computes interaction radius if not provided.</span>
-</span><span id="esa-749"><a href="#esa-749"><span class="linenos">749</span></a><span class="sd">    2. **Metric Scaling:** Scales force parameters (like $\\sigma$) relative to the radius.</span>
-</span><span id="esa-750"><a href="#esa-750"><span class="linenos">750</span></a><span class="sd">    3. **Engine Selection:** Automatically chooses between a Dense Numpy engine (small $N$)</span>
-</span><span id="esa-751"><a href="#esa-751"><span class="linenos">751</span></a><span class="sd">        and an Approximate Nearest Neighbor (HNSW) engine (large $N$) for performance.</span>
-</span><span id="esa-752"><a href="#esa-752"><span class="linenos">752</span></a>
-</span><span id="esa-753"><a href="#esa-753"><span class="linenos">753</span></a><span class="sd">    Args:</span>
-</span><span id="esa-754"><a href="#esa-754"><span class="linenos">754</span></a><span class="sd">        samples (np.ndarray): Existing points to avoid.</span>
-</span><span id="esa-755"><a href="#esa-755"><span class="linenos">755</span></a><span class="sd">        bounds (np.ndarray): Bounding box constraints.</span>
-</span><span id="esa-756"><a href="#esa-756"><span class="linenos">756</span></a><span class="sd">        n (int): Number of new points to create.</span>
-</span><span id="esa-757"><a href="#esa-757"><span class="linenos">757</span></a><span class="sd">        nn_instance (nn.NearestNeighbors | None): Optional custom NN engine.</span>
-</span><span id="esa-758"><a href="#esa-758"><span class="linenos">758</span></a><span class="sd">        epochs (int): Max iterations.</span>
-</span><span id="esa-759"><a href="#esa-759"><span class="linenos">759</span></a><span class="sd">        lr (float): Initial learning rate.</span>
-</span><span id="esa-760"><a href="#esa-760"><span class="linenos">760</span></a><span class="sd">        search_mode (str): &#39;k_nn&#39; (adaptive) or &#39;radius&#39; (fixed range).</span>
-</span><span id="esa-761"><a href="#esa-761"><span class="linenos">761</span></a><span class="sd">        decay (float): LR decay per epoch.</span>
-</span><span id="esa-762"><a href="#esa-762"><span class="linenos">762</span></a><span class="sd">        batch_size (int): Optimization batch size.</span>
-</span><span id="esa-763"><a href="#esa-763"><span class="linenos">763</span></a><span class="sd">        k (int | None): Neighbors to use (if mode is &#39;k_nn&#39;).</span>
-</span><span id="esa-764"><a href="#esa-764"><span class="linenos">764</span></a><span class="sd">        radius (float | None): Force radius (if mode is &#39;radius&#39;).</span>
-</span><span id="esa-765"><a href="#esa-765"><span class="linenos">765</span></a><span class="sd">        tol (float): Early stopping tolerance.</span>
-</span><span id="esa-766"><a href="#esa-766"><span class="linenos">766</span></a><span class="sd">        metric (str | Callable): Name of force function or callable object.</span>
-</span><span id="esa-767"><a href="#esa-767"><span class="linenos">767</span></a><span class="sd">        border_strategy (str): &#39;clip&#39; (hard stop) or &#39;repulsive&#39; (soft walls).</span>
-</span><span id="esa-768"><a href="#esa-768"><span class="linenos">768</span></a><span class="sd">        seed (int | np.random.Generator | None): Random seed or Generator instance.</span>
-</span><span id="esa-769"><a href="#esa-769"><span class="linenos">769</span></a><span class="sd">            If None, a new Generator is created with entropy.</span>
-</span><span id="esa-770"><a href="#esa-770"><span class="linenos">770</span></a><span class="sd">            If int, it seeds a new Generator.</span>
-</span><span id="esa-771"><a href="#esa-771"><span class="linenos">771</span></a><span class="sd">            If np.random.Generator, it is used directly.</span>
-</span><span id="esa-772"><a href="#esa-772"><span class="linenos">772</span></a><span class="sd">        **metric_kwargs: Arguments for the metric function.</span>
-</span><span id="esa-773"><a href="#esa-773"><span class="linenos">773</span></a>
-</span><span id="esa-774"><a href="#esa-774"><span class="linenos">774</span></a><span class="sd">    Returns:</span>
-</span><span id="esa-775"><a href="#esa-775"><span class="linenos">775</span></a><span class="sd">        np.ndarray: An array of size $(n, D)$ containing only the newly generated points.</span>
-</span><span id="esa-776"><a href="#esa-776"><span class="linenos">776</span></a><span class="sd">    &quot;&quot;&quot;</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="esa-755"><a href="#esa-755"><span class="linenos">755</span></a><span class="k">def</span><span class="w"> </span><span class="nf">esa</span><span class="p">(</span>
+</span><span id="esa-756"><a href="#esa-756"><span class="linenos">756</span></a>    <span class="n">samples</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+</span><span id="esa-757"><a href="#esa-757"><span class="linenos">757</span></a>    <span class="n">bounds</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+</span><span id="esa-758"><a href="#esa-758"><span class="linenos">758</span></a>    <span class="o">*</span><span class="p">,</span>
+</span><span id="esa-759"><a href="#esa-759"><span class="linenos">759</span></a>    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+</span><span id="esa-760"><a href="#esa-760"><span class="linenos">760</span></a>    <span class="n">nn_instance</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">NearestNeighbors</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="esa-761"><a href="#esa-761"><span class="linenos">761</span></a>    <span class="n">epochs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1024</span><span class="p">,</span>
+</span><span id="esa-762"><a href="#esa-762"><span class="linenos">762</span></a>    <span class="n">lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+</span><span id="esa-763"><a href="#esa-763"><span class="linenos">763</span></a>    <span class="n">search_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;k_nn&quot;</span><span class="p">,</span>
+</span><span id="esa-764"><a href="#esa-764"><span class="linenos">764</span></a>    <span class="n">decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.9</span><span class="p">,</span>
+</span><span id="esa-765"><a href="#esa-765"><span class="linenos">765</span></a>    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+</span><span id="esa-766"><a href="#esa-766"><span class="linenos">766</span></a>    <span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="esa-767"><a href="#esa-767"><span class="linenos">767</span></a>    <span class="n">radius</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="esa-768"><a href="#esa-768"><span class="linenos">768</span></a>    <span class="n">tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-3</span><span class="p">,</span>
+</span><span id="esa-769"><a href="#esa-769"><span class="linenos">769</span></a>    <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">collections</span><span class="o">.</span><span class="n">abc</span><span class="o">.</span><span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;softened_inverse&quot;</span><span class="p">,</span>
+</span><span id="esa-770"><a href="#esa-770"><span class="linenos">770</span></a>    <span class="n">border_strategy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;clip&quot;</span><span class="p">,</span>
+</span><span id="esa-771"><a href="#esa-771"><span class="linenos">771</span></a>    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="esa-772"><a href="#esa-772"><span class="linenos">772</span></a>    <span class="n">init_sampler</span><span class="p">:</span> <span class="n">samplers</span><span class="o">.</span><span class="n">Sampler</span> <span class="o">|</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="esa-773"><a href="#esa-773"><span class="linenos">773</span></a>    <span class="o">**</span><span class="n">metric_kwargs</span><span class="p">,</span>
+</span><span id="esa-774"><a href="#esa-774"><span class="linenos">774</span></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="esa-775"><a href="#esa-775"><span class="linenos">775</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="esa-776"><a href="#esa-776"><span class="linenos">776</span></a><span class="sd">    Wrapper for the Empty Space Algorithm (ESA) that returns only generated points.</span>
 </span><span id="esa-777"><a href="#esa-777"><span class="linenos">777</span></a>
-</span><span id="esa-778"><a href="#esa-778"><span class="linenos">778</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
-</span><span id="esa-779"><a href="#esa-779"><span class="linenos">779</span></a>        <span class="n">samples</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">samples</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
-</span><span id="esa-780"><a href="#esa-780"><span class="linenos">780</span></a>
-</span><span id="esa-781"><a href="#esa-781"><span class="linenos">781</span></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metric</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
-</span><span id="esa-782"><a href="#esa-782"><span class="linenos">782</span></a>        <span class="n">metric_name</span> <span class="o">=</span> <span class="n">metric</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
-</span><span id="esa-783"><a href="#esa-783"><span class="linenos">783</span></a>        <span class="n">metric_fn</span> <span class="o">=</span> <span class="n">METRIC_REGISTRY</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">metric_name</span><span class="p">)</span>
-</span><span id="esa-784"><a href="#esa-784"><span class="linenos">784</span></a>        <span class="k">if</span> <span class="n">metric_fn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="esa-785"><a href="#esa-785"><span class="linenos">785</span></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown metric &#39;</span><span class="si">{</span><span class="n">metric</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
-</span><span id="esa-786"><a href="#esa-786"><span class="linenos">786</span></a>    <span class="k">else</span><span class="p">:</span>
-</span><span id="esa-787"><a href="#esa-787"><span class="linenos">787</span></a>        <span class="n">metric_fn</span> <span class="o">=</span> <span class="n">metric</span>
-</span><span id="esa-788"><a href="#esa-788"><span class="linenos">788</span></a>        <span class="n">metric_name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">metric</span><span class="p">,</span> <span class="s2">&quot;__name__&quot;</span><span class="p">,</span> <span class="s2">&quot;unknown&quot;</span><span class="p">)</span>
-</span><span id="esa-789"><a href="#esa-789"><span class="linenos">789</span></a>
-</span><span id="esa-790"><a href="#esa-790"><span class="linenos">790</span></a>    <span class="c1"># 1. AUTO-COMPUTE Radius (if needed)</span>
-</span><span id="esa-791"><a href="#esa-791"><span class="linenos">791</span></a>    <span class="c1"># We do this here so we can use it to auto-scale metric parameters.</span>
-</span><span id="esa-792"><a href="#esa-792"><span class="linenos">792</span></a>    <span class="n">final_radius</span> <span class="o">=</span> <span class="n">radius</span>
-</span><span id="esa-793"><a href="#esa-793"><span class="linenos">793</span></a>    <span class="k">if</span> <span class="n">search_mode</span> <span class="o">==</span> <span class="s2">&quot;radius&quot;</span> <span class="ow">and</span> <span class="n">radius</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="esa-794"><a href="#esa-794"><span class="linenos">794</span></a>        <span class="n">total_capacity</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">n</span>
-</span><span id="esa-795"><a href="#esa-795"><span class="linenos">795</span></a>
-</span><span id="esa-796"><a href="#esa-796"><span class="linenos">796</span></a>        <span class="c1"># Calculate heuristic in Unit Space</span>
-</span><span id="esa-797"><a href="#esa-797"><span class="linenos">797</span></a>        <span class="c1"># Bounds are just needed for dimensionality and side ratios</span>
-</span><span id="esa-798"><a href="#esa-798"><span class="linenos">798</span></a>        <span class="n">unit_bounds</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">]]</span> <span class="o">*</span> <span class="n">samples</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
-</span><span id="esa-799"><a href="#esa-799"><span class="linenos">799</span></a>        <span class="n">final_radius</span> <span class="o">=</span> <span class="n">_compute_radius_heuristic</span><span class="p">(</span><span class="n">unit_bounds</span><span class="p">,</span> <span class="n">total_capacity</span><span class="p">)</span>
-</span><span id="esa-800"><a href="#esa-800"><span class="linenos">800</span></a>        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Computed Heuristic Radius: </span><span class="si">{</span><span class="n">final_radius</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</span><span id="esa-801"><a href="#esa-801"><span class="linenos">801</span></a>
-</span><span id="esa-802"><a href="#esa-802"><span class="linenos">802</span></a>    <span class="c1"># 2. AUTO-SCALE Metric Parameters</span>
-</span><span id="esa-803"><a href="#esa-803"><span class="linenos">803</span></a>    <span class="c1"># Ensure sigma/R matches the search radius for physical consistency</span>
-</span><span id="esa-804"><a href="#esa-804"><span class="linenos">804</span></a>    <span class="k">if</span> <span class="n">search_mode</span> <span class="o">==</span> <span class="s2">&quot;radius&quot;</span> <span class="ow">and</span> <span class="n">final_radius</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="esa-805"><a href="#esa-805"><span class="linenos">805</span></a>        <span class="k">if</span> <span class="n">metric_name</span> <span class="o">==</span> <span class="s2">&quot;gaussian&quot;</span> <span class="ow">and</span> <span class="s2">&quot;sigma&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">metric_kwargs</span><span class="p">:</span>
-</span><span id="esa-806"><a href="#esa-806"><span class="linenos">806</span></a>            <span class="n">metric_kwargs</span><span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">final_radius</span> <span class="o">/</span> <span class="mf">3.0</span>
-</span><span id="esa-807"><a href="#esa-807"><span class="linenos">807</span></a>        <span class="k">elif</span> <span class="n">metric_name</span> <span class="o">==</span> <span class="s2">&quot;linear&quot;</span> <span class="ow">and</span> <span class="s2">&quot;R&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">metric_kwargs</span><span class="p">:</span>
-</span><span id="esa-808"><a href="#esa-808"><span class="linenos">808</span></a>            <span class="n">metric_kwargs</span><span class="p">[</span><span class="s2">&quot;R&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">final_radius</span>
+</span><span id="esa-778"><a href="#esa-778"><span class="linenos">778</span></a><span class="sd">    This acts as the public API for the algorithm. It handles infrastructure setup</span>
+</span><span id="esa-779"><a href="#esa-779"><span class="linenos">779</span></a><span class="sd">    that the internal loop `_esa` requires, specifically:</span>
+</span><span id="esa-780"><a href="#esa-780"><span class="linenos">780</span></a><span class="sd">    1. **Heuristic Calculation:** Auto-computes interaction radius if not provided.</span>
+</span><span id="esa-781"><a href="#esa-781"><span class="linenos">781</span></a><span class="sd">    2. **Metric Scaling:** Scales force parameters (like $\\sigma$) relative to the radius.</span>
+</span><span id="esa-782"><a href="#esa-782"><span class="linenos">782</span></a><span class="sd">    3. **Engine Selection:** Automatically chooses between a Dense Numpy engine (small $N$)</span>
+</span><span id="esa-783"><a href="#esa-783"><span class="linenos">783</span></a><span class="sd">        and an Approximate Nearest Neighbor (HNSW) engine (large $N$) for performance.</span>
+</span><span id="esa-784"><a href="#esa-784"><span class="linenos">784</span></a>
+</span><span id="esa-785"><a href="#esa-785"><span class="linenos">785</span></a><span class="sd">    Args:</span>
+</span><span id="esa-786"><a href="#esa-786"><span class="linenos">786</span></a><span class="sd">        samples (np.ndarray): Existing points to avoid.</span>
+</span><span id="esa-787"><a href="#esa-787"><span class="linenos">787</span></a><span class="sd">        bounds (np.ndarray): Bounding box constraints.</span>
+</span><span id="esa-788"><a href="#esa-788"><span class="linenos">788</span></a><span class="sd">        n (int): Number of new points to create.</span>
+</span><span id="esa-789"><a href="#esa-789"><span class="linenos">789</span></a><span class="sd">        nn_instance (nn.NearestNeighbors | None): Optional custom NN engine.</span>
+</span><span id="esa-790"><a href="#esa-790"><span class="linenos">790</span></a><span class="sd">        epochs (int): Max iterations.</span>
+</span><span id="esa-791"><a href="#esa-791"><span class="linenos">791</span></a><span class="sd">        lr (float): Initial learning rate.</span>
+</span><span id="esa-792"><a href="#esa-792"><span class="linenos">792</span></a><span class="sd">        search_mode (str): &#39;k_nn&#39; (adaptive) or &#39;radius&#39; (fixed range).</span>
+</span><span id="esa-793"><a href="#esa-793"><span class="linenos">793</span></a><span class="sd">        decay (float): LR decay per epoch.</span>
+</span><span id="esa-794"><a href="#esa-794"><span class="linenos">794</span></a><span class="sd">        batch_size (int): Optimization batch size.</span>
+</span><span id="esa-795"><a href="#esa-795"><span class="linenos">795</span></a><span class="sd">        k (int | None): Neighbors to use (if mode is &#39;k_nn&#39;).</span>
+</span><span id="esa-796"><a href="#esa-796"><span class="linenos">796</span></a><span class="sd">        radius (float | None): Force radius (if mode is &#39;radius&#39;).</span>
+</span><span id="esa-797"><a href="#esa-797"><span class="linenos">797</span></a><span class="sd">        tol (float): Early stopping tolerance.</span>
+</span><span id="esa-798"><a href="#esa-798"><span class="linenos">798</span></a><span class="sd">        metric (str | Callable): Name of force function or callable object.</span>
+</span><span id="esa-799"><a href="#esa-799"><span class="linenos">799</span></a><span class="sd">        border_strategy (str): &#39;clip&#39; (hard stop) or &#39;repulsive&#39; (soft walls).</span>
+</span><span id="esa-800"><a href="#esa-800"><span class="linenos">800</span></a><span class="sd">        seed (int | np.random.Generator | None): Random seed or Generator instance.</span>
+</span><span id="esa-801"><a href="#esa-801"><span class="linenos">801</span></a><span class="sd">            If None, a new Generator is created with entropy.</span>
+</span><span id="esa-802"><a href="#esa-802"><span class="linenos">802</span></a><span class="sd">            If int, it seeds a new Generator.</span>
+</span><span id="esa-803"><a href="#esa-803"><span class="linenos">803</span></a><span class="sd">            If np.random.Generator, it is used directly.</span>
+</span><span id="esa-804"><a href="#esa-804"><span class="linenos">804</span></a><span class="sd">        **metric_kwargs: Arguments for the metric function.</span>
+</span><span id="esa-805"><a href="#esa-805"><span class="linenos">805</span></a>
+</span><span id="esa-806"><a href="#esa-806"><span class="linenos">806</span></a><span class="sd">    Returns:</span>
+</span><span id="esa-807"><a href="#esa-807"><span class="linenos">807</span></a><span class="sd">        np.ndarray: An array of size $(n, D)$ containing only the newly generated points.</span>
+</span><span id="esa-808"><a href="#esa-808"><span class="linenos">808</span></a><span class="sd">    &quot;&quot;&quot;</span>
 </span><span id="esa-809"><a href="#esa-809"><span class="linenos">809</span></a>
-</span><span id="esa-810"><a href="#esa-810"><span class="linenos">810</span></a>    <span class="c1"># 3. NN Factory with DUAL THRESHOLDS</span>
-</span><span id="esa-811"><a href="#esa-811"><span class="linenos">811</span></a>    <span class="k">if</span> <span class="n">nn_instance</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="esa-812"><a href="#esa-812"><span class="linenos">812</span></a>        <span class="n">dim</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
-</span><span id="esa-813"><a href="#esa-813"><span class="linenos">813</span></a>        <span class="n">total</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">n</span>
-</span><span id="esa-814"><a href="#esa-814"><span class="linenos">814</span></a>
-</span><span id="esa-815"><a href="#esa-815"><span class="linenos">815</span></a>        <span class="c1"># Select Threshold based on Search Mode</span>
-</span><span id="esa-816"><a href="#esa-816"><span class="linenos">816</span></a>        <span class="k">if</span> <span class="n">search_mode</span> <span class="o">==</span> <span class="s2">&quot;radius&quot;</span><span class="p">:</span>
-</span><span id="esa-817"><a href="#esa-817"><span class="linenos">817</span></a>            <span class="n">threshold</span> <span class="o">=</span> <span class="n">RADIUS_SWITCH_THRESHOLD</span>
-</span><span id="esa-818"><a href="#esa-818"><span class="linenos">818</span></a>        <span class="k">else</span><span class="p">:</span>
-</span><span id="esa-819"><a href="#esa-819"><span class="linenos">819</span></a>            <span class="n">threshold</span> <span class="o">=</span> <span class="n">KNN_SWITCH_THRESHOLD</span>
-</span><span id="esa-820"><a href="#esa-820"><span class="linenos">820</span></a>
-</span><span id="esa-821"><a href="#esa-821"><span class="linenos">821</span></a>        <span class="k">if</span> <span class="n">total</span> <span class="o">&gt;</span> <span class="n">threshold</span><span class="p">:</span>
-</span><span id="esa-822"><a href="#esa-822"><span class="linenos">822</span></a>            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Using FAISS (HNSW) engine. (N=</span><span class="si">{</span><span class="n">total</span><span class="si">}</span><span class="s2"> &gt; </span><span class="si">{</span><span class="n">threshold</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
-</span><span id="esa-823"><a href="#esa-823"><span class="linenos">823</span></a>            <span class="n">nn_instance</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">FaissHNSWFlatNN</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="n">dim</span><span class="p">)</span>
-</span><span id="esa-824"><a href="#esa-824"><span class="linenos">824</span></a>        <span class="k">else</span><span class="p">:</span>
-</span><span id="esa-825"><a href="#esa-825"><span class="linenos">825</span></a>            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Using NUMPY (Dense) engine. (N=</span><span class="si">{</span><span class="n">total</span><span class="si">}</span><span class="s2"> &lt;= </span><span class="si">{</span><span class="n">threshold</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
-</span><span id="esa-826"><a href="#esa-826"><span class="linenos">826</span></a>            <span class="n">nn_instance</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">NumpyNN</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="n">dim</span><span class="p">)</span>
+</span><span id="esa-810"><a href="#esa-810"><span class="linenos">810</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+</span><span id="esa-811"><a href="#esa-811"><span class="linenos">811</span></a>        <span class="n">samples</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">samples</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+</span><span id="esa-812"><a href="#esa-812"><span class="linenos">812</span></a>
+</span><span id="esa-813"><a href="#esa-813"><span class="linenos">813</span></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">metric</span><span class="p">,</span> <span class="nb">str</span><span class="p">):</span>
+</span><span id="esa-814"><a href="#esa-814"><span class="linenos">814</span></a>        <span class="n">metric_name</span> <span class="o">=</span> <span class="n">metric</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+</span><span id="esa-815"><a href="#esa-815"><span class="linenos">815</span></a>        <span class="n">metric_fn</span> <span class="o">=</span> <span class="n">METRIC_REGISTRY</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">metric_name</span><span class="p">)</span>
+</span><span id="esa-816"><a href="#esa-816"><span class="linenos">816</span></a>        <span class="k">if</span> <span class="n">metric_fn</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="esa-817"><a href="#esa-817"><span class="linenos">817</span></a>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Unknown metric &#39;</span><span class="si">{</span><span class="n">metric</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+</span><span id="esa-818"><a href="#esa-818"><span class="linenos">818</span></a>    <span class="k">else</span><span class="p">:</span>
+</span><span id="esa-819"><a href="#esa-819"><span class="linenos">819</span></a>        <span class="n">metric_fn</span> <span class="o">=</span> <span class="n">metric</span>
+</span><span id="esa-820"><a href="#esa-820"><span class="linenos">820</span></a>        <span class="n">metric_name</span> <span class="o">=</span> <span class="nb">getattr</span><span class="p">(</span><span class="n">metric</span><span class="p">,</span> <span class="s2">&quot;__name__&quot;</span><span class="p">,</span> <span class="s2">&quot;unknown&quot;</span><span class="p">)</span>
+</span><span id="esa-821"><a href="#esa-821"><span class="linenos">821</span></a>
+</span><span id="esa-822"><a href="#esa-822"><span class="linenos">822</span></a>    <span class="c1"># 1. AUTO-COMPUTE Radius (if needed)</span>
+</span><span id="esa-823"><a href="#esa-823"><span class="linenos">823</span></a>    <span class="c1"># We do this here so we can use it to auto-scale metric parameters.</span>
+</span><span id="esa-824"><a href="#esa-824"><span class="linenos">824</span></a>    <span class="n">final_radius</span> <span class="o">=</span> <span class="n">radius</span>
+</span><span id="esa-825"><a href="#esa-825"><span class="linenos">825</span></a>    <span class="k">if</span> <span class="n">search_mode</span> <span class="o">==</span> <span class="s2">&quot;radius&quot;</span> <span class="ow">and</span> <span class="n">radius</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="esa-826"><a href="#esa-826"><span class="linenos">826</span></a>        <span class="n">total_capacity</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">n</span>
 </span><span id="esa-827"><a href="#esa-827"><span class="linenos">827</span></a>
-</span><span id="esa-828"><a href="#esa-828"><span class="linenos">828</span></a>    <span class="k">return</span> <span class="n">_esa</span><span class="p">(</span>
-</span><span id="esa-829"><a href="#esa-829"><span class="linenos">829</span></a>        <span class="n">samples</span><span class="o">=</span><span class="n">samples</span><span class="p">,</span>
-</span><span id="esa-830"><a href="#esa-830"><span class="linenos">830</span></a>        <span class="n">bounds</span><span class="o">=</span><span class="n">bounds</span><span class="p">,</span>
-</span><span id="esa-831"><a href="#esa-831"><span class="linenos">831</span></a>        <span class="n">nn_instance</span><span class="o">=</span><span class="n">nn_instance</span><span class="p">,</span>
-</span><span id="esa-832"><a href="#esa-832"><span class="linenos">832</span></a>        <span class="n">metric_fn</span><span class="o">=</span><span class="n">metric_fn</span><span class="p">,</span>
-</span><span id="esa-833"><a href="#esa-833"><span class="linenos">833</span></a>        <span class="n">n</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
-</span><span id="esa-834"><a href="#esa-834"><span class="linenos">834</span></a>        <span class="n">epochs</span><span class="o">=</span><span class="n">epochs</span><span class="p">,</span>
-</span><span id="esa-835"><a href="#esa-835"><span class="linenos">835</span></a>        <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span>
-</span><span id="esa-836"><a href="#esa-836"><span class="linenos">836</span></a>        <span class="n">decay</span><span class="o">=</span><span class="n">decay</span><span class="p">,</span>
-</span><span id="esa-837"><a href="#esa-837"><span class="linenos">837</span></a>        <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-</span><span id="esa-838"><a href="#esa-838"><span class="linenos">838</span></a>        <span class="n">k</span><span class="o">=</span><span class="n">k</span><span class="p">,</span>
-</span><span id="esa-839"><a href="#esa-839"><span class="linenos">839</span></a>        <span class="n">radius</span><span class="o">=</span><span class="n">final_radius</span><span class="p">,</span>
-</span><span id="esa-840"><a href="#esa-840"><span class="linenos">840</span></a>        <span class="n">search_mode</span><span class="o">=</span><span class="n">search_mode</span><span class="p">,</span>
-</span><span id="esa-841"><a href="#esa-841"><span class="linenos">841</span></a>        <span class="n">border_strategy</span><span class="o">=</span><span class="n">border_strategy</span><span class="p">,</span>
-</span><span id="esa-842"><a href="#esa-842"><span class="linenos">842</span></a>        <span class="n">tol</span><span class="o">=</span><span class="n">tol</span><span class="p">,</span>
-</span><span id="esa-843"><a href="#esa-843"><span class="linenos">843</span></a>        <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">,</span>
-</span><span id="esa-844"><a href="#esa-844"><span class="linenos">844</span></a>        <span class="o">**</span><span class="n">metric_kwargs</span><span class="p">,</span>
-</span><span id="esa-845"><a href="#esa-845"><span class="linenos">845</span></a>    <span class="p">)</span>
+</span><span id="esa-828"><a href="#esa-828"><span class="linenos">828</span></a>        <span class="c1"># Calculate heuristic in Unit Space</span>
+</span><span id="esa-829"><a href="#esa-829"><span class="linenos">829</span></a>        <span class="c1"># Bounds are just needed for dimensionality and side ratios</span>
+</span><span id="esa-830"><a href="#esa-830"><span class="linenos">830</span></a>        <span class="n">unit_bounds</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([[</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">]]</span> <span class="o">*</span> <span class="n">samples</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+</span><span id="esa-831"><a href="#esa-831"><span class="linenos">831</span></a>        <span class="n">final_radius</span> <span class="o">=</span> <span class="n">_compute_radius_heuristic</span><span class="p">(</span><span class="n">unit_bounds</span><span class="p">,</span> <span class="n">total_capacity</span><span class="p">)</span>
+</span><span id="esa-832"><a href="#esa-832"><span class="linenos">832</span></a>        <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Computed Heuristic Radius: </span><span class="si">{</span><span class="n">final_radius</span><span class="si">:</span><span class="s2">.4f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="esa-833"><a href="#esa-833"><span class="linenos">833</span></a>
+</span><span id="esa-834"><a href="#esa-834"><span class="linenos">834</span></a>    <span class="c1"># 2. AUTO-SCALE Metric Parameters</span>
+</span><span id="esa-835"><a href="#esa-835"><span class="linenos">835</span></a>    <span class="c1"># Ensure sigma/R matches the search radius for physical consistency</span>
+</span><span id="esa-836"><a href="#esa-836"><span class="linenos">836</span></a>    <span class="k">if</span> <span class="n">search_mode</span> <span class="o">==</span> <span class="s2">&quot;radius&quot;</span> <span class="ow">and</span> <span class="n">final_radius</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="esa-837"><a href="#esa-837"><span class="linenos">837</span></a>        <span class="k">if</span> <span class="n">metric_name</span> <span class="o">==</span> <span class="s2">&quot;gaussian&quot;</span> <span class="ow">and</span> <span class="s2">&quot;sigma&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">metric_kwargs</span><span class="p">:</span>
+</span><span id="esa-838"><a href="#esa-838"><span class="linenos">838</span></a>            <span class="n">metric_kwargs</span><span class="p">[</span><span class="s2">&quot;sigma&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">final_radius</span> <span class="o">/</span> <span class="mf">3.0</span>
+</span><span id="esa-839"><a href="#esa-839"><span class="linenos">839</span></a>        <span class="k">elif</span> <span class="n">metric_name</span> <span class="o">==</span> <span class="s2">&quot;linear&quot;</span> <span class="ow">and</span> <span class="s2">&quot;R&quot;</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">metric_kwargs</span><span class="p">:</span>
+</span><span id="esa-840"><a href="#esa-840"><span class="linenos">840</span></a>            <span class="n">metric_kwargs</span><span class="p">[</span><span class="s2">&quot;R&quot;</span><span class="p">]</span> <span class="o">=</span> <span class="n">final_radius</span>
+</span><span id="esa-841"><a href="#esa-841"><span class="linenos">841</span></a>
+</span><span id="esa-842"><a href="#esa-842"><span class="linenos">842</span></a>    <span class="c1"># 3. NN Factory with DUAL THRESHOLDS</span>
+</span><span id="esa-843"><a href="#esa-843"><span class="linenos">843</span></a>    <span class="k">if</span> <span class="n">nn_instance</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="esa-844"><a href="#esa-844"><span class="linenos">844</span></a>        <span class="n">dim</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+</span><span id="esa-845"><a href="#esa-845"><span class="linenos">845</span></a>        <span class="n">total</span> <span class="o">=</span> <span class="n">samples</span><span class="o">.</span><span class="n">shape</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">+</span> <span class="n">n</span>
+</span><span id="esa-846"><a href="#esa-846"><span class="linenos">846</span></a>
+</span><span id="esa-847"><a href="#esa-847"><span class="linenos">847</span></a>        <span class="c1"># Select Threshold based on Search Mode</span>
+</span><span id="esa-848"><a href="#esa-848"><span class="linenos">848</span></a>        <span class="k">if</span> <span class="n">search_mode</span> <span class="o">==</span> <span class="s2">&quot;radius&quot;</span><span class="p">:</span>
+</span><span id="esa-849"><a href="#esa-849"><span class="linenos">849</span></a>            <span class="n">threshold</span> <span class="o">=</span> <span class="n">RADIUS_SWITCH_THRESHOLD</span>
+</span><span id="esa-850"><a href="#esa-850"><span class="linenos">850</span></a>        <span class="k">else</span><span class="p">:</span>
+</span><span id="esa-851"><a href="#esa-851"><span class="linenos">851</span></a>            <span class="n">threshold</span> <span class="o">=</span> <span class="n">KNN_SWITCH_THRESHOLD</span>
+</span><span id="esa-852"><a href="#esa-852"><span class="linenos">852</span></a>
+</span><span id="esa-853"><a href="#esa-853"><span class="linenos">853</span></a>        <span class="k">if</span> <span class="n">total</span> <span class="o">&gt;</span> <span class="n">threshold</span><span class="p">:</span>
+</span><span id="esa-854"><a href="#esa-854"><span class="linenos">854</span></a>            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Using FAISS (HNSW) engine. (N=</span><span class="si">{</span><span class="n">total</span><span class="si">}</span><span class="s2"> &gt; </span><span class="si">{</span><span class="n">threshold</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+</span><span id="esa-855"><a href="#esa-855"><span class="linenos">855</span></a>            <span class="n">nn_instance</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">FaissHNSWFlatNN</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="n">dim</span><span class="p">)</span>
+</span><span id="esa-856"><a href="#esa-856"><span class="linenos">856</span></a>        <span class="k">else</span><span class="p">:</span>
+</span><span id="esa-857"><a href="#esa-857"><span class="linenos">857</span></a>            <span class="n">logger</span><span class="o">.</span><span class="n">debug</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Using NUMPY (Dense) engine. (N=</span><span class="si">{</span><span class="n">total</span><span class="si">}</span><span class="s2"> &lt;= </span><span class="si">{</span><span class="n">threshold</span><span class="si">}</span><span class="s2">)&quot;</span><span class="p">)</span>
+</span><span id="esa-858"><a href="#esa-858"><span class="linenos">858</span></a>            <span class="n">nn_instance</span> <span class="o">=</span> <span class="n">nn</span><span class="o">.</span><span class="n">NumpyNN</span><span class="p">(</span><span class="n">dimension</span><span class="o">=</span><span class="n">dim</span><span class="p">)</span>
+</span><span id="esa-859"><a href="#esa-859"><span class="linenos">859</span></a>
+</span><span id="esa-860"><a href="#esa-860"><span class="linenos">860</span></a>    <span class="k">return</span> <span class="n">_esa</span><span class="p">(</span>
+</span><span id="esa-861"><a href="#esa-861"><span class="linenos">861</span></a>        <span class="n">samples</span><span class="o">=</span><span class="n">samples</span><span class="p">,</span>
+</span><span id="esa-862"><a href="#esa-862"><span class="linenos">862</span></a>        <span class="n">bounds</span><span class="o">=</span><span class="n">bounds</span><span class="p">,</span>
+</span><span id="esa-863"><a href="#esa-863"><span class="linenos">863</span></a>        <span class="n">nn_instance</span><span class="o">=</span><span class="n">nn_instance</span><span class="p">,</span>
+</span><span id="esa-864"><a href="#esa-864"><span class="linenos">864</span></a>        <span class="n">metric_fn</span><span class="o">=</span><span class="n">metric_fn</span><span class="p">,</span>
+</span><span id="esa-865"><a href="#esa-865"><span class="linenos">865</span></a>        <span class="n">n</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
+</span><span id="esa-866"><a href="#esa-866"><span class="linenos">866</span></a>        <span class="n">epochs</span><span class="o">=</span><span class="n">epochs</span><span class="p">,</span>
+</span><span id="esa-867"><a href="#esa-867"><span class="linenos">867</span></a>        <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span>
+</span><span id="esa-868"><a href="#esa-868"><span class="linenos">868</span></a>        <span class="n">decay</span><span class="o">=</span><span class="n">decay</span><span class="p">,</span>
+</span><span id="esa-869"><a href="#esa-869"><span class="linenos">869</span></a>        <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+</span><span id="esa-870"><a href="#esa-870"><span class="linenos">870</span></a>        <span class="n">k</span><span class="o">=</span><span class="n">k</span><span class="p">,</span>
+</span><span id="esa-871"><a href="#esa-871"><span class="linenos">871</span></a>        <span class="n">radius</span><span class="o">=</span><span class="n">final_radius</span><span class="p">,</span>
+</span><span id="esa-872"><a href="#esa-872"><span class="linenos">872</span></a>        <span class="n">search_mode</span><span class="o">=</span><span class="n">search_mode</span><span class="p">,</span>
+</span><span id="esa-873"><a href="#esa-873"><span class="linenos">873</span></a>        <span class="n">border_strategy</span><span class="o">=</span><span class="n">border_strategy</span><span class="p">,</span>
+</span><span id="esa-874"><a href="#esa-874"><span class="linenos">874</span></a>        <span class="n">tol</span><span class="o">=</span><span class="n">tol</span><span class="p">,</span>
+</span><span id="esa-875"><a href="#esa-875"><span class="linenos">875</span></a>        <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">,</span>
+</span><span id="esa-876"><a href="#esa-876"><span class="linenos">876</span></a>        <span class="n">init_sampler</span><span class="o">=</span><span class="n">init_sampler</span><span class="p">,</span>
+</span><span id="esa-877"><a href="#esa-877"><span class="linenos">877</span></a>        <span class="o">**</span><span class="n">metric_kwargs</span><span class="p">,</span>
+</span><span id="esa-878"><a href="#esa-878"><span class="linenos">878</span></a>    <span class="p">)</span>
 </span></pre></div>
 
 
@@ -466,88 +513,90 @@ If np.random.Generator, it is used directly.</li>
 <div class="attr function">
             
         <span class="def">def</span>
-        <span class="name">ess</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">samples</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="nb">list</span>,</span><span class="param">	<span class="n">bounds</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>,</span><span class="param">	<span class="o">*</span>,</span><span class="param">	<span class="n">n</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">nn_instance</span><span class="p">:</span> <span class="n"><a href="#NearestNeighbors">NearestNeighbors</a></span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">epochs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1024</span>,</span><span class="param">	<span class="n">lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span>,</span><span class="param">	<span class="n">search_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;k_nn&#39;</span>,</span><span class="param">	<span class="n">decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.95</span>,</span><span class="param">	<span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span>,</span><span class="param">	<span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">radius</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.001</span>,</span><span class="param">	<span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s1">&#39;softened_inverse&#39;</span>,</span><span class="param">	<span class="n">border_strategy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;clip&#39;</span>,</span><span class="param">	<span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">numpy</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">_generator</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="o">**</span><span class="n">kwargs</span></span><span class="return-annotation">) -> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>:</span></span>
+        <span class="name">ess</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">samples</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="nb">list</span>,</span><span class="param">	<span class="n">bounds</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>,</span><span class="param">	<span class="o">*</span>,</span><span class="param">	<span class="n">n</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">nn_instance</span><span class="p">:</span> <span class="n"><a href="#NearestNeighbors">NearestNeighbors</a></span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">epochs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1024</span>,</span><span class="param">	<span class="n">lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span>,</span><span class="param">	<span class="n">search_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;k_nn&#39;</span>,</span><span class="param">	<span class="n">decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.95</span>,</span><span class="param">	<span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span>,</span><span class="param">	<span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">radius</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.001</span>,</span><span class="param">	<span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Callable</span> <span class="o">=</span> <span class="s1">&#39;softened_inverse&#39;</span>,</span><span class="param">	<span class="n">border_strategy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s1">&#39;clip&#39;</span>,</span><span class="param">	<span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">numpy</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">_generator</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">init_sampler</span><span class="p">:</span> <span class="n"><a href="#Sampler">Sampler</a></span> <span class="o">|</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>,</span><span class="param">	<span class="o">**</span><span class="n">kwargs</span></span><span class="return-annotation">) -> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>:</span></span>
 
                 <label class="view-source-button" for="ess-view-source"><span>View Source</span></label>
 
     </div>
     <a class="headerlink" href="#ess"></a>
-            <div class="pdoc-code codehilite"><pre><span></span><span id="ess-848"><a href="#ess-848"><span class="linenos">848</span></a><span class="k">def</span><span class="w"> </span><span class="nf">ess</span><span class="p">(</span>
-</span><span id="ess-849"><a href="#ess-849"><span class="linenos">849</span></a>    <span class="n">samples</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="nb">list</span><span class="p">,</span>
-</span><span id="ess-850"><a href="#ess-850"><span class="linenos">850</span></a>    <span class="n">bounds</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
-</span><span id="ess-851"><a href="#ess-851"><span class="linenos">851</span></a>    <span class="o">*</span><span class="p">,</span>
-</span><span id="ess-852"><a href="#ess-852"><span class="linenos">852</span></a>    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
-</span><span id="ess-853"><a href="#ess-853"><span class="linenos">853</span></a>    <span class="n">nn_instance</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">NearestNeighbors</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="ess-854"><a href="#ess-854"><span class="linenos">854</span></a>    <span class="n">epochs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1024</span><span class="p">,</span>
-</span><span id="ess-855"><a href="#ess-855"><span class="linenos">855</span></a>    <span class="n">lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
-</span><span id="ess-856"><a href="#ess-856"><span class="linenos">856</span></a>    <span class="n">search_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;k_nn&quot;</span><span class="p">,</span>
-</span><span id="ess-857"><a href="#ess-857"><span class="linenos">857</span></a>    <span class="n">decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.95</span><span class="p">,</span>
-</span><span id="ess-858"><a href="#ess-858"><span class="linenos">858</span></a>    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
-</span><span id="ess-859"><a href="#ess-859"><span class="linenos">859</span></a>    <span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="ess-860"><a href="#ess-860"><span class="linenos">860</span></a>    <span class="n">radius</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="ess-861"><a href="#ess-861"><span class="linenos">861</span></a>    <span class="n">tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-3</span><span class="p">,</span>
-</span><span id="ess-862"><a href="#ess-862"><span class="linenos">862</span></a>    <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">collections</span><span class="o">.</span><span class="n">abc</span><span class="o">.</span><span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;softened_inverse&quot;</span><span class="p">,</span>
-</span><span id="ess-863"><a href="#ess-863"><span class="linenos">863</span></a>    <span class="n">border_strategy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;clip&quot;</span><span class="p">,</span>
-</span><span id="ess-864"><a href="#ess-864"><span class="linenos">864</span></a>    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
-</span><span id="ess-865"><a href="#ess-865"><span class="linenos">865</span></a>    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
-</span><span id="ess-866"><a href="#ess-866"><span class="linenos">866</span></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
-</span><span id="ess-867"><a href="#ess-867"><span class="linenos">867</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
-</span><span id="ess-868"><a href="#ess-868"><span class="linenos">868</span></a><span class="sd">    High-level Empty Space Strategy (ESS) wrapper returning the full dataset.</span>
-</span><span id="ess-869"><a href="#ess-869"><span class="linenos">869</span></a>
-</span><span id="ess-870"><a href="#ess-870"><span class="linenos">870</span></a><span class="sd">    This convenience function runs the ESA algorithm and concatenates the results</span>
-</span><span id="ess-871"><a href="#ess-871"><span class="linenos">871</span></a><span class="sd">    with the original input samples. It is useful for iterative design of experiments</span>
-</span><span id="ess-872"><a href="#ess-872"><span class="linenos">872</span></a><span class="sd">    or sequential sampling workflows where the complete set of points is needed.</span>
-</span><span id="ess-873"><a href="#ess-873"><span class="linenos">873</span></a>
-</span><span id="ess-874"><a href="#ess-874"><span class="linenos">874</span></a><span class="sd">    $$ \\text{Result} = \\text{samples} \\cup \\text{ESA}(\\text{samples}, \\dots) $$</span>
-</span><span id="ess-875"><a href="#ess-875"><span class="linenos">875</span></a>
-</span><span id="ess-876"><a href="#ess-876"><span class="linenos">876</span></a><span class="sd">    Args:</span>
-</span><span id="ess-877"><a href="#ess-877"><span class="linenos">877</span></a><span class="sd">        samples (np.ndarray | list): Existing points.</span>
-</span><span id="ess-878"><a href="#ess-878"><span class="linenos">878</span></a><span class="sd">        bounds (np.ndarray): Domain boundaries.</span>
-</span><span id="ess-879"><a href="#ess-879"><span class="linenos">879</span></a><span class="sd">        n (int): Number of new points to generate.</span>
-</span><span id="ess-880"><a href="#ess-880"><span class="linenos">880</span></a><span class="sd">        nn_instance (nn.NearestNeighbors | None): NN engine.</span>
-</span><span id="ess-881"><a href="#ess-881"><span class="linenos">881</span></a><span class="sd">        epochs (int): Optimization steps.</span>
-</span><span id="ess-882"><a href="#ess-882"><span class="linenos">882</span></a><span class="sd">        lr (float): Learning rate.</span>
-</span><span id="ess-883"><a href="#ess-883"><span class="linenos">883</span></a><span class="sd">        search_mode (str): Neighborhood search strategy.</span>
-</span><span id="ess-884"><a href="#ess-884"><span class="linenos">884</span></a><span class="sd">        decay (float): Decay rate.</span>
-</span><span id="ess-885"><a href="#ess-885"><span class="linenos">885</span></a><span class="sd">        batch_size (int): Batch size.</span>
-</span><span id="ess-886"><a href="#ess-886"><span class="linenos">886</span></a><span class="sd">        k (int | None): Neighbors count.</span>
-</span><span id="ess-887"><a href="#ess-887"><span class="linenos">887</span></a><span class="sd">        radius (float | None): Interaction radius.</span>
-</span><span id="ess-888"><a href="#ess-888"><span class="linenos">888</span></a><span class="sd">        tol (float): Convergence tolerance.</span>
-</span><span id="ess-889"><a href="#ess-889"><span class="linenos">889</span></a><span class="sd">        metric (str | Callable): Force metric.</span>
-</span><span id="ess-890"><a href="#ess-890"><span class="linenos">890</span></a><span class="sd">        border_strategy (str): Boundary handling.</span>
-</span><span id="ess-891"><a href="#ess-891"><span class="linenos">891</span></a><span class="sd">        seed (int | np.random.Generator | None): Random seed or Generator instance.</span>
-</span><span id="ess-892"><a href="#ess-892"><span class="linenos">892</span></a><span class="sd">            If None, a new Generator is created with entropy.</span>
-</span><span id="ess-893"><a href="#ess-893"><span class="linenos">893</span></a><span class="sd">            If int, it seeds a new Generator.</span>
-</span><span id="ess-894"><a href="#ess-894"><span class="linenos">894</span></a><span class="sd">            If np.random.Generator, it is used directly.</span>
-</span><span id="ess-895"><a href="#ess-895"><span class="linenos">895</span></a><span class="sd">        **kwargs: Additional metric args.</span>
-</span><span id="ess-896"><a href="#ess-896"><span class="linenos">896</span></a>
-</span><span id="ess-897"><a href="#ess-897"><span class="linenos">897</span></a><span class="sd">    Returns:</span>
-</span><span id="ess-898"><a href="#ess-898"><span class="linenos">898</span></a><span class="sd">        np.ndarray: A combined array of shape $(N + n, D)$ containing original and new points.</span>
-</span><span id="ess-899"><a href="#ess-899"><span class="linenos">899</span></a><span class="sd">    &quot;&quot;&quot;</span>
-</span><span id="ess-900"><a href="#ess-900"><span class="linenos">900</span></a>
-</span><span id="ess-901"><a href="#ess-901"><span class="linenos">901</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
-</span><span id="ess-902"><a href="#ess-902"><span class="linenos">902</span></a>        <span class="n">samples</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">samples</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="ess-881"><a href="#ess-881"><span class="linenos">881</span></a><span class="k">def</span><span class="w"> </span><span class="nf">ess</span><span class="p">(</span>
+</span><span id="ess-882"><a href="#ess-882"><span class="linenos">882</span></a>    <span class="n">samples</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span> <span class="o">|</span> <span class="nb">list</span><span class="p">,</span>
+</span><span id="ess-883"><a href="#ess-883"><span class="linenos">883</span></a>    <span class="n">bounds</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span>
+</span><span id="ess-884"><a href="#ess-884"><span class="linenos">884</span></a>    <span class="o">*</span><span class="p">,</span>
+</span><span id="ess-885"><a href="#ess-885"><span class="linenos">885</span></a>    <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span>
+</span><span id="ess-886"><a href="#ess-886"><span class="linenos">886</span></a>    <span class="n">nn_instance</span><span class="p">:</span> <span class="n">nn</span><span class="o">.</span><span class="n">NearestNeighbors</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="ess-887"><a href="#ess-887"><span class="linenos">887</span></a>    <span class="n">epochs</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">1024</span><span class="p">,</span>
+</span><span id="ess-888"><a href="#ess-888"><span class="linenos">888</span></a>    <span class="n">lr</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span><span class="p">,</span>
+</span><span id="ess-889"><a href="#ess-889"><span class="linenos">889</span></a>    <span class="n">search_mode</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;k_nn&quot;</span><span class="p">,</span>
+</span><span id="ess-890"><a href="#ess-890"><span class="linenos">890</span></a>    <span class="n">decay</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.95</span><span class="p">,</span>
+</span><span id="ess-891"><a href="#ess-891"><span class="linenos">891</span></a>    <span class="n">batch_size</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">50</span><span class="p">,</span>
+</span><span id="ess-892"><a href="#ess-892"><span class="linenos">892</span></a>    <span class="n">k</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="ess-893"><a href="#ess-893"><span class="linenos">893</span></a>    <span class="n">radius</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="ess-894"><a href="#ess-894"><span class="linenos">894</span></a>    <span class="n">tol</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">1e-3</span><span class="p">,</span>
+</span><span id="ess-895"><a href="#ess-895"><span class="linenos">895</span></a>    <span class="n">metric</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">collections</span><span class="o">.</span><span class="n">abc</span><span class="o">.</span><span class="n">Callable</span> <span class="o">=</span> <span class="s2">&quot;softened_inverse&quot;</span><span class="p">,</span>
+</span><span id="ess-896"><a href="#ess-896"><span class="linenos">896</span></a>    <span class="n">border_strategy</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">&quot;clip&quot;</span><span class="p">,</span>
+</span><span id="ess-897"><a href="#ess-897"><span class="linenos">897</span></a>    <span class="n">seed</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="ess-898"><a href="#ess-898"><span class="linenos">898</span></a>    <span class="n">init_sampler</span><span class="p">:</span> <span class="n">samplers</span><span class="o">.</span><span class="n">Sampler</span> <span class="o">|</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="ess-899"><a href="#ess-899"><span class="linenos">899</span></a>    <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+</span><span id="ess-900"><a href="#ess-900"><span class="linenos">900</span></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="ess-901"><a href="#ess-901"><span class="linenos">901</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="ess-902"><a href="#ess-902"><span class="linenos">902</span></a><span class="sd">    High-level Empty Space Strategy (ESS) wrapper returning the full dataset.</span>
 </span><span id="ess-903"><a href="#ess-903"><span class="linenos">903</span></a>
-</span><span id="ess-904"><a href="#ess-904"><span class="linenos">904</span></a>    <span class="n">new_points</span> <span class="o">=</span> <span class="n">esa</span><span class="p">(</span>
-</span><span id="ess-905"><a href="#ess-905"><span class="linenos">905</span></a>        <span class="n">samples</span><span class="o">=</span><span class="n">samples</span><span class="p">,</span>
-</span><span id="ess-906"><a href="#ess-906"><span class="linenos">906</span></a>        <span class="n">bounds</span><span class="o">=</span><span class="n">bounds</span><span class="p">,</span>
-</span><span id="ess-907"><a href="#ess-907"><span class="linenos">907</span></a>        <span class="n">n</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
-</span><span id="ess-908"><a href="#ess-908"><span class="linenos">908</span></a>        <span class="n">nn_instance</span><span class="o">=</span><span class="n">nn_instance</span><span class="p">,</span>
-</span><span id="ess-909"><a href="#ess-909"><span class="linenos">909</span></a>        <span class="n">epochs</span><span class="o">=</span><span class="n">epochs</span><span class="p">,</span>
-</span><span id="ess-910"><a href="#ess-910"><span class="linenos">910</span></a>        <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span>
-</span><span id="ess-911"><a href="#ess-911"><span class="linenos">911</span></a>        <span class="n">decay</span><span class="o">=</span><span class="n">decay</span><span class="p">,</span>
-</span><span id="ess-912"><a href="#ess-912"><span class="linenos">912</span></a>        <span class="n">radius</span><span class="o">=</span><span class="n">radius</span><span class="p">,</span>
-</span><span id="ess-913"><a href="#ess-913"><span class="linenos">913</span></a>        <span class="n">border_strategy</span><span class="o">=</span><span class="n">border_strategy</span><span class="p">,</span>
-</span><span id="ess-914"><a href="#ess-914"><span class="linenos">914</span></a>        <span class="n">search_mode</span><span class="o">=</span><span class="n">search_mode</span><span class="p">,</span>
-</span><span id="ess-915"><a href="#ess-915"><span class="linenos">915</span></a>        <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
-</span><span id="ess-916"><a href="#ess-916"><span class="linenos">916</span></a>        <span class="n">k</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># Let ESA determine K</span>
-</span><span id="ess-917"><a href="#ess-917"><span class="linenos">917</span></a>        <span class="n">tol</span><span class="o">=</span><span class="n">tol</span><span class="p">,</span>
-</span><span id="ess-918"><a href="#ess-918"><span class="linenos">918</span></a>        <span class="n">metric</span><span class="o">=</span><span class="n">metric</span><span class="p">,</span>
-</span><span id="ess-919"><a href="#ess-919"><span class="linenos">919</span></a>        <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">,</span>
-</span><span id="ess-920"><a href="#ess-920"><span class="linenos">920</span></a>        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
-</span><span id="ess-921"><a href="#ess-921"><span class="linenos">921</span></a>    <span class="p">)</span>
-</span><span id="ess-922"><a href="#ess-922"><span class="linenos">922</span></a>
-</span><span id="ess-923"><a href="#ess-923"><span class="linenos">923</span></a>    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">samples</span><span class="p">,</span> <span class="n">new_points</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+</span><span id="ess-904"><a href="#ess-904"><span class="linenos">904</span></a><span class="sd">    This convenience function runs the ESA algorithm and concatenates the results</span>
+</span><span id="ess-905"><a href="#ess-905"><span class="linenos">905</span></a><span class="sd">    with the original input samples. It is useful for iterative design of experiments</span>
+</span><span id="ess-906"><a href="#ess-906"><span class="linenos">906</span></a><span class="sd">    or sequential sampling workflows where the complete set of points is needed.</span>
+</span><span id="ess-907"><a href="#ess-907"><span class="linenos">907</span></a>
+</span><span id="ess-908"><a href="#ess-908"><span class="linenos">908</span></a><span class="sd">    $$ \\text{Result} = \\text{samples} \\cup \\text{ESA}(\\text{samples}, \\dots) $$</span>
+</span><span id="ess-909"><a href="#ess-909"><span class="linenos">909</span></a>
+</span><span id="ess-910"><a href="#ess-910"><span class="linenos">910</span></a><span class="sd">    Args:</span>
+</span><span id="ess-911"><a href="#ess-911"><span class="linenos">911</span></a><span class="sd">        samples (np.ndarray | list): Existing points.</span>
+</span><span id="ess-912"><a href="#ess-912"><span class="linenos">912</span></a><span class="sd">        bounds (np.ndarray): Domain boundaries.</span>
+</span><span id="ess-913"><a href="#ess-913"><span class="linenos">913</span></a><span class="sd">        n (int): Number of new points to generate.</span>
+</span><span id="ess-914"><a href="#ess-914"><span class="linenos">914</span></a><span class="sd">        nn_instance (nn.NearestNeighbors | None): NN engine.</span>
+</span><span id="ess-915"><a href="#ess-915"><span class="linenos">915</span></a><span class="sd">        epochs (int): Optimization steps.</span>
+</span><span id="ess-916"><a href="#ess-916"><span class="linenos">916</span></a><span class="sd">        lr (float): Learning rate.</span>
+</span><span id="ess-917"><a href="#ess-917"><span class="linenos">917</span></a><span class="sd">        search_mode (str): Neighborhood search strategy.</span>
+</span><span id="ess-918"><a href="#ess-918"><span class="linenos">918</span></a><span class="sd">        decay (float): Decay rate.</span>
+</span><span id="ess-919"><a href="#ess-919"><span class="linenos">919</span></a><span class="sd">        batch_size (int): Batch size.</span>
+</span><span id="ess-920"><a href="#ess-920"><span class="linenos">920</span></a><span class="sd">        k (int | None): Neighbors count.</span>
+</span><span id="ess-921"><a href="#ess-921"><span class="linenos">921</span></a><span class="sd">        radius (float | None): Interaction radius.</span>
+</span><span id="ess-922"><a href="#ess-922"><span class="linenos">922</span></a><span class="sd">        tol (float): Convergence tolerance.</span>
+</span><span id="ess-923"><a href="#ess-923"><span class="linenos">923</span></a><span class="sd">        metric (str | Callable): Force metric.</span>
+</span><span id="ess-924"><a href="#ess-924"><span class="linenos">924</span></a><span class="sd">        border_strategy (str): Boundary handling.</span>
+</span><span id="ess-925"><a href="#ess-925"><span class="linenos">925</span></a><span class="sd">        seed (int | np.random.Generator | None): Random seed or Generator instance.</span>
+</span><span id="ess-926"><a href="#ess-926"><span class="linenos">926</span></a><span class="sd">            If None, a new Generator is created with entropy.</span>
+</span><span id="ess-927"><a href="#ess-927"><span class="linenos">927</span></a><span class="sd">            If int, it seeds a new Generator.</span>
+</span><span id="ess-928"><a href="#ess-928"><span class="linenos">928</span></a><span class="sd">            If np.random.Generator, it is used directly.</span>
+</span><span id="ess-929"><a href="#ess-929"><span class="linenos">929</span></a><span class="sd">        **kwargs: Additional metric args.</span>
+</span><span id="ess-930"><a href="#ess-930"><span class="linenos">930</span></a>
+</span><span id="ess-931"><a href="#ess-931"><span class="linenos">931</span></a><span class="sd">    Returns:</span>
+</span><span id="ess-932"><a href="#ess-932"><span class="linenos">932</span></a><span class="sd">        np.ndarray: A combined array of shape $(N + n, D)$ containing original and new points.</span>
+</span><span id="ess-933"><a href="#ess-933"><span class="linenos">933</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="ess-934"><a href="#ess-934"><span class="linenos">934</span></a>
+</span><span id="ess-935"><a href="#ess-935"><span class="linenos">935</span></a>    <span class="k">if</span> <span class="ow">not</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">samples</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">):</span>
+</span><span id="ess-936"><a href="#ess-936"><span class="linenos">936</span></a>        <span class="n">samples</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">samples</span><span class="p">)</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+</span><span id="ess-937"><a href="#ess-937"><span class="linenos">937</span></a>
+</span><span id="ess-938"><a href="#ess-938"><span class="linenos">938</span></a>    <span class="n">new_points</span> <span class="o">=</span> <span class="n">esa</span><span class="p">(</span>
+</span><span id="ess-939"><a href="#ess-939"><span class="linenos">939</span></a>        <span class="n">samples</span><span class="o">=</span><span class="n">samples</span><span class="p">,</span>
+</span><span id="ess-940"><a href="#ess-940"><span class="linenos">940</span></a>        <span class="n">bounds</span><span class="o">=</span><span class="n">bounds</span><span class="p">,</span>
+</span><span id="ess-941"><a href="#ess-941"><span class="linenos">941</span></a>        <span class="n">n</span><span class="o">=</span><span class="n">n</span><span class="p">,</span>
+</span><span id="ess-942"><a href="#ess-942"><span class="linenos">942</span></a>        <span class="n">nn_instance</span><span class="o">=</span><span class="n">nn_instance</span><span class="p">,</span>
+</span><span id="ess-943"><a href="#ess-943"><span class="linenos">943</span></a>        <span class="n">epochs</span><span class="o">=</span><span class="n">epochs</span><span class="p">,</span>
+</span><span id="ess-944"><a href="#ess-944"><span class="linenos">944</span></a>        <span class="n">lr</span><span class="o">=</span><span class="n">lr</span><span class="p">,</span>
+</span><span id="ess-945"><a href="#ess-945"><span class="linenos">945</span></a>        <span class="n">decay</span><span class="o">=</span><span class="n">decay</span><span class="p">,</span>
+</span><span id="ess-946"><a href="#ess-946"><span class="linenos">946</span></a>        <span class="n">radius</span><span class="o">=</span><span class="n">radius</span><span class="p">,</span>
+</span><span id="ess-947"><a href="#ess-947"><span class="linenos">947</span></a>        <span class="n">border_strategy</span><span class="o">=</span><span class="n">border_strategy</span><span class="p">,</span>
+</span><span id="ess-948"><a href="#ess-948"><span class="linenos">948</span></a>        <span class="n">search_mode</span><span class="o">=</span><span class="n">search_mode</span><span class="p">,</span>
+</span><span id="ess-949"><a href="#ess-949"><span class="linenos">949</span></a>        <span class="n">batch_size</span><span class="o">=</span><span class="n">batch_size</span><span class="p">,</span>
+</span><span id="ess-950"><a href="#ess-950"><span class="linenos">950</span></a>        <span class="n">k</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>  <span class="c1"># Let ESA determine K</span>
+</span><span id="ess-951"><a href="#ess-951"><span class="linenos">951</span></a>        <span class="n">tol</span><span class="o">=</span><span class="n">tol</span><span class="p">,</span>
+</span><span id="ess-952"><a href="#ess-952"><span class="linenos">952</span></a>        <span class="n">metric</span><span class="o">=</span><span class="n">metric</span><span class="p">,</span>
+</span><span id="ess-953"><a href="#ess-953"><span class="linenos">953</span></a>        <span class="n">seed</span><span class="o">=</span><span class="n">seed</span><span class="p">,</span>
+</span><span id="ess-954"><a href="#ess-954"><span class="linenos">954</span></a>        <span class="n">init_sampler</span><span class="o">=</span><span class="n">init_sampler</span><span class="p">,</span>
+</span><span id="ess-955"><a href="#ess-955"><span class="linenos">955</span></a>        <span class="o">**</span><span class="n">kwargs</span><span class="p">,</span>
+</span><span id="ess-956"><a href="#ess-956"><span class="linenos">956</span></a>    <span class="p">)</span>
+</span><span id="ess-957"><a href="#ess-957"><span class="linenos">957</span></a>
+</span><span id="ess-958"><a href="#ess-958"><span class="linenos">958</span></a>    <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">concatenate</span><span class="p">((</span><span class="n">samples</span><span class="p">,</span> <span class="n">new_points</span><span class="p">),</span> <span class="n">axis</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
 </span></pre></div>
 
 
@@ -1886,6 +1935,389 @@ recall at the cost of memory and build time.</li>
             </div>
                                 </dl>
                             </div>
+                </section>
+                <section id="Sampler">
+                            <input id="Sampler-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
+<div class="attr class">
+            
+    <span class="def">class</span>
+    <span class="name">Sampler</span><wbr>(<span class="base">abc.ABC</span>):
+
+                <label class="view-source-button" for="Sampler-view-source"><span>View Source</span></label>
+
+    </div>
+    <a class="headerlink" href="#Sampler"></a>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="Sampler-6"><a href="#Sampler-6"><span class="linenos"> 6</span></a><span class="k">class</span><span class="w"> </span><span class="nc">Sampler</span><span class="p">(</span><span class="n">abc</span><span class="o">.</span><span class="n">ABC</span><span class="p">):</span>
+</span><span id="Sampler-7"><a href="#Sampler-7"><span class="linenos"> 7</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Abstract Base Class for Samplers.&quot;&quot;&quot;</span>
+</span><span id="Sampler-8"><a href="#Sampler-8"><span class="linenos"> 8</span></a>
+</span><span id="Sampler-9"><a href="#Sampler-9"><span class="linenos"> 9</span></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">random_state</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+</span><span id="Sampler-10"><a href="#Sampler-10"><span class="linenos">10</span></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="Sampler-11"><a href="#Sampler-11"><span class="linenos">11</span></a><span class="sd">        Initializes the sampler with an optional random_state.</span>
+</span><span id="Sampler-12"><a href="#Sampler-12"><span class="linenos">12</span></a>
+</span><span id="Sampler-13"><a href="#Sampler-13"><span class="linenos">13</span></a><span class="sd">        Args:</span>
+</span><span id="Sampler-14"><a href="#Sampler-14"><span class="linenos">14</span></a><span class="sd">            random_state (int | np.random.Generator | None): Random seed or Generator.</span>
+</span><span id="Sampler-15"><a href="#Sampler-15"><span class="linenos">15</span></a><span class="sd">        &quot;&quot;&quot;</span>
+</span><span id="Sampler-16"><a href="#Sampler-16"><span class="linenos">16</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">random_state</span> <span class="o">=</span> <span class="n">random_state</span>
+</span><span id="Sampler-17"><a href="#Sampler-17"><span class="linenos">17</span></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">random_state</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span><span class="p">):</span>
+</span><span id="Sampler-18"><a href="#Sampler-18"><span class="linenos">18</span></a>            <span class="bp">self</span><span class="o">.</span><span class="n">rng</span> <span class="o">=</span> <span class="n">random_state</span>
+</span><span id="Sampler-19"><a href="#Sampler-19"><span class="linenos">19</span></a>        <span class="k">else</span><span class="p">:</span>
+</span><span id="Sampler-20"><a href="#Sampler-20"><span class="linenos">20</span></a>            <span class="bp">self</span><span class="o">.</span><span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">random_state</span><span class="p">)</span>
+</span><span id="Sampler-21"><a href="#Sampler-21"><span class="linenos">21</span></a>
+</span><span id="Sampler-22"><a href="#Sampler-22"><span class="linenos">22</span></a>    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+</span><span id="Sampler-23"><a href="#Sampler-23"><span class="linenos">23</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span>
+</span><span id="Sampler-24"><a href="#Sampler-24"><span class="linenos">24</span></a>        <span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="Sampler-25"><a href="#Sampler-25"><span class="linenos">25</span></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="Sampler-26"><a href="#Sampler-26"><span class="linenos">26</span></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="Sampler-27"><a href="#Sampler-27"><span class="linenos">27</span></a><span class="sd">        Generates n samples in a dim-dimensional unit hypercube [0, 1]^dim.</span>
+</span><span id="Sampler-28"><a href="#Sampler-28"><span class="linenos">28</span></a>
+</span><span id="Sampler-29"><a href="#Sampler-29"><span class="linenos">29</span></a><span class="sd">        Args:</span>
+</span><span id="Sampler-30"><a href="#Sampler-30"><span class="linenos">30</span></a><span class="sd">            n (int): Number of samples to generate.</span>
+</span><span id="Sampler-31"><a href="#Sampler-31"><span class="linenos">31</span></a><span class="sd">            dim (int): Dimension of the space.</span>
+</span><span id="Sampler-32"><a href="#Sampler-32"><span class="linenos">32</span></a><span class="sd">            rng (np.random.Generator | None): Optional generator. If None, uses internal self.rng.</span>
+</span><span id="Sampler-33"><a href="#Sampler-33"><span class="linenos">33</span></a>
+</span><span id="Sampler-34"><a href="#Sampler-34"><span class="linenos">34</span></a><span class="sd">        Returns:</span>
+</span><span id="Sampler-35"><a href="#Sampler-35"><span class="linenos">35</span></a><span class="sd">            np.ndarray: Array of shape (n, dim) with samples in [0, 1]^dim.</span>
+</span><span id="Sampler-36"><a href="#Sampler-36"><span class="linenos">36</span></a><span class="sd">        &quot;&quot;&quot;</span>
+</span><span id="Sampler-37"><a href="#Sampler-37"><span class="linenos">37</span></a>        <span class="k">pass</span>
+</span></pre></div>
+
+
+            <div class="docstring"><p>Abstract Base Class for Samplers.</p>
+</div>
+
+
+                            <div id="Sampler.__init__" class="classattr">
+                                        <input id="Sampler.__init__-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
+<div class="attr function">
+            
+        <span class="name">Sampler</span><span class="signature pdoc-code condensed">(<span class="param"><span class="n">random_state</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">numpy</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">_generator</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></span>)</span>
+
+                <label class="view-source-button" for="Sampler.__init__-view-source"><span>View Source</span></label>
+
+    </div>
+    <a class="headerlink" href="#Sampler.__init__"></a>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="Sampler.__init__-9"><a href="#Sampler.__init__-9"><span class="linenos"> 9</span></a>    <span class="k">def</span><span class="w"> </span><span class="fm">__init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">random_state</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">):</span>
+</span><span id="Sampler.__init__-10"><a href="#Sampler.__init__-10"><span class="linenos">10</span></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="Sampler.__init__-11"><a href="#Sampler.__init__-11"><span class="linenos">11</span></a><span class="sd">        Initializes the sampler with an optional random_state.</span>
+</span><span id="Sampler.__init__-12"><a href="#Sampler.__init__-12"><span class="linenos">12</span></a>
+</span><span id="Sampler.__init__-13"><a href="#Sampler.__init__-13"><span class="linenos">13</span></a><span class="sd">        Args:</span>
+</span><span id="Sampler.__init__-14"><a href="#Sampler.__init__-14"><span class="linenos">14</span></a><span class="sd">            random_state (int | np.random.Generator | None): Random seed or Generator.</span>
+</span><span id="Sampler.__init__-15"><a href="#Sampler.__init__-15"><span class="linenos">15</span></a><span class="sd">        &quot;&quot;&quot;</span>
+</span><span id="Sampler.__init__-16"><a href="#Sampler.__init__-16"><span class="linenos">16</span></a>        <span class="bp">self</span><span class="o">.</span><span class="n">random_state</span> <span class="o">=</span> <span class="n">random_state</span>
+</span><span id="Sampler.__init__-17"><a href="#Sampler.__init__-17"><span class="linenos">17</span></a>        <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">random_state</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span><span class="p">):</span>
+</span><span id="Sampler.__init__-18"><a href="#Sampler.__init__-18"><span class="linenos">18</span></a>            <span class="bp">self</span><span class="o">.</span><span class="n">rng</span> <span class="o">=</span> <span class="n">random_state</span>
+</span><span id="Sampler.__init__-19"><a href="#Sampler.__init__-19"><span class="linenos">19</span></a>        <span class="k">else</span><span class="p">:</span>
+</span><span id="Sampler.__init__-20"><a href="#Sampler.__init__-20"><span class="linenos">20</span></a>            <span class="bp">self</span><span class="o">.</span><span class="n">rng</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">default_rng</span><span class="p">(</span><span class="n">random_state</span><span class="p">)</span>
+</span></pre></div>
+
+
+            <div class="docstring"><p>Initializes the sampler with an optional random_state.</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>random_state (int | np.random.Generator | None):</strong>  Random seed or Generator.</li>
+</ul>
+</div>
+
+
+                            </div>
+                            <div id="Sampler.random_state" class="classattr">
+                                <div class="attr variable">
+            <span class="name">random_state</span>
+
+        
+    </div>
+    <a class="headerlink" href="#Sampler.random_state"></a>
+    
+    
+
+                            </div>
+                            <div id="Sampler.sample" class="classattr">
+                                        <input id="Sampler.sample-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
+<div class="attr function">
+                    <div class="decorator decorator-abc.abstractmethod">@abc.abstractmethod</div>
+
+        <span class="def">def</span>
+        <span class="name">sample</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="bp">self</span>,</span><span class="param">	<span class="n">n</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">dim</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">rng</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">_generator</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></span><span class="return-annotation">) -> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>:</span></span>
+
+                <label class="view-source-button" for="Sampler.sample-view-source"><span>View Source</span></label>
+
+    </div>
+    <a class="headerlink" href="#Sampler.sample"></a>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="Sampler.sample-22"><a href="#Sampler.sample-22"><span class="linenos">22</span></a>    <span class="nd">@abc</span><span class="o">.</span><span class="n">abstractmethod</span>
+</span><span id="Sampler.sample-23"><a href="#Sampler.sample-23"><span class="linenos">23</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span>
+</span><span id="Sampler.sample-24"><a href="#Sampler.sample-24"><span class="linenos">24</span></a>        <span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="Sampler.sample-25"><a href="#Sampler.sample-25"><span class="linenos">25</span></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="Sampler.sample-26"><a href="#Sampler.sample-26"><span class="linenos">26</span></a><span class="w">        </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="Sampler.sample-27"><a href="#Sampler.sample-27"><span class="linenos">27</span></a><span class="sd">        Generates n samples in a dim-dimensional unit hypercube [0, 1]^dim.</span>
+</span><span id="Sampler.sample-28"><a href="#Sampler.sample-28"><span class="linenos">28</span></a>
+</span><span id="Sampler.sample-29"><a href="#Sampler.sample-29"><span class="linenos">29</span></a><span class="sd">        Args:</span>
+</span><span id="Sampler.sample-30"><a href="#Sampler.sample-30"><span class="linenos">30</span></a><span class="sd">            n (int): Number of samples to generate.</span>
+</span><span id="Sampler.sample-31"><a href="#Sampler.sample-31"><span class="linenos">31</span></a><span class="sd">            dim (int): Dimension of the space.</span>
+</span><span id="Sampler.sample-32"><a href="#Sampler.sample-32"><span class="linenos">32</span></a><span class="sd">            rng (np.random.Generator | None): Optional generator. If None, uses internal self.rng.</span>
+</span><span id="Sampler.sample-33"><a href="#Sampler.sample-33"><span class="linenos">33</span></a>
+</span><span id="Sampler.sample-34"><a href="#Sampler.sample-34"><span class="linenos">34</span></a><span class="sd">        Returns:</span>
+</span><span id="Sampler.sample-35"><a href="#Sampler.sample-35"><span class="linenos">35</span></a><span class="sd">            np.ndarray: Array of shape (n, dim) with samples in [0, 1]^dim.</span>
+</span><span id="Sampler.sample-36"><a href="#Sampler.sample-36"><span class="linenos">36</span></a><span class="sd">        &quot;&quot;&quot;</span>
+</span><span id="Sampler.sample-37"><a href="#Sampler.sample-37"><span class="linenos">37</span></a>        <span class="k">pass</span>
+</span></pre></div>
+
+
+            <div class="docstring"><p>Generates n samples in a dim-dimensional unit hypercube [0, 1]^dim.</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>n (int):</strong>  Number of samples to generate.</li>
+<li><strong>dim (int):</strong>  Dimension of the space.</li>
+<li><strong>rng (np.random.Generator | None):</strong>  Optional generator. If None, uses internal self.rng.</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>np.ndarray: Array of shape (n, dim) with samples in [0, 1]^dim.</p>
+</blockquote>
+</div>
+
+
+                            </div>
+                </section>
+                <section id="LHCSampler">
+                            <input id="LHCSampler-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
+<div class="attr class">
+            
+    <span class="def">class</span>
+    <span class="name">LHCSampler</span><wbr>(<span class="base"><a href="#Sampler">ess.Sampler</a></span>):
+
+                <label class="view-source-button" for="LHCSampler-view-source"><span>View Source</span></label>
+
+    </div>
+    <a class="headerlink" href="#LHCSampler"></a>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="LHCSampler-40"><a href="#LHCSampler-40"><span class="linenos">40</span></a><span class="k">class</span><span class="w"> </span><span class="nc">LHCSampler</span><span class="p">(</span><span class="n">Sampler</span><span class="p">):</span>
+</span><span id="LHCSampler-41"><a href="#LHCSampler-41"><span class="linenos">41</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Latin Hypercube Sampler (LHS) in pure NumPy.&quot;&quot;&quot;</span>
+</span><span id="LHCSampler-42"><a href="#LHCSampler-42"><span class="linenos">42</span></a>
+</span><span id="LHCSampler-43"><a href="#LHCSampler-43"><span class="linenos">43</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span>
+</span><span id="LHCSampler-44"><a href="#LHCSampler-44"><span class="linenos">44</span></a>        <span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="LHCSampler-45"><a href="#LHCSampler-45"><span class="linenos">45</span></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="LHCSampler-46"><a href="#LHCSampler-46"><span class="linenos">46</span></a>        <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+</span><span id="LHCSampler-47"><a href="#LHCSampler-47"><span class="linenos">47</span></a>            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="n">dim</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+</span><span id="LHCSampler-48"><a href="#LHCSampler-48"><span class="linenos">48</span></a>
+</span><span id="LHCSampler-49"><a href="#LHCSampler-49"><span class="linenos">49</span></a>        <span class="n">active_rng</span> <span class="o">=</span> <span class="n">rng</span> <span class="k">if</span> <span class="n">rng</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span>
+</span><span id="LHCSampler-50"><a href="#LHCSampler-50"><span class="linenos">50</span></a>        <span class="n">perms</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">dim</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+</span><span id="LHCSampler-51"><a href="#LHCSampler-51"><span class="linenos">51</span></a>        <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">dim</span><span class="p">):</span>
+</span><span id="LHCSampler-52"><a href="#LHCSampler-52"><span class="linenos">52</span></a>            <span class="n">perms</span><span class="p">[:,</span> <span class="n">d</span><span class="p">]</span> <span class="o">=</span> <span class="n">active_rng</span><span class="o">.</span><span class="n">permutation</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+</span><span id="LHCSampler-53"><a href="#LHCSampler-53"><span class="linenos">53</span></a>
+</span><span id="LHCSampler-54"><a href="#LHCSampler-54"><span class="linenos">54</span></a>        <span class="n">offsets</span> <span class="o">=</span> <span class="n">active_rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">dim</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+</span><span id="LHCSampler-55"><a href="#LHCSampler-55"><span class="linenos">55</span></a>        <span class="k">return</span> <span class="p">(</span><span class="n">perms</span> <span class="o">+</span> <span class="n">offsets</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span>
+</span></pre></div>
+
+
+            <div class="docstring"><p>Latin Hypercube Sampler (LHS) in pure NumPy.</p>
+</div>
+
+
+                            <div id="LHCSampler.sample" class="classattr">
+                                        <input id="LHCSampler.sample-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
+<div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">sample</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="bp">self</span>,</span><span class="param">	<span class="n">n</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">dim</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">rng</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">_generator</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></span><span class="return-annotation">) -> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>:</span></span>
+
+                <label class="view-source-button" for="LHCSampler.sample-view-source"><span>View Source</span></label>
+
+    </div>
+    <a class="headerlink" href="#LHCSampler.sample"></a>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="LHCSampler.sample-43"><a href="#LHCSampler.sample-43"><span class="linenos">43</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span>
+</span><span id="LHCSampler.sample-44"><a href="#LHCSampler.sample-44"><span class="linenos">44</span></a>        <span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="LHCSampler.sample-45"><a href="#LHCSampler.sample-45"><span class="linenos">45</span></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="LHCSampler.sample-46"><a href="#LHCSampler.sample-46"><span class="linenos">46</span></a>        <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+</span><span id="LHCSampler.sample-47"><a href="#LHCSampler.sample-47"><span class="linenos">47</span></a>            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="n">dim</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+</span><span id="LHCSampler.sample-48"><a href="#LHCSampler.sample-48"><span class="linenos">48</span></a>
+</span><span id="LHCSampler.sample-49"><a href="#LHCSampler.sample-49"><span class="linenos">49</span></a>        <span class="n">active_rng</span> <span class="o">=</span> <span class="n">rng</span> <span class="k">if</span> <span class="n">rng</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span>
+</span><span id="LHCSampler.sample-50"><a href="#LHCSampler.sample-50"><span class="linenos">50</span></a>        <span class="n">perms</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="n">n</span><span class="p">,</span> <span class="n">dim</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+</span><span id="LHCSampler.sample-51"><a href="#LHCSampler.sample-51"><span class="linenos">51</span></a>        <span class="k">for</span> <span class="n">d</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">dim</span><span class="p">):</span>
+</span><span id="LHCSampler.sample-52"><a href="#LHCSampler.sample-52"><span class="linenos">52</span></a>            <span class="n">perms</span><span class="p">[:,</span> <span class="n">d</span><span class="p">]</span> <span class="o">=</span> <span class="n">active_rng</span><span class="o">.</span><span class="n">permutation</span><span class="p">(</span><span class="n">n</span><span class="p">)</span>
+</span><span id="LHCSampler.sample-53"><a href="#LHCSampler.sample-53"><span class="linenos">53</span></a>
+</span><span id="LHCSampler.sample-54"><a href="#LHCSampler.sample-54"><span class="linenos">54</span></a>        <span class="n">offsets</span> <span class="o">=</span> <span class="n">active_rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">dim</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+</span><span id="LHCSampler.sample-55"><a href="#LHCSampler.sample-55"><span class="linenos">55</span></a>        <span class="k">return</span> <span class="p">(</span><span class="n">perms</span> <span class="o">+</span> <span class="n">offsets</span><span class="p">)</span> <span class="o">/</span> <span class="n">n</span>
+</span></pre></div>
+
+
+            <div class="docstring"><p>Generates n samples in a dim-dimensional unit hypercube [0, 1]^dim.</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>n (int):</strong>  Number of samples to generate.</li>
+<li><strong>dim (int):</strong>  Dimension of the space.</li>
+<li><strong>rng (np.random.Generator | None):</strong>  Optional generator. If None, uses internal self.rng.</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>np.ndarray: Array of shape (n, dim) with samples in [0, 1]^dim.</p>
+</blockquote>
+</div>
+
+
+                            </div>
+                            <div class="inherited">
+                                <h5>Inherited Members</h5>
+                                <dl>
+                                    <div><dt><a href="#Sampler">Sampler</a></dt>
+                                <dd id="LHCSampler.__init__" class="function"><a href="#Sampler.__init__">Sampler</a></dd>
+                <dd id="LHCSampler.random_state" class="variable"><a href="#Sampler.random_state">random_state</a></dd>
+
+            </div>
+                                </dl>
+                            </div>
+                </section>
+                <section id="UniformSampler">
+                            <input id="UniformSampler-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
+<div class="attr class">
+            
+    <span class="def">class</span>
+    <span class="name">UniformSampler</span><wbr>(<span class="base"><a href="#Sampler">ess.Sampler</a></span>):
+
+                <label class="view-source-button" for="UniformSampler-view-source"><span>View Source</span></label>
+
+    </div>
+    <a class="headerlink" href="#UniformSampler"></a>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="UniformSampler-58"><a href="#UniformSampler-58"><span class="linenos">58</span></a><span class="k">class</span><span class="w"> </span><span class="nc">UniformSampler</span><span class="p">(</span><span class="n">Sampler</span><span class="p">):</span>
+</span><span id="UniformSampler-59"><a href="#UniformSampler-59"><span class="linenos">59</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;Uniform Random Sampler in pure NumPy.&quot;&quot;&quot;</span>
+</span><span id="UniformSampler-60"><a href="#UniformSampler-60"><span class="linenos">60</span></a>
+</span><span id="UniformSampler-61"><a href="#UniformSampler-61"><span class="linenos">61</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span>
+</span><span id="UniformSampler-62"><a href="#UniformSampler-62"><span class="linenos">62</span></a>        <span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="UniformSampler-63"><a href="#UniformSampler-63"><span class="linenos">63</span></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="UniformSampler-64"><a href="#UniformSampler-64"><span class="linenos">64</span></a>        <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+</span><span id="UniformSampler-65"><a href="#UniformSampler-65"><span class="linenos">65</span></a>            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="n">dim</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+</span><span id="UniformSampler-66"><a href="#UniformSampler-66"><span class="linenos">66</span></a>
+</span><span id="UniformSampler-67"><a href="#UniformSampler-67"><span class="linenos">67</span></a>        <span class="n">active_rng</span> <span class="o">=</span> <span class="n">rng</span> <span class="k">if</span> <span class="n">rng</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span>
+</span><span id="UniformSampler-68"><a href="#UniformSampler-68"><span class="linenos">68</span></a>        <span class="k">return</span> <span class="n">active_rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">dim</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+</span></pre></div>
+
+
+            <div class="docstring"><p>Uniform Random Sampler in pure NumPy.</p>
+</div>
+
+
+                            <div id="UniformSampler.sample" class="classattr">
+                                        <input id="UniformSampler.sample-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
+<div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">sample</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="bp">self</span>,</span><span class="param">	<span class="n">n</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">dim</span><span class="p">:</span> <span class="nb">int</span>,</span><span class="param">	<span class="n">rng</span><span class="p">:</span> <span class="n">numpy</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">_generator</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></span><span class="return-annotation">) -> <span class="n">numpy</span><span class="o">.</span><span class="n">ndarray</span>:</span></span>
+
+                <label class="view-source-button" for="UniformSampler.sample-view-source"><span>View Source</span></label>
+
+    </div>
+    <a class="headerlink" href="#UniformSampler.sample"></a>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="UniformSampler.sample-61"><a href="#UniformSampler.sample-61"><span class="linenos">61</span></a>    <span class="k">def</span><span class="w"> </span><span class="nf">sample</span><span class="p">(</span>
+</span><span id="UniformSampler.sample-62"><a href="#UniformSampler.sample-62"><span class="linenos">62</span></a>        <span class="bp">self</span><span class="p">,</span> <span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">dim</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">rng</span><span class="p">:</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+</span><span id="UniformSampler.sample-63"><a href="#UniformSampler.sample-63"><span class="linenos">63</span></a>    <span class="p">)</span> <span class="o">-&gt;</span> <span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">:</span>
+</span><span id="UniformSampler.sample-64"><a href="#UniformSampler.sample-64"><span class="linenos">64</span></a>        <span class="k">if</span> <span class="n">n</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+</span><span id="UniformSampler.sample-65"><a href="#UniformSampler.sample-65"><span class="linenos">65</span></a>            <span class="k">return</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="n">dim</span><span class="p">),</span> <span class="n">dtype</span><span class="o">=</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+</span><span id="UniformSampler.sample-66"><a href="#UniformSampler.sample-66"><span class="linenos">66</span></a>
+</span><span id="UniformSampler.sample-67"><a href="#UniformSampler.sample-67"><span class="linenos">67</span></a>        <span class="n">active_rng</span> <span class="o">=</span> <span class="n">rng</span> <span class="k">if</span> <span class="n">rng</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="bp">self</span><span class="o">.</span><span class="n">rng</span>
+</span><span id="UniformSampler.sample-68"><a href="#UniformSampler.sample-68"><span class="linenos">68</span></a>        <span class="k">return</span> <span class="n">active_rng</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">,</span> <span class="p">(</span><span class="n">n</span><span class="p">,</span> <span class="n">dim</span><span class="p">))</span><span class="o">.</span><span class="n">astype</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)</span>
+</span></pre></div>
+
+
+            <div class="docstring"><p>Generates n samples in a dim-dimensional unit hypercube [0, 1]^dim.</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>n (int):</strong>  Number of samples to generate.</li>
+<li><strong>dim (int):</strong>  Dimension of the space.</li>
+<li><strong>rng (np.random.Generator | None):</strong>  Optional generator. If None, uses internal self.rng.</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>np.ndarray: Array of shape (n, dim) with samples in [0, 1]^dim.</p>
+</blockquote>
+</div>
+
+
+                            </div>
+                            <div class="inherited">
+                                <h5>Inherited Members</h5>
+                                <dl>
+                                    <div><dt><a href="#Sampler">Sampler</a></dt>
+                                <dd id="UniformSampler.__init__" class="function"><a href="#Sampler.__init__">Sampler</a></dd>
+                <dd id="UniformSampler.random_state" class="variable"><a href="#Sampler.random_state">random_state</a></dd>
+
+            </div>
+                                </dl>
+                            </div>
+                </section>
+                <section id="check_sampler">
+                            <input id="check_sampler-view-source" class="view-source-toggle-state" type="checkbox" aria-hidden="true" tabindex="-1">
+<div class="attr function">
+            
+        <span class="def">def</span>
+        <span class="name">check_sampler</span><span class="signature pdoc-code multiline">(<span class="param">	<span class="n">sampler</span><span class="p">:</span> <span class="n"><a href="#Sampler">Sampler</a></span> <span class="o">|</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span>,</span><span class="param">	<span class="n">default_random_state</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">numpy</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">_generator</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span></span><span class="return-annotation">) -> <span class="n"><a href="#Sampler">Sampler</a></span>:</span></span>
+
+                <label class="view-source-button" for="check_sampler-view-source"><span>View Source</span></label>
+
+    </div>
+    <a class="headerlink" href="#check_sampler"></a>
+            <div class="pdoc-code codehilite"><pre><span></span><span id="check_sampler-71"><a href="#check_sampler-71"><span class="linenos">71</span></a><span class="k">def</span><span class="w"> </span><span class="nf">check_sampler</span><span class="p">(</span>
+</span><span id="check_sampler-72"><a href="#check_sampler-72"><span class="linenos">72</span></a>    <span class="n">sampler</span><span class="p">:</span> <span class="n">Sampler</span> <span class="o">|</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="check_sampler-73"><a href="#check_sampler-73"><span class="linenos">73</span></a>    <span class="n">default_random_state</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">Generator</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+</span><span id="check_sampler-74"><a href="#check_sampler-74"><span class="linenos">74</span></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Sampler</span><span class="p">:</span>
+</span><span id="check_sampler-75"><a href="#check_sampler-75"><span class="linenos">75</span></a><span class="w">    </span><span class="sd">&quot;&quot;&quot;</span>
+</span><span id="check_sampler-76"><a href="#check_sampler-76"><span class="linenos">76</span></a><span class="sd">    Validates and returns a Sampler instance.</span>
+</span><span id="check_sampler-77"><a href="#check_sampler-77"><span class="linenos">77</span></a>
+</span><span id="check_sampler-78"><a href="#check_sampler-78"><span class="linenos">78</span></a><span class="sd">    If sampler is None, returns LHCSampler(random_state=default_random_state).</span>
+</span><span id="check_sampler-79"><a href="#check_sampler-79"><span class="linenos">79</span></a><span class="sd">    If sampler is an int/numeric, returns LHCSampler(random_state=sampler).</span>
+</span><span id="check_sampler-80"><a href="#check_sampler-80"><span class="linenos">80</span></a><span class="sd">    If sampler is already a Sampler instance, returns it.</span>
+</span><span id="check_sampler-81"><a href="#check_sampler-81"><span class="linenos">81</span></a>
+</span><span id="check_sampler-82"><a href="#check_sampler-82"><span class="linenos">82</span></a><span class="sd">    Args:</span>
+</span><span id="check_sampler-83"><a href="#check_sampler-83"><span class="linenos">83</span></a><span class="sd">        sampler (Sampler | int | None): Sampler configuration.</span>
+</span><span id="check_sampler-84"><a href="#check_sampler-84"><span class="linenos">84</span></a><span class="sd">        default_random_state (int | np.random.Generator | None): Default seed to use if sampler is None.</span>
+</span><span id="check_sampler-85"><a href="#check_sampler-85"><span class="linenos">85</span></a>
+</span><span id="check_sampler-86"><a href="#check_sampler-86"><span class="linenos">86</span></a><span class="sd">    Returns:</span>
+</span><span id="check_sampler-87"><a href="#check_sampler-87"><span class="linenos">87</span></a><span class="sd">        Sampler: Checked Sampler instance.</span>
+</span><span id="check_sampler-88"><a href="#check_sampler-88"><span class="linenos">88</span></a><span class="sd">    &quot;&quot;&quot;</span>
+</span><span id="check_sampler-89"><a href="#check_sampler-89"><span class="linenos">89</span></a>    <span class="k">if</span> <span class="n">sampler</span> <span class="ow">is</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="check_sampler-90"><a href="#check_sampler-90"><span class="linenos">90</span></a>        <span class="k">return</span> <span class="n">LHCSampler</span><span class="p">(</span><span class="n">random_state</span><span class="o">=</span><span class="n">default_random_state</span><span class="p">)</span>
+</span><span id="check_sampler-91"><a href="#check_sampler-91"><span class="linenos">91</span></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sampler</span><span class="p">,</span> <span class="p">(</span><span class="nb">int</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">integer</span><span class="p">)):</span>
+</span><span id="check_sampler-92"><a href="#check_sampler-92"><span class="linenos">92</span></a>        <span class="k">return</span> <span class="n">LHCSampler</span><span class="p">(</span><span class="n">random_state</span><span class="o">=</span><span class="nb">int</span><span class="p">(</span><span class="n">sampler</span><span class="p">))</span>
+</span><span id="check_sampler-93"><a href="#check_sampler-93"><span class="linenos">93</span></a>    <span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">sampler</span><span class="p">,</span> <span class="n">Sampler</span><span class="p">):</span>
+</span><span id="check_sampler-94"><a href="#check_sampler-94"><span class="linenos">94</span></a>        <span class="k">return</span> <span class="n">sampler</span>
+</span><span id="check_sampler-95"><a href="#check_sampler-95"><span class="linenos">95</span></a>    <span class="k">raise</span> <span class="ne">TypeError</span><span class="p">(</span>
+</span><span id="check_sampler-96"><a href="#check_sampler-96"><span class="linenos">96</span></a>        <span class="sa">f</span><span class="s2">&quot;Invalid sampler type: </span><span class="si">{</span><span class="nb">type</span><span class="p">(</span><span class="n">sampler</span><span class="p">)</span><span class="si">}</span><span class="s2">. Must be None, int, or an instance of Sampler.&quot;</span>
+</span><span id="check_sampler-97"><a href="#check_sampler-97"><span class="linenos">97</span></a>    <span class="p">)</span>
+</span></pre></div>
+
+
+            <div class="docstring"><p>Validates and returns a Sampler instance.</p>
+
+<p>If sampler is None, returns LHCSampler(random_state=default_random_state).
+If sampler is an int/numeric, returns LHCSampler(random_state=sampler).
+If sampler is already a Sampler instance, returns it.</p>
+
+<h6 id="arguments">Arguments:</h6>
+
+<ul>
+<li><strong>sampler (Sampler | int | None):</strong>  Sampler configuration.</li>
+<li><strong>default_random_state (int | np.random.Generator | None):</strong>  Default seed to use if sampler is None.</li>
+</ul>
+
+<h6 id="returns">Returns:</h6>
+
+<blockquote>
+  <p>Sampler: Checked Sampler instance.</p>
+</blockquote>
+</div>
+
+
                 </section>
     </main>
 <script>

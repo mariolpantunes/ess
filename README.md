@@ -37,7 +37,7 @@ pip install git+[https://github.com/mariolpantunes/ess.git](https://github.com/m
 
 **Requirements:**
 
-* Python >= 3.12
+* Python >= 3.10
 * numpy
 * faiss-cpu
 
@@ -45,7 +45,7 @@ pip install git+[https://github.com/mariolpantunes/ess.git](https://github.com/m
 
 ### Basic Example
 
-Generate 100 new points in a 2D space using the default settings (Auto-Radius + Repulsive Walls):
+Generate 100 new points in a 2D space using the default settings (LHS Initialization + Auto-Radius + Repulsive Walls):
 
 ```python
 import numpy as np
@@ -63,13 +63,13 @@ print(f"Total points: {len(result)}")
 
 ```
 
-### Advanced Usage with Faiss & Radius Search
+### Advanced Usage with Faiss & LHS Sampler
 
-For large datasets, explicitly use the `FaissHNSWFlatNN` backend and the new physics-based radius mode:
+For large datasets, explicitly use the `FaissHNSWFlatNN` backend, space-filling samplers, and the physics-based radius mode:
 
 ```python
 import numpy as np
-from ess import esa, FaissHNSWFlatNN
+from ess import esa, FaissHNSWFlatNN, LHCSampler
 
 # 1000 existing points in 50 dimensions
 dim = 50
@@ -77,7 +77,10 @@ obstacles = np.random.rand(1000, dim)
 bounds = np.array([[0, 1]] * dim)
 
 # Initialize HNSW Engine for speed
-nn_engine = FaissHNSWFlatNN(dimension=dim, seed=42)
+nn_engine = FaissHNSWFlatNN(dimension=dim)
+
+# Initialize Space-Filling Sampler (LHS)
+lhs_sampler = LHCSampler(random_state=42)
 
 # Run ESA (returns ONLY the new points)
 # search_mode='radius' activates the dense physical interaction model
@@ -86,8 +89,9 @@ new_points = esa(
     bounds, 
     n=500, 
     nn_instance=nn_engine,
-    search_mode='radius',  # Use radius instead of k-NN
-    radius=None,           # None = Auto-compute based on density
+    init_sampler=lhs_sampler,  # Set custom LHS sampler
+    search_mode='radius',      # Use radius instead of k-NN
+    radius=None,               # None = Auto-compute based on density
     batch_size=100, 
     epochs=256
 )

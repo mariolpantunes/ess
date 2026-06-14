@@ -30,7 +30,9 @@ Above this value, the memory cost of the dense matrix becomes prohibitive.
 
 
 # --- Force Functions ---
-def gaussian_force(d: np.ndarray, sigma: float = 0.2, alpha: float = 2.0, **kwargs) -> np.ndarray:
+def gaussian_force(
+    d: np.ndarray, sigma: float = 0.2, alpha: float = 2.0, **kwargs
+) -> np.ndarray:
     r"""
     Computes a Gaussian repulsion force in log-space based on distance.
 
@@ -85,7 +87,8 @@ def linear_force(d: np.ndarray, R: float = 0.5, **kwargs) -> np.ndarray:
     Returns:
         np.ndarray: An array of log-force magnitudes (contains -inf where $d \ge R$).
     """
-    return np.log(np.maximum(0.0, 1.0 - (d / R)))
+    with np.errstate(divide="ignore"):
+        return np.log(np.maximum(0.0, 1.0 - (d / R)))
 
 
 def cauchy_force(d: np.ndarray, dim: int = 2, **kwargs) -> np.ndarray:
@@ -360,7 +363,8 @@ def _compute_radius_forces(
     **Key Steps:**
     1. **Range Search:** Find all pairs $(i, j)$ where $||P_i - P_j|| < R$.
     2. **Self-Masking:** Explicitly zero out interactions where $i = j$.
-    3. **Collision Handling:** If $||\\vec{r}_{ij}|| \\approx 0$ (stacking), a random noise vector is injected to break symmetry.
+    3. **Collision Handling:** If $||\vec{r}_{ij}|| \approx 0$ (stacking),
+       a random noise vector is injected to break symmetry.
     4. **Force Accumulation:** Forces are summed via matrix operations.
 
     Args:
@@ -619,7 +623,7 @@ def _esa(
     scaled_samples = scaled_samples.astype(np.float32)
     dim = samples.shape[1]
     total_points = samples.shape[0] + n
-    
+
     if isinstance(seed, np.random.Generator):
         rng = seed
     else:
@@ -664,7 +668,9 @@ def _esa(
             active_batch_init = resolved_sampler.sample(current_n, dim, rng)
         else:
             # Subsequent batches or when initial samples exist: use Smart Init with LHS candidate generation
-            active_batch_init = _smart_init(bounds_01, nn_instance, current_n, rng, resolved_sampler)
+            active_batch_init = _smart_init(
+                bounds_01, nn_instance, current_n, rng, resolved_sampler
+            )
         all_data[batch_start:batch_end] = active_batch_init
 
         # Create a VIEW of the master buffer for optimization
@@ -740,7 +746,8 @@ def _esa(
 
     # 5. Inverse Scaling & Return
     # We only return the generated portion (from len(samples) onwards)
-    generated_slice = all_data[len(samples) : cursor]
+    start_idx = len(samples)
+    generated_slice = all_data[start_idx:cursor]
     return _inv_scale(generated_slice, min_val, max_val)
 
 

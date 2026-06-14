@@ -1,7 +1,6 @@
 # coding: utf-8
 
 
-
 import typing
 import unittest
 
@@ -179,20 +178,19 @@ class SharedNNTests(unittest.TestCase):
     def test_range_search_stacking(self):
         """Verify that range_search correctly registers overlapping/stacked active points."""
         self.model.add_static(self.static_points)
-        
+
         # Place two active points at the exact same location
         stacked_active = np.array([[5.0, 5.0, 5.0], [5.0, 5.0, 5.0]], dtype=np.float32)
         self.model.set_active(stacked_active)
-        
+
         # Search radius that covers self but is small
         dists, mask = self.model.range_search(radius=1.0)
-        
+
         # For Active point 0 (row 0), column 4 (Active point 1) is a stacked point.
         # Its distance is 0, which is < radius (1.0).
         # It must be marked as True in the mask.
         self.assertTrue(mask[0, 4], "Overlap between active points was masked out!")
         self.assertTrue(mask[1, 3], "Overlap between active points was masked out!")
-
 
 
 class TestNumpyNN(SharedNNTests):
