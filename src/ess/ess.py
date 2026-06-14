@@ -88,20 +88,22 @@ def linear_force(d: np.ndarray, R: float = 0.5, **kwargs) -> np.ndarray:
     return np.log(np.maximum(0.0, 1.0 - (d / R)))
 
 
-def cauchy_force(d: np.ndarray, **kwargs) -> np.ndarray:
+def cauchy_force(d: np.ndarray, dim: int = 2, **kwargs) -> np.ndarray:
     r"""
     Computes a long-tailed Cauchy repulsion force in log-space.
 
-    The magnitude is defined as:
-    $ \log F(d) = -\log(1 + d^2) $
+    The magnitude decays as $d^{-(D-1)}$ in high dimensions $D$ (minimum decay of $d^{-2}$):
+    $ \log F(d) = -0.5 \cdot \max(2, D - 1) \cdot \log(1 + d^2) $
 
     Args:
         d (np.ndarray): Array of distances.
+        dim (int): The dimension of the space $D$.
 
     Returns:
         np.ndarray: An array of log-force magnitudes.
     """
-    return -np.log(1.0 + (d * d))
+    power = max(2, dim - 1)
+    return -0.5 * power * np.log(1.0 + (d * d))
 
 
 METRIC_REGISTRY = {
