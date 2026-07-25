@@ -36,7 +36,7 @@ def main(args):
 
     s = time.perf_counter()
     points3 = ess.esa(
-        points0, bounds, n=args.n, border_strategy="repulsive", search_mode="radius"
+        points0, bounds, n=args.n, search_mode="radius"
     )
     e = time.perf_counter()
     all_points = np.concatenate((points0, points3), axis=0)

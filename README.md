@@ -12,11 +12,10 @@ It simulates electrostatic repulsive forces to "relax" new points into the empty
 ## Features
 
 * **Empty Space Algorithm (ESA)**: Uses physics-inspired repulsive forces (Gaussian, Softened Inverse, etc.) to maximize the separation between points.
-* **Radius-Based Interactions (New in v0.3.0)**: Supports physical range searches (interacting with *all* neighbors within a radius) alongside standard k-NN, with automatic radius estimation for high-dimensional spaces.
-* **Repulsive Boundaries**: Implements "soft walls" that exert restorative forces at domain edges, preventing the edge-clumping artifacts common in hard-clipped optimization.
-* **Scalable Architecture**:
-    * **NumpyNN**: Vectorized pure NumPy implementation with norm caching. Efficient for N < 5,000.
-    * **FaissHNSW**: Wraps [Faiss](https://github.com/facebookresearch/faiss) HNSW graphs for logarithmic scaling on large datasets (N > 50,000).
+* **Toroidal Geometry (New in v0.4.0)**: The relaxation runs on the unit torus $[0, 1)^d$ under the toroidal L1 metric — opposite faces are identified, so there are no walls, no clipping, and no edge-clumping artifacts by construction.
+* **Radius-Based Interactions**: Supports physical range searches (interacting with *all* neighbors within a radius) alongside standard k-NN, with automatic L1-ball radius estimation for high-dimensional spaces.
+* **Single Scalable Engine**: Neighbour search is [torann](https://github.com/mariolpantunes/torann) — exact brute force at small N, toroidal LSH above its threshold, chosen internally; per-epoch coordinate updates are native (no index rebuilds).
+* **Robust Early Stopping**: Convergence is detected on the force field itself (plateau of the largest net force, learning-rate-decoupled), typically stopping in tens of epochs instead of hundreds.
 * **High-Dimensional Metrics**: Includes robust coverage metrics (Maximin, Clark-Evans Index, Sparse Grid Coverage) optimized for dimensions > 32D.
 * **Smart Initialization**: Uses a vectorized "Best Candidate" sampling strategy to seed new batches in the most promising void regions.
 
@@ -40,7 +39,7 @@ pip install git+[https://github.com/mariolpantunes/ess.git](https://github.com/m
 
 * Python >= 3.10
 * numpy
-* faiss-cpu
+* torann
 
 ## Usage
 
@@ -58,26 +57,28 @@ bounds = np.array([[0, 1], [0, 1]])
 
 # Generate 100 new points
 # 'ess' returns the combined set (obstacles + new points)
-result = ess.ess(obstacles, bounds, n=100, seed=42, border_strategy='repulsive')
+result = ess.ess(obstacles, bounds, n=100, seed=42)
 
 print(f"Total points: {len(result)}")
 ```
 
-### Advanced Usage with Faiss & LHS Sampler
+### Advanced Usage with a Custom Index & LHS Sampler
 
-For large datasets, explicitly use the `FaissHNSWFlatNN` backend, space-filling samplers, and the physics-based radius mode:
+A pre-configured `torann.ToroidalNN` (specific backend, LSH parameters)
+can be passed in, together with space-filling samplers and the
+physics-based radius mode:
 
 ```python
 import numpy as np
-from ess import esa, FaissHNSWFlatNN, LHCSampler
+from ess import esa, ToroidalNN, LHCSampler
 
 # 1000 existing points in 50 dimensions
 dim = 50
 obstacles = np.random.rand(1000, dim)
 bounds = np.array([[0, 1]] * dim)
 
-# Initialize HNSW Engine for speed
-nn_engine = FaissHNSWFlatNN(dimension=dim)
+# Optional: explicit engine configuration (backend, thresholds, ...)
+index = ToroidalNN(seed=42, backend="rust")
 
 # Initialize Space-Filling Sampler (LHS)
 lhs_sampler = LHCSampler(random_state=42)
@@ -88,7 +89,7 @@ new_points = esa(
     obstacles, 
     bounds, 
     n=500, 
-    nn_instance=nn_engine,
+    index=index,
     init_sampler=lhs_sampler,  # Set custom LHS sampler
     search_mode='radius',      # Use radius instead of k-NN
     radius=None,               # None = Auto-compute based on density
