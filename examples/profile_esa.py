@@ -16,7 +16,6 @@ logging.basicConfig(level=logging.CRITICAL)
 def profile_esa_split(
     n=2000,
     search_mode="k_nn",
-    border_strategy="clip",
     k=None,
     radius=None,
     metric="gaussian",
@@ -35,7 +34,7 @@ def profile_esa_split(
     bound_min, bound_max = -10, 10
 
     print("Starting Profile Run...")
-    print(f"Configuration: N={n}, Search={search_mode}, Border={border_strategy}")
+    print(f"Configuration: N={n}, Search={search_mode}")
     print(f"K={k}, Radius={radius}, Metric={metric}")
     print(f"Dims={dimensions}")
     print(f"Populations: {initial_pop_sizes}")
@@ -73,7 +72,6 @@ def profile_esa_split(
                     batch_size=batch_size,
                     epochs=100,
                     search_mode=search_mode,
-                    border_strategy=border_strategy,
                     k=k,
                     radius=radius,
                     metric=metric,
@@ -117,13 +115,6 @@ if __name__ == "__main__":
         help="Search mode (default: k_nn)",
     )
     parser.add_argument(
-        "--border_strategy",
-        type=str,
-        default="clip",
-        choices=["clip", "repulsive"],
-        help="Border strategy (default: clip)",
-    )
-    parser.add_argument(
         "--k", type=int, default=None, help="Number of neighbors (default: None)"
     )
     parser.add_argument(
@@ -141,7 +132,6 @@ if __name__ == "__main__":
     profile_esa_split(
         n=args.n,
         search_mode=args.search_mode,
-        border_strategy=args.border_strategy,
         k=args.k,
         radius=args.radius,
         metric=args.metric,

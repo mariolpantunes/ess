@@ -1,3 +1,3 @@
 numpy>=2.4.0
-faiss-cpu>=1.13.2
+torann>=0.2.0
 matplotlib>=3.10.8

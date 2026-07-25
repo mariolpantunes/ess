@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "EmptySpaceSearch"
-version = "0.3.1"
+version = "0.4.0"
 authors = [
     {name = "Mário Antunes", email = "mario.antunes@ua.pt"}
 ]
@@ -19,7 +19,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=2.0.0",
-    "faiss-cpu>=1.8.0",
+    "torann>=0.2.0",
 ]
 
 [project.urls]
