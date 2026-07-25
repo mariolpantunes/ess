@@ -158,6 +158,19 @@ class TestESS(unittest.TestCase):
         with self.assertRaises(ValueError):
             ess.ess(self.samples, self.bounds, n=5, metric="no_such_law")
 
+    def test_run_stats(self):
+        """The optional stats sink reports epochs, EMA and the radius."""
+        stats = {}
+        res = ess.esa(
+            self.samples, self.bounds, n=12, batch_size=5, seed=42, stats=stats
+        )
+        self.assertEqual(len(res), 12)
+        self.assertEqual(len(stats["batch_epochs"]), 3)  # batches 5, 5, 2
+        self.assertEqual(len(stats["batch_force_ema"]), 3)
+        self.assertEqual(stats["epochs_total"], sum(stats["batch_epochs"]))
+        self.assertGreater(stats["radius"], 0.0)
+        self.assertTrue(all(e >= 1 for e in stats["batch_epochs"]))
+
     def test_batching_logic(self):
         """Remainder batches: n=12, batch=5 -> 5, 5, 2."""
         res = ess.ess(self.samples, self.bounds, n=12, batch_size=5, seed=1)

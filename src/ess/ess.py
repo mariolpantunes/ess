@@ -406,6 +406,7 @@ def _esa(
     metric_fn: collections.abc.Callable,
     rng: np.random.Generator,
     init_sampler: samplers.Sampler,
+    stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
     r"""Executes the ESA optimization loop on the unit torus.
@@ -434,9 +435,10 @@ def _esa(
     Two additional guards: the absolute floor `tol` (forces genuinely
     vanished — isolated points), and the annealing floor
     $\eta_t \cdot \text{EMA} < 10^{-9}$ (steps too small to matter).
-    Measured on 2D/5D benchmarks, the plateau fires after roughly 30-50
-    epochs where pure annealing would grind on for 300+, at equal
-    Clark-Evans quality.
+    Benchmarked over $d \in \{2, \dots, 64\}$
+    (``examples/benchmark_dispersion.py``), the plateau fires after
+    8-38 epochs per batch where pure annealing would grind on for 300+,
+    at equal Clark-Evans quality.
 
     Args:
         samples01 (np.ndarray): Static points already scaled to $[0, 1)$.
@@ -457,6 +459,7 @@ def _esa(
         metric_fn (Callable): Log-space force law.
         rng (np.random.Generator): Random number generator.
         init_sampler (samplers.Sampler): Sampler for initial positions.
+        stats (dict | None): Optional run-statistics sink; see `esa`.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
     Returns:
@@ -542,7 +545,16 @@ def _esa(
             "Batch [%d:%d] stopped after %d/%d epochs (force EMA %.4g)",
             cursor, cursor + current_n, epochs_used, epochs, ema or 0.0,
         )
+        if stats is not None:
+            stats.setdefault("batch_epochs", []).append(epochs_used)
+            stats.setdefault("batch_force_ema", []).append(
+                float(ema) if ema is not None else 0.0
+            )
         cursor += current_n
+
+    if stats is not None:
+        stats["radius"] = radius
+        stats["epochs_total"] = int(np.sum(stats.get("batch_epochs", [0])))
 
     return all_data[n_static:cursor]
 
@@ -554,17 +566,18 @@ def esa(
     n: int,
     index: ToroidalNN | None = None,
     epochs: int = 1024,
-    lr: float = 0.01,
+    lr: float = 0.02,
     search_mode: str = "k_nn",
-    decay: float = 0.95,
+    decay: float = 0.99,
     batch_size: int = 50,
     k: int | None = None,
     radius: float | None = None,
     tol: float = 1e-2,
-    patience: int = 10,
-    metric: str | collections.abc.Callable = "softened_inverse",
+    patience: int = 5,
+    metric: str | collections.abc.Callable = "gaussian",
     seed: int | np.random.Generator | None = None,
     init_sampler: samplers.Sampler | int | None = None,
+    stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
     r"""Empty Space Algorithm (ESA): returns only the generated points.
@@ -579,6 +592,14 @@ def esa(
     The same $R$ is the range cutoff in radius mode and the distance
     normalisation of every force law in both modes, which is what keeps
     force parameters dimension-free.
+
+    The defaults (``metric="gaussian"``, ``lr=0.02``, ``decay=0.99``,
+    ``patience=5``) are calibrated by ``examples/benchmark_dispersion.py``
+    over $d \in \{2, \dots, 64\}$, both search modes and 10 seeds:
+    quality is flat across a wide lr/decay grid (the plateau stop, not
+    the annealing schedule, decides convergence), so the defaults pick
+    the cheapest cell at top quality — a larger step with almost no
+    decay, stopped early by the force plateau.
 
     Args:
         samples (np.ndarray): Existing points to avoid, shape $(N_0, D)$.
@@ -609,6 +630,11 @@ def esa(
         seed (int | np.random.Generator | None): Seed or Generator.
         init_sampler (samplers.Sampler | int | None): Initial-position
             sampler; None = LHS.
+        stats (dict | None): Optional dictionary filled in place with run
+            statistics — ``batch_epochs`` (epochs used per batch),
+            ``batch_force_ema`` (final force EMA per batch),
+            ``epochs_total`` and ``radius``. Intended for benchmarking
+            and convergence studies; the returned points are unaffected.
         **metric_kwargs: Extra arguments for the force law.
 
     Returns:
@@ -663,6 +689,7 @@ def esa(
         metric_fn=metric_fn,
         rng=rng,
         init_sampler=samplers.check_sampler(init_sampler, default_random_state=rng),
+        stats=stats,
         **metric_kwargs,
     )
     return _inv_scale(generated, min_val, max_val)
