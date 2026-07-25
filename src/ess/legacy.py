@@ -2,10 +2,34 @@ import logging
 
 import numpy as np
 
-from . import nn
-
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
+
+
+def _static_knn(data: np.ndarray, coor: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray]:
+    r"""Brute-force Euclidean k-NN of one query point against `data`.
+
+    Self-contained replacement for the removed NN engine layer — the
+    legacy strategies only ever query a single moving point against a
+    static set, so a direct computation is all they need:
+
+    $$ d_j = \lVert \vec{x} - \vec{p}_j \rVert_2 $$
+
+    Args:
+        data (np.ndarray): Static points, shape $(N, D)$.
+        coor (np.ndarray): Query point, shape $(1, D)$.
+        k (int): Number of neighbours (clamped to $N$).
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: (indices, distances) of shape
+        $(1, k)$, sorted by distance.
+    """
+    d = np.linalg.norm(data - coor, axis=1)
+    k = min(k, d.shape[0])
+    idx = np.argpartition(d, k - 1)[:k]
+    order = np.argsort(d[idx])
+    idx = idx[order]
+    return idx[None, :], d[idx][None, :]
 
 
 def _scale(arr, min_val=None, max_val=None):
@@ -99,7 +123,7 @@ def _elastic(es, neighbors, neighbors_dist):
     return direc
 
 
-def _empty_center(coor, data, neigh, *, lr: float, epochs: int, bounds: np.ndarray):
+def _empty_center(coor, data, *, lr: float, epochs: int, bounds: np.ndarray):
     """
     Optimizes a single point using the Empty Center Strategy.
 
@@ -118,7 +142,6 @@ def _empty_center(coor, data, neigh, *, lr: float, epochs: int, bounds: np.ndarr
     Args:
         coor (np.ndarray): Initial coordinate of the candidate point.
         data (np.ndarray): The static set of existing points acting as obstacles.
-        neigh (nn.NearestNeighbors): The nearest neighbor index.
         lr (float): The step size $\\eta$ (movement magnitude per iteration).
         epochs (int): Maximum number of iterations.
         bounds (np.ndarray): Domain boundaries for clipping $[0, 1]$.
@@ -128,13 +151,11 @@ def _empty_center(coor, data, neigh, *, lr: float, epochs: int, bounds: np.ndarr
     """
     movestep = lr if lr is not None else 0.01
 
-    k_req = min(data.shape[1] + 1, neigh.total_count)
+    # k = dim + 1 is a heuristic for sufficient neighbors
+    k_req = min(data.shape[1] + 1, data.shape[0])
 
     for i in range(epochs):
-        # query_external replaces the old query() method
-        # It queries the static points (data)
-        # k = dim + 1 is a heuristic for sufficient neighbors
-        adjs_, distances_ = neigh.query_static(coor, k=k_req)
+        adjs_, distances_ = _static_knn(data, coor, k=k_req)
 
         direc = _elastic(coor, data[adjs_[0]], distances_[0])
         mag = np.linalg.norm(direc)
@@ -178,11 +199,7 @@ def _esa_01(samples, bounds, n: int | None = None, seed: int | None = None):
     scaled_samples, _, _ = _scale(samples, min_val, max_val)
     n_value = n if n is not None else samples.shape[0]
 
-    # Initialize NN with original samples
     seed_value = seed if seed is not None else 42
-    neigh = nn.NumpyNN(dimension=scaled_samples.shape[1])
-    neigh.add_static(scaled_samples)
-
     rng = np.random.default_rng(seed_value)
     coors = rng.uniform(0, 1, (n_value, scaled_samples.shape[1])).astype(np.float32)
     logger.debug(f"Coors({n_value}, {scaled_samples.shape[1]})\n{coors}")
@@ -197,7 +214,6 @@ def _esa_01(samples, bounds, n: int | None = None, seed: int | None = None):
         es_param = _empty_center(
             c.reshape(1, -1),
             scaled_samples,
-            neigh,
             lr=movestep,
             epochs=100,
             bounds=scaled_bounds,
@@ -254,9 +270,6 @@ def _esa_02(
     samples, _, _ = _scale(samples, min_val, max_val)
     n_value = n if n is not None else samples.shape[0]
 
-    neigh = nn.NumpyNN(dimension=samples.shape[1])
-    neigh.add_static(samples)
-
     seed_value = seed if seed is not None else 42
     rng = np.random.default_rng(seed_value)
     coors = rng.uniform(0, 1, (n_value, samples.shape[1]))
@@ -266,12 +279,11 @@ def _esa_02(
 
     for c in coors:
         es_param = _empty_center(
-            c.reshape(1, -1), samples, neigh, lr=lr, epochs=epochs, bounds=scaled_bounds
+            c.reshape(1, -1), samples, lr=lr, epochs=epochs, bounds=scaled_bounds
         )
         es_params.append(es_param[0])
 
         samples = np.vstack((samples, es_param))
-        neigh.add_static(es_param)
 
     rv = np.array(es_params)
     rv = _inv_scale(rv, min_val=min_val, max_val=max_val)
