@@ -75,14 +75,14 @@ class TestUtils(unittest.TestCase):
         self.assertAlmostEqual(f_gauss[0], 0.0)
         self.assertLess(f_gauss[2], -100.0)
 
-        # 2. Linear: High at 0, Zero > R
-        f_lin = METRIC_REGISTRY["linear"](d, R=1.0)
+        # 2. Linear: High at 0, cut off at the radius (d_hat >= 1)
+        f_lin = METRIC_REGISTRY["linear"](d, alpha=1.0)
         self.assertAlmostEqual(f_lin[0], 0.0)
         self.assertAlmostEqual(f_lin[1], np.log(1e-9))
         self.assertAlmostEqual(f_lin[2], np.log(1e-9))
 
         # 3. Softened Inverse: Finite at 0, Decays slowly
-        f_inv = METRIC_REGISTRY["softened_inverse"](d, epsilon=0.1, alpha=1.0, dim=2)
+        f_inv = METRIC_REGISTRY["softened_inverse"](d, epsilon=0.1, alpha=1.0)
         self.assertLess(f_inv[0], 5.0)  # log(10) ~ 2.3
         self.assertTrue(np.isfinite(f_inv[2]))  # Never negative infinity
 

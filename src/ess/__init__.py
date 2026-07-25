@@ -1,46 +1,50 @@
-"""
+r"""
 ESS: Empty Space Strategy
 =========================
 
-A library for generating spatially diverse point distributions in high-dimensional
-spaces using physics-based repulsion simulations.
+A library for generating spatially diverse point distributions in
+high-dimensional spaces using physics-based repulsion simulations.
 
-The Empty Space Strategy (ESS) fills the "voids" in a design space by introducing
-active particles that repel each other and existing static points. This is particularly
-useful for:
-1. **Optimization Initialization**: Finding diverse starting points for population-based algorithms.
-2. **Design of Experiments (DoE)**: Creating space-filling designs.
-3. **Sampling**: Generating high-entropy distributions in bounded domains.
+The Empty Space Strategy (ESS) fills the "voids" in a design space by
+introducing active particles that repel each other and existing static
+points. This is particularly useful for:
+
+1. **Optimization Initialization**: Diverse starting points for
+   population-based algorithms.
+2. **Design of Experiments (DoE)**: Space-filling designs.
+3. **Sampling**: High-entropy distributions in bounded domains.
 
 Key Algorithms
 --------------
 The library provides two main entry points:
-* `esa`: **Empty Space Algorithm** - Returns *only* the new generated points.
-* `ess`: **Empty Space Strategy** - Returns the combined set (Original + New).
+
+* `esa`: **Empty Space Algorithm** — returns *only* the new generated points.
+* `ess`: **Empty Space Strategy** — returns the combined set (original + new).
 
 Architecture
 ------------
-The simulation is powered by swappable Nearest Neighbor (NN) engines to handle
-forces efficiently across different scales:
-* **Small N**: Uses `NumpyNN` for vectorized brute-force exact calculation.
-* **Large N**: Uses `FaissHNSWFlatNN` for approximate, graph-based queries.
+The simulation runs on the unit torus $[0, 1)^d$ under the toroidal L1
+metric — opposite faces are identified, so the relaxation has no walls
+and no edge artifacts. Neighbour search is a single engine,
+`torann.ToroidalNN`: exact brute force at small $n$, toroidal LSH above
+its threshold, chosen internally by size.
 
 Modules
 -------
-* `ess`: Core generation logic and force field definitions.
-* `nn`: Abstract and concrete NN implementations (Numpy, Faiss).
-* `utils`: Metrics for spatial distribution (Coverage, Clark-Evans Index, Maximin).
+* `ess`: Core generation logic and force-field definitions.
+* `samplers`: Space-filling initial-position samplers (LHS, uniform).
+* `utils`: Metrics for spatial distribution (Coverage, Clark-Evans, Maximin).
 * `legacy`: Reference implementations of earlier sequential strategies.
 """
 
 # 1. Internal Module Imports
-from . import legacy, nn, utils, samplers
+from . import legacy, samplers, utils
 
 # 2. Main API Exports
 from .ess import esa, ess
 
-# 3. NN Engine Exports
-from .nn import FaissFlatL2NN, FaissHNSWFlatNN, NearestNeighbors, NumpyNN
+# 3. Neighbour-search engine (re-exported for custom configuration)
+from torann import ToroidalNN
 
 # 4. Sampler Exports
 from .samplers import LHCSampler, Sampler, UniformSampler, check_sampler
@@ -49,15 +53,11 @@ from .samplers import LHCSampler, Sampler, UniformSampler, check_sampler
 __all__ = [
     "esa",
     "ess",
-    "NearestNeighbors",
-    "NumpyNN",
-    "FaissFlatL2NN",
-    "FaissHNSWFlatNN",
+    "ToroidalNN",
     "Sampler",
     "LHCSampler",
     "UniformSampler",
     "check_sampler",
-    "nn",
     "utils",
     "legacy",
     "samplers",
