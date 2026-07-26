@@ -26,6 +26,7 @@ import collections.abc
 import logging
 import math
 import statistics
+import time
 
 import numpy as np
 from torann import ToroidalNN
@@ -401,6 +402,21 @@ def _pad_ragged(
 _FORCE_BLOCK_ELEMENTS = 8_000_000
 
 
+def _accumulate(timers: dict | None, key: str, started: float) -> None:
+    """Adds the seconds elapsed since `started` to ``timers[key]``.
+
+    A no-op when `timers` is None, so the instrumented call sites cost a
+    single `time.perf_counter()` when statistics are not requested.
+
+    Args:
+        timers (dict | None): Accumulator, or None to disable.
+        key (str): Bucket name.
+        started (float): `time.perf_counter()` value from before the work.
+    """
+    if timers is not None:
+        timers[key] = timers.get(key, 0.0) + (time.perf_counter() - started)
+
+
 def _row_blocks(rows: int, width: int, dim: int):
     """Yields ``(start, stop)`` row slices with a bounded working set.
 
@@ -597,11 +613,14 @@ def _esa(
         n, num_batches, search_mode, radius,
     )
 
+    timers: dict | None = {} if stats is not None else None
+
     for _ in range(num_batches):
         current_n = min(batch_size, n_static + n - cursor)
         if current_n <= 0:
             break
 
+        started = time.perf_counter()
         if fitted:
             init = _smart_init(index, current_n, dim, rng, init_sampler)
             index.promote(init)
@@ -613,6 +632,7 @@ def _esa(
             )
             index.fit(np.empty((0, dim)), init, k=k, radius=radius_hint)
             fitted = True
+        _accumulate(timers, "setup_s", started)
 
         all_data[cursor : cursor + current_n] = init
         active = all_data[cursor : cursor + current_n]  # view into the buffer
@@ -624,15 +644,21 @@ def _esa(
         calm_streak = 0
         epochs_used = 0
         for epochs_used in range(1, epochs + 1):
+            started = time.perf_counter()
             if search_mode == "radius":
                 ids, dists = _pad_ragged(index.query_radius(radius))
             else:
                 ids, dists = index.query(k=k)
+            _accumulate(timers, "query_s", started)
 
+            started = time.perf_counter()
             forces = _compute_forces(
                 active, all_data, ids, dists, radius, metric_fn, rng,
                 **metric_kwargs,
             )
+            _accumulate(timers, "force_s", started)
+
+            started = time.perf_counter()
 
             # Steps are measured in units of the interaction radius, so
             # stability does not depend on n or d: the forces are already
@@ -652,7 +678,11 @@ def _esa(
             )
             active += step
             np.mod(active, 1.0, out=active)
+            _accumulate(timers, "step_s", started)
+
+            started = time.perf_counter()
             index.update(active)
+            _accumulate(timers, "update_s", started)
 
             f_max = float(np.max(np.linalg.norm(forces, axis=1)))
             ema = f_max if ema is None else 0.5 * ema + 0.5 * f_max
@@ -681,6 +711,7 @@ def _esa(
     if stats is not None:
         stats["radius"] = radius
         stats["epochs_total"] = int(np.sum(stats.get("batch_epochs", [0])))
+        stats.update(timers or {})
 
     return all_data[n_static:cursor]
 
@@ -796,8 +827,14 @@ def esa(
         stats (dict | None): Optional dictionary filled in place with run
             statistics — ``batch_epochs`` (epochs used per batch),
             ``batch_force_ema`` (final force EMA per batch),
-            ``epochs_total`` and ``radius``. Intended for benchmarking
-            and convergence studies; the returned points are unaffected.
+            ``epochs_total``, ``radius``, and a wall-clock decomposition
+            in seconds: ``query_s`` (neighbour search), ``force_s`` (the
+            force kernel), ``step_s`` (position update), ``update_s``
+            (re-indexing the moved points) and ``setup_s``
+            (initialisation plus promote/fit). The buckets are what turn
+            "the large runs are slow" into an attributable cost, and
+            they cover the whole inner loop, so they should sum to just
+            under the total. Passing None disables the timers entirely.
         **metric_kwargs: Extra arguments for the force law.
 
     Returns:

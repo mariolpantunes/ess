@@ -171,6 +171,24 @@ class TestESS(unittest.TestCase):
         self.assertGreater(stats["radius"], 0.0)
         self.assertTrue(all(e >= 1 for e in stats["batch_epochs"]))
 
+    def test_run_stats_timing_decomposition(self):
+        """The timing buckets must cover the inner loop, so their sum
+        accounts for nearly all of the measured wall time."""
+        import time
+
+        stats = {}
+        t0 = time.perf_counter()
+        ess.esa(self.samples, self.bounds, n=40, seed=1, stats=stats)
+        wall = time.perf_counter() - t0
+
+        buckets = ("query_s", "force_s", "step_s", "update_s", "setup_s")
+        for key in buckets:
+            self.assertIn(key, stats)
+            self.assertGreater(stats[key], 0.0)
+        accounted = sum(stats[k] for k in buckets)
+        self.assertLessEqual(accounted, wall * 1.05)
+        self.assertGreater(accounted, wall * 0.5)
+
     def test_batching_logic(self):
         """Remainder batches: n=12, batch=5 -> 5, 5, 2."""
         res = ess.ess(self.samples, self.bounds, n=12, batch_size=5, seed=1)
