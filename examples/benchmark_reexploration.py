@@ -31,10 +31,20 @@ Metrics (see `report` for the printed names):
                           where nothing had been evaluated.
     combined_ce           toroidal Clark-Evans of anchors + new points:
                           is the union a well-spread design?
-    marginal_disc         1-D wrap-around discrepancy of the new points,
+    marginal_disc         1-D wrap-around discrepancy of the **union**,
                           normalised so 1.0 = a random sample. Guards
                           against buying void coverage by wrecking the
                           per-factor coverage.
+
+                          It must be scored on the union, not on the new
+                          batch alone. The voids left by an anchor set
+                          are not spread uniformly along each axis, so a
+                          method that correctly fills them cannot have
+                          uniform marginals *within the batch* — scoring
+                          the batch alone rewards ignoring the anchors,
+                          which is why init-lhs reaches 0.010 there while
+                          ESS reads 3.97. On the union the ordering is
+                          sane: anchors alone 0.640, ESS 0.616.
 
 Run from the repository root::
 
@@ -74,13 +84,18 @@ def score(anchors, new, marginal_dims=8):
     """The metric panel for one batch of new points."""
     n = len(new)
     void = _toroidal_l1(new, anchors).min(axis=1)
+    union = np.vstack([anchors, new])
     dims = range(min(marginal_dims, new.shape[1]))
-    disc = np.mean([wrap_around_discrepancy(new[:, [j]]) for j in dims])
+    disc = np.mean([wrap_around_discrepancy(union[:, [j]]) for j in dims])
+    batch_disc = np.mean([wrap_around_discrepancy(new[:, [j]]) for j in dims])
     return {
         "void_mean": float(void.mean()),
         "void_min": float(void.min()),
-        "combined_ce": toroidal_clark_evans(np.vstack([anchors, new])),
-        "marginal_disc": float(disc / expected_discrepancy(n, 1)),
+        "combined_ce": toroidal_clark_evans(union),
+        "marginal_disc": float(disc / expected_discrepancy(len(union), 1)),
+        # Diagnostic only -- see the module docstring on why the batch
+        # alone is the wrong set to score.
+        "marginal_disc_batch": float(batch_disc / expected_discrepancy(n, 1)),
     }
 
 
