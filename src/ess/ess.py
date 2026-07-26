@@ -35,6 +35,24 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 """logging.Logger: Module-level logger for debugging ESA optimization steps."""
 
+K_LOCAL = 5
+r"""int: Cap on the number of interacting neighbours per point.
+
+Repulsion is a *local* effect: the nearest shell sets the packing, and
+further neighbours only add an isotropic mean-field pressure that moves
+points without improving separation. The historic default $k = 2d+1$
+grows with dimension and crosses into that regime badly — at $d = 64$
+with $n = 512$ it makes every point interact with a quarter of the whole
+design, which collapses the one-dimensional marginals (projection
+discrepancy $105\times$ worse than random) *and* leaves toroidal
+packing below random.
+
+Measured over $d \in \{2, \dots, 64\}$, a cap of 5 is best or tied
+everywhere: it maximises toroidal Clark-Evans at every dimension above 8
+while keeping every projection better than random. See
+``examples/benchmark_dispersion.py``.
+"""
+
 
 # --- Force Functions -------------------------------------------------------
 #
@@ -310,6 +328,33 @@ def _pad_ragged(
     return ids, dists
 
 
+#: Elements per intermediate array in the force kernel (~64 MB in
+#: float64). The kernel materialises several $(\text{rows}, m, D)$
+#: tensors at once, so this is what keeps radius mode — whose neighbour
+#: lists become the whole design in sparse high-dimensional regimes —
+#: from allocating gigabytes.
+_FORCE_BLOCK_ELEMENTS = 8_000_000
+
+
+def _row_blocks(rows: int, width: int, dim: int):
+    """Yields ``(start, stop)`` row slices with a bounded working set.
+
+    Args:
+        rows (int): Number of active points $M$.
+        width (int): Neighbour-list width $m$.
+        dim (int): Dimensionality $D$.
+
+    Yields:
+        tuple[int, int]: Half-open row ranges covering ``range(rows)``,
+        each sized so that ``block * width * dim`` stays within
+        `_FORCE_BLOCK_ELEMENTS`.
+    """
+    per_row = max(width * dim, 1)
+    step = max(1, min(rows, _FORCE_BLOCK_ELEMENTS // per_row))
+    for start in range(0, rows, step):
+        yield start, min(start + step, rows)
+
+
 def _compute_forces(
     active: np.ndarray,
     all_data: np.ndarray,
@@ -355,36 +400,42 @@ def _compute_forces(
     Returns:
         np.ndarray: Net force vectors, shape $(M, D)$.
     """
-    valid = ids >= 0
-    if not np.any(valid):
+    if not np.any(ids >= 0):
         return np.zeros_like(active)
 
-    safe_ids = np.where(valid, ids, 0)
-    disp = active[:, None, :] - all_data[safe_ids]
-    disp -= np.round(disp)  # toroidal wrap: shortest displacement per axis
-    norms = np.linalg.norm(disp, axis=2, keepdims=True)
+    forces = np.empty_like(active)
+    for lo, hi in _row_blocks(active.shape[0], ids.shape[1], active.shape[1]):
+        block_ids, block_dists = ids[lo:hi], dists[lo:hi]
+        valid = block_ids >= 0
 
-    stacked = (norms[..., 0] < 1e-9) & valid
-    if np.any(stacked):
-        noise = rng.standard_normal(size=disp.shape)
-        noise /= np.linalg.norm(noise, axis=2, keepdims=True) + 1e-9
-        disp = np.where(stacked[..., None], noise, disp)
-        norms = np.where(stacked[..., None], 1.0, norms)
+        safe_ids = np.where(valid, block_ids, 0)
+        disp = active[lo:hi, None, :] - all_data[safe_ids]
+        disp -= np.round(disp)  # toroidal wrap: shortest displacement per axis
+        norms = np.linalg.norm(disp, axis=2, keepdims=True)
 
-    d_hat = np.where(valid, dists, 1.0) / radius
-    log_mag = metric_fn(d_hat, **metric_kwargs)
-    log_mag = np.where(valid, log_mag, -np.inf)
+        stacked = (norms[..., 0] < 1e-9) & valid
+        if np.any(stacked):
+            noise = rng.standard_normal(size=disp.shape)
+            noise /= np.linalg.norm(noise, axis=2, keepdims=True) + 1e-9
+            disp = np.where(stacked[..., None], noise, disp)
+            norms = np.where(stacked[..., None], 1.0, norms)
 
-    m_i = np.max(log_mag, axis=1, keepdims=True)
-    m_i = np.where(np.isneginf(m_i), 0.0, m_i)
-    weights = np.exp(log_mag - m_i)
-    weights[~valid] = 0.0
+        d_hat = np.where(valid, block_dists, 1.0) / radius
+        log_mag = metric_fn(d_hat, **metric_kwargs)
+        log_mag = np.where(valid, log_mag, -np.inf)
 
-    directions = disp / np.maximum(norms, 1e-9)
-    net = np.sum(directions * weights[..., None], axis=1)
+        m_i = np.max(log_mag, axis=1, keepdims=True)
+        m_i = np.where(np.isneginf(m_i), 0.0, m_i)
+        weights = np.exp(log_mag - m_i)
+        weights[~valid] = 0.0
 
-    force_cap = 1000.0
-    return np.exp(np.minimum(m_i, np.log(force_cap))) * net
+        directions = disp / np.maximum(norms, 1e-9)
+        net = np.sum(directions * weights[..., None], axis=1)
+
+        force_cap = 1000.0
+        forces[lo:hi] = np.exp(np.minimum(m_i, np.log(force_cap))) * net
+
+    return forces
 
 
 # --- Core Logic --------------------------------------------------------------
@@ -569,11 +620,11 @@ def esa(
     lr: float = 0.02,
     search_mode: str = "k_nn",
     decay: float = 0.99,
-    batch_size: int = 50,
+    batch_size: int | None = None,
     k: int | None = None,
     radius: float | None = None,
     tol: float = 1e-2,
-    patience: int = 5,
+    patience: int = 25,
     metric: str | collections.abc.Callable = "gaussian",
     seed: int | np.random.Generator | None = None,
     init_sampler: samplers.Sampler | int | None = None,
@@ -586,20 +637,31 @@ def esa(
     unit torus $[0, 1)^d$, derives the interaction radius, runs `_esa`,
     and maps the result back:
 
-    $$ R = \min\!\left(\tfrac{5}{8}\,(d!/N)^{1/d},\; d/8\right)
+    $$ R = \min\!\left(\tfrac{5}{8}\,(d!/N)^{1/d},\; d/4\right)
        \quad \text{(when not given; see `_l1_radius_heuristic`)} $$
 
     The same $R$ is the range cutoff in radius mode and the distance
     normalisation of every force law in both modes, which is what keeps
     force parameters dimension-free.
 
-    The defaults (``metric="gaussian"``, ``lr=0.02``, ``decay=0.99``,
-    ``patience=5``) are calibrated by ``examples/benchmark_dispersion.py``
-    over $d \in \{2, \dots, 64\}$, both search modes and 10 seeds:
-    quality is flat across a wide lr/decay grid (the plateau stop, not
-    the annealing schedule, decides convergence), so the defaults pick
-    the cheapest cell at top quality — a larger step with almost no
-    decay, stopped early by the force plateau.
+    The defaults are calibrated by ``examples/benchmark_dispersion.py``
+    over $d \in \{2, \dots, 64\}$. Two of them dominate the achieved
+    quality and interact, so they must be read together:
+
+    * ``batch_size=None`` relaxes every point at once. Freezing points
+      in batches is greedy — an early batch settles into an arrangement
+      optimal for *itself*, then never moves while the rest squeeze into
+      its gaps — and costs about a third of the achievable dispersion.
+    * ``patience=25`` gives the plateau detector enough evidence.
+      Stopping sooner is what makes single-batch relaxation look bad:
+      with one batch there is no per-batch restart of the annealing, so
+      a hair-trigger stop ends the run before it has done anything.
+
+    Together, in 2D at $n = 256$, they take the toroidal Clark-Evans
+    index from 1.71 to 2.08 against a theoretical ceiling of
+    $2/\Gamma(1+1/d) = 2.257$ — 92% of optimal — and improve the worst
+    pair separation by $6.7\times$. ``lr`` and ``decay`` are
+    comparatively inert once the stop criterion is right.
 
     Args:
         samples (np.ndarray): Existing points to avoid, shape $(N_0, D)$.
@@ -616,15 +678,25 @@ def esa(
         search_mode (str): ``"k_nn"`` (rank-based neighbourhood) or
             ``"radius"`` (metric ball).
         decay (float): Learning-rate decay $\gamma$ per epoch.
-        batch_size (int): Optimization batch size.
-        k (int | None): Neighbours in k-NN mode; default $2D + 1$.
+        batch_size (int | None): Points optimized together. ``None``
+            (default) relaxes **all** $n$ points simultaneously, which
+            is what the toroidal index makes affordable and what the
+            quality numbers below assume. A smaller value processes the
+            points in sequential batches, each frozen once converged —
+            a greedy approximation that trades quality for a smaller
+            per-epoch working set ($O(\text{batch} \cdot k \cdot D)$),
+            worth setting only when $n$ is large enough for memory to
+            matter.
+        k (int | None): Neighbours in k-NN mode; default
+            $\min(2D + 1, \text{`K_LOCAL`})$.
         radius (float | None): Interaction radius; default heuristic.
         tol (float): Absolute early-stop floor on the EMA of the largest
             force magnitude (fires only when forces genuinely vanish;
             the working criterion is the plateau — see `_esa`).
         patience (int): Consecutive epochs without a 1% relative
             improvement of the force EMA before the batch is declared
-            converged.
+            converged. Quality saturates at 25-50; below ~10 the
+            detector fires on a transient and the run stops early.
         metric (str | Callable): Force-law name in `METRIC_REGISTRY`, or
             a callable $\log f(\hat{d})$.
         seed (int | np.random.Generator | None): Seed or Generator.
@@ -662,7 +734,8 @@ def esa(
     max_val = bounds[:, 1]
     scaled_samples, _, _ = _scale(samples, min_val, max_val)
 
-    k_value = k if k is not None else 2 * dim + 1
+    k_value = k if k is not None else min(2 * dim + 1, K_LOCAL)
+    batch = batch_size if batch_size is not None else max(n, 1)
     final_radius = (
         radius if radius is not None
         else _l1_radius_heuristic(dim, samples.shape[0] + n)
@@ -680,7 +753,7 @@ def esa(
         epochs=epochs,
         lr=lr,
         decay=decay,
-        batch_size=batch_size,
+        batch_size=batch,
         k=k_value,
         radius=final_radius,
         search_mode=search_mode,
