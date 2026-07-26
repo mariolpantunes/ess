@@ -17,6 +17,7 @@ from ess.ess import (
     _compute_forces,
     _l1_radius_heuristic,
     _pad_ragged,
+    _row_blocks,
     softened_inverse_force,
 )
 
@@ -105,6 +106,56 @@ class TestComputeForces(unittest.TestCase):
         all_data = [[0.4999, 0.5], [0.5, 0.5]]
         f = self._forces(active, all_data, [[0]], [[1e-4]], radius=1.0)
         self.assertLessEqual(float(np.linalg.norm(f)), 1000.0 * (1.0 + 1e-9))
+
+
+class TestRowBlocking(unittest.TestCase):
+    """The kernel is chunked so a wide neighbour list (radius mode in a
+    sparse high-dimensional regime returns the whole design) cannot
+    allocate gigabytes."""
+
+    def test_blocks_cover_every_row_exactly_once(self):
+        for rows, width, dim in ((10, 3, 2), (1000, 1000, 64), (1, 1, 1)):
+            blocks = list(_row_blocks(rows, width, dim))
+            self.assertEqual(blocks[0][0], 0)
+            self.assertEqual(blocks[-1][1], rows)
+            for (_, prev_stop), (start, _) in zip(blocks, blocks[1:]):
+                self.assertEqual(prev_stop, start)
+
+    def test_working_set_is_bounded(self):
+        from ess.ess import _FORCE_BLOCK_ELEMENTS
+
+        rows, width, dim = 4096, 4096, 64  # would be 8 GB unchunked
+        for start, stop in _row_blocks(rows, width, dim):
+            self.assertLessEqual((stop - start) * width * dim, _FORCE_BLOCK_ELEMENTS)
+
+    def test_chunking_does_not_change_the_forces(self):
+        """Same result whichever block size the budget implies."""
+        import sys
+
+        # `ess.ess` the attribute is the public function, not this module
+        core = sys.modules["ess.ess"]
+
+        rng = np.random.default_rng(0)
+        active = rng.random((40, 3))
+        all_data = rng.random((60, 3))
+        ids = rng.integers(0, 60, size=(40, 7))
+        dists = rng.random((40, 7)) * 0.3
+
+        original = core._FORCE_BLOCK_ELEMENTS
+        try:
+            core._FORCE_BLOCK_ELEMENTS = 10**9
+            whole = core._compute_forces(
+                active, all_data, ids, dists, 0.2,
+                softened_inverse_force, np.random.default_rng(1),
+            )
+            core._FORCE_BLOCK_ELEMENTS = 21  # forces 1-row blocks
+            chunked = core._compute_forces(
+                active, all_data, ids, dists, 0.2,
+                softened_inverse_force, np.random.default_rng(1),
+            )
+        finally:
+            core._FORCE_BLOCK_ELEMENTS = original
+        np.testing.assert_allclose(whole, chunked, rtol=1e-12, atol=1e-12)
 
 
 class TestPadRagged(unittest.TestCase):
