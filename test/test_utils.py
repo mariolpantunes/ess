@@ -1,10 +1,17 @@
 # coding: utf-8
 
 
+import math
 import unittest
 import numpy as np
 from ess import utils
 from ess.ess import _scale, _inv_scale, METRIC_REGISTRY
+from ess.utils import (
+    expected_discrepancy,
+    projection_discrepancy,
+    toroidal_clark_evans,
+    wrap_around_discrepancy,
+)
 
 
 class TestUtils(unittest.TestCase):
@@ -85,6 +92,84 @@ class TestUtils(unittest.TestCase):
         f_inv = METRIC_REGISTRY["softened_inverse"](d, epsilon=0.1, alpha=1.0)
         self.assertLess(f_inv[0], 5.0)  # log(10) ~ 2.3
         self.assertTrue(np.isfinite(f_inv[2]))  # Never negative infinity
+
+
+class TestDiscrepancy(unittest.TestCase):
+    """The wrap-around discrepancy is the high-dimensional criterion:
+    periodic (so it scores the torus the relaxation optimizes) and free
+    of the distance contrasts that collapse in high dimension."""
+
+    def test_random_matches_its_expected_value(self):
+        """A uniform sample scores ~1 against `expected_discrepancy`."""
+        for dim in (2, 8, 64):
+            n = 256
+            vals = [
+                wrap_around_discrepancy(np.random.default_rng(s).random((n, dim)))
+                / expected_discrepancy(n, dim)
+                for s in range(3)
+            ]
+            self.assertAlmostEqual(float(np.mean(vals)), 1.0, delta=0.25)
+
+    def test_invariant_under_toroidal_shift(self):
+        """'Wrap-around' means exactly this: rigidly shifting a design
+        around the torus cannot change its uniformity."""
+        P = np.random.default_rng(0).random((64, 5))
+        base = wrap_around_discrepancy(P)
+        for shift in (0.37, 0.5, 0.99):
+            self.assertAlmostEqual(
+                wrap_around_discrepancy(np.mod(P + shift, 1.0)), base, places=9
+            )
+
+    def test_regular_grid_beats_random(self):
+        """Lower is better: an equispaced 1-D design is far more uniform."""
+        grid = (np.arange(64) / 64.0)[:, None]
+        rand = np.random.default_rng(0).random((64, 1))
+        self.assertLess(wrap_around_discrepancy(grid), wrap_around_discrepancy(rand))
+
+    def test_chunking_does_not_change_the_value(self):
+        P = np.random.default_rng(1).random((97, 4))
+        self.assertAlmostEqual(
+            wrap_around_discrepancy(P, chunk=8),
+            wrap_around_discrepancy(P, chunk=1000),
+            places=10,
+        )
+
+    def test_projection_discrepancy_detects_lhs_stratification(self):
+        """LHS is built for uniform 1-D margins; the projection score
+        must see that even in high dimension, where the full-dimensional
+        measure cannot."""
+        from ess.samplers import LHCSampler
+
+        n, dim = 256, 32
+        lhs = LHCSampler(random_state=0).sample(n, dim)
+        rand = np.random.default_rng(0).random((n, dim))
+        base = expected_discrepancy(n, 1)
+        self.assertLess(projection_discrepancy(lhs, 1) / base, 0.1)
+        self.assertGreater(projection_discrepancy(rand, 1) / base, 0.5)
+
+    def test_toroidal_clark_evans_calibration(self):
+        """Unlike the box version, the toroidal index reads ~1 for a
+        random design at every dimension (no edge bias)."""
+        for dim in (2, 8, 32):
+            vals = [
+                toroidal_clark_evans(np.random.default_rng(s).random((256, dim)))
+                for s in range(3)
+            ]
+            self.assertAlmostEqual(float(np.mean(vals)), 1.0, delta=0.12)
+
+    def test_toroidal_clark_evans_ranks_grid_above_random(self):
+        g = np.stack(np.meshgrid(*[np.arange(16) / 16.0] * 2), -1).reshape(-1, 2)
+        self.assertGreater(
+            toroidal_clark_evans(g),
+            toroidal_clark_evans(np.random.default_rng(0).random((256, 2))),
+        )
+        # a lattice cannot beat the theoretical ceiling 2/Gamma(1+1/d)
+        self.assertLess(toroidal_clark_evans(g), 2.0 / math.gamma(1.5))
+
+    def test_projection_order_validated(self):
+        P = np.random.default_rng(0).random((16, 3))
+        with self.assertRaises(ValueError):
+            projection_discrepancy(P, order=4)
 
 
 if __name__ == "__main__":

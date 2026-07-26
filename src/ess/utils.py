@@ -234,3 +234,180 @@ def calculate_clark_evans_index(
     expected_dist = numerator / denominator
 
     return float(mean_obs_dist / expected_dist)
+
+
+def expected_discrepancy(n: int, dim: int) -> float:
+    r"""Expected wrap-around $L_2$ discrepancy of a random uniform design.
+
+    Taking the expectation of `wrap_around_discrepancy` over $n$ i.i.d.
+    uniform points gives a closed form, because the diagonal terms
+    contribute $(3/2)^d$ and every off-diagonal pair contributes
+    $(4/3)^d$ in expectation:
+
+    $$ \mathbb{E}[WD^2] = \frac{(3/2)^d - (4/3)^d}{n} $$
+
+    Dividing a measured discrepancy by this value yields a scale-free
+    score where $1$ means "as uniform as random" and smaller is better —
+    the only form that stays comparable across dimensions, since the raw
+    discrepancy grows like $(3/2)^d$.
+
+    Args:
+        n (int): Number of design points.
+        dim (int): Dimensionality $d$ of the design (or of the
+            projection being scored).
+
+    Returns:
+        float: The expected discrepancy of a random uniform design.
+    """
+    return ((1.5**dim) - ((4.0 / 3.0) ** dim)) / n
+
+
+def wrap_around_discrepancy(points: np.ndarray, chunk: int = 128) -> float:
+    r"""Wrap-around $L_2$ discrepancy — uniformity measured on the torus.
+
+    The wrap-around discrepancy (Hickernell) compares the empirical
+    distribution of a design to the uniform one over *every* periodic
+    box, and admits the closed form
+
+    $$ WD^2(X) = -\left(\tfrac{4}{3}\right)^{d} + \frac{1}{n^2}
+       \sum_{i=1}^{n} \sum_{j=1}^{n} \prod_{k=1}^{d}
+       \left[ \tfrac{3}{2} - |x_{ik}-x_{jk}|\,(1 - |x_{ik}-x_{jk}|) \right] $$
+
+    The per-dimension kernel is invariant under $u \mapsto 1-u$, which
+    is exactly what makes the measure *periodic*: it identifies opposite
+    faces of the cube, so it scores a design on the same torus the
+    relaxation optimizes. Unlike nearest-neighbour statistics (see
+    `calculate_clark_evans_index`) it does not rely on distance
+    contrasts and therefore stays meaningful when concentration of
+    measure flattens pairwise distances in high dimension.
+
+    Lower is better. Divide by `expected_discrepancy` to obtain a
+    scale-free score against the random-uniform baseline.
+
+    Note:
+        Cost is $O(n^2 d)$; the pairwise products are evaluated in row
+        chunks so peak memory stays at ``chunk * n * d``.
+
+    Args:
+        points (np.ndarray): Design of shape $(N, D)$, assumed to live in
+            $[0, 1)^D$ (values are reduced modulo 1).
+        chunk (int): Rows per block in the pairwise accumulation.
+
+    Returns:
+        float: The squared wrap-around discrepancy $WD^2$.
+    """
+    pts = np.mod(np.asarray(points, dtype=np.float64), 1.0)
+    n, dim = pts.shape
+
+    total = 0.0
+    for start in range(0, n, chunk):
+        block = pts[start : start + chunk]
+        delta = np.abs(block[:, None, :] - pts[None, :, :])
+        total += float(np.prod(1.5 - delta * (1.0 - delta), axis=2).sum())
+
+    return -((4.0 / 3.0) ** dim) + total / (n * n)
+
+
+def projection_discrepancy(
+    points: np.ndarray,
+    order: int = 2,
+    max_projections: int = 200,
+    seed: int = 0,
+) -> float:
+    r"""Mean wrap-around discrepancy over low-dimensional projections.
+
+    The recommended uniformity criterion for high-dimensional designs.
+    Full-dimensional measures lose discriminative power as $d$ grows —
+    every design looks alike once the space is mostly empty — while the
+    *effect sparsity* principle says what actually matters is that each
+    factor, and each pair of factors, be well covered. This scores
+
+    $$ \overline{WD^2_s} = \frac{1}{|\mathcal{S}|}
+       \sum_{S \in \mathcal{S}} WD^2\!\left(X_{S}\right), \qquad |S| = s $$
+
+    where $X_S$ is the design restricted to the coordinate subset $S$
+    and $\mathcal{S}$ is the set of $s$-element subsets (subsampled when
+    there are more than `max_projections` of them).
+
+    Because each projection has fixed dimension $s$, the result keeps a
+    fixed scale no matter how large the ambient $d$ is, and remains
+    directly comparable to `expected_discrepancy(n, s)`. Lower is better.
+
+    Args:
+        points (np.ndarray): Design of shape $(N, D)$.
+        order (int): Projection dimension $s$ (1 for marginals, 2 for
+            pairwise plots).
+        max_projections (int): Cap on how many subsets are averaged;
+            subsets are sampled without replacement beyond this.
+        seed (int): Seed for that subsampling, so the score is
+            reproducible.
+
+    Returns:
+        float: Mean $WD^2$ over the scored projections.
+    """
+    import itertools
+
+    pts = np.mod(np.asarray(points, dtype=np.float64), 1.0)
+    dim = pts.shape[1]
+    if order > dim:
+        raise ValueError(f"order {order} exceeds dimensionality {dim}")
+
+    subsets = list(itertools.combinations(range(dim), order))
+    if len(subsets) > max_projections:
+        rng = np.random.default_rng(seed)
+        picked = rng.choice(len(subsets), max_projections, replace=False)
+        subsets = [subsets[i] for i in picked]
+
+    return float(
+        np.mean([wrap_around_discrepancy(pts[:, list(s)]) for s in subsets])
+    )
+
+
+def toroidal_clark_evans(points: np.ndarray) -> float:
+    r"""Clark-Evans index under the toroidal $L_1$ metric.
+
+    The counterpart of `calculate_clark_evans_index` measured in the
+    geometry the relaxation actually optimizes. Because the torus has no
+    boundary, the estimator needs no edge correction — the Euclidean
+    box version is biased upward (a random uniform design scores 1.17 at
+    $d=8$ and 1.42 at $d=64$ instead of 1), and it rewards designs that
+    pile points onto the domain faces.
+
+    For a Poisson process of $n$ points on the unit torus, the $L_1$
+    ball of radius $r$ has volume $(2r)^d/d!$, so the expected distance
+    to the nearest neighbour is
+
+    $$ \mathbb{E}[r] = \frac{\Gamma(1 + 1/d)}{2}
+       \left( \frac{d!}{n} \right)^{1/d} $$
+
+    and the index is the observed mean nearest-neighbour distance
+    divided by it. Values above 1 mean more regular than random.
+
+    Note:
+        Like every nearest-neighbour statistic this loses discriminative
+        power once concentration of measure flattens the distance
+        distribution; above roughly $d = 32$ prefer
+        `projection_discrepancy`. The attainable maximum is
+        $2/\Gamma(1+1/d)$ (2.257 in 2D), reached by a perfect $L_1$
+        lattice packing.
+
+    Args:
+        points (np.ndarray): Design of shape $(N, D)$, reduced modulo 1.
+
+    Returns:
+        float: The toroidal Clark-Evans index.
+    """
+    from torann.brute import exact_knn
+
+    pts = np.mod(np.asarray(points, dtype=np.float64), 1.0)
+    n, dim = pts.shape
+    if n < 2:
+        return 0.0
+
+    _, dists = exact_knn(pts, pts, 2)
+    expected = (
+        math.gamma(1.0 + 1.0 / dim)
+        * math.exp((math.lgamma(dim + 1) - math.log(n)) / dim)
+        / 2.0
+    )
+    return float(np.mean(dists[:, 1]) / expected)
