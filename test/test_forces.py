@@ -8,11 +8,13 @@ convention, the tie-breaking noise, and the L1-on-torus radius
 heuristic.
 """
 
+import math
 import unittest
 
 import numpy as np
 
 from ess.ess import (
+    K_LOCAL,
     METRIC_REGISTRY,
     _compute_forces,
     _l1_radius_heuristic,
@@ -179,27 +181,48 @@ class TestPadRagged(unittest.TestCase):
 
 
 class TestRadiusHeuristic(unittest.TestCase):
-    def test_matches_the_closed_form_in_2d(self):
-        # r = 1.25 * 0.5 * (2!/100)^(1/2) = 0.0884
-        self.assertAlmostEqual(_l1_radius_heuristic(2, 100), 0.08839, places=4)
+    """The contract is a *count*, not a distance: the ball should hold
+    about `K_LOCAL` neighbours at every dimension."""
+
+    def test_matches_the_exact_dense_formula(self):
+        # dense regime (R <= 1/2): R = 0.5 * (target * d! / n)^(1/d)
+        expected = 0.5 * math.sqrt(K_LOCAL * 2.0 / 100.0)
+        self.assertAlmostEqual(_l1_radius_heuristic(2, 100), expected, places=9)
 
     def test_decreases_with_density(self):
         radii = [_l1_radius_heuristic(5, n) for n in (10, 100, 1000, 10000)]
         self.assertTrue(all(a > b for a, b in zip(radii, radii[1:])))
 
-    def test_capped_at_a_quarter_of_the_l1_diameter(self):
-        # 2D with 2 points: uncapped 1.25 * 0.5 * (2/2)^(1/2) = 0.625 > 0.5
-        self.assertAlmostEqual(_l1_radius_heuristic(2, 2), 2 / 4.0)
+    def test_never_spans_the_space(self):
+        """The toroidal L1 diameter is d/2; a radius near it would make
+        every point a neighbour of every other."""
+        for dim in (2, 8, 16, 32, 64, 128):
+            for n in (256, 1024, 50000):
+                r = _l1_radius_heuristic(dim, n)
+                self.assertLess(r, dim / 2.0, (dim, n))
+                self.assertGreater(r, 0.0, (dim, n))
 
-    def test_reaches_past_the_mean_nn_distance(self):
-        """The radius must not starve the neighbourhood: it has to reach
-        at least the ideal-packing distance it was derived from."""
-        for dim, n in ((2, 100), (10, 1000), (20, 330), (50, 11)):
-            packing = 0.5 * np.exp(
-                (np.log(np.arange(1, dim + 1)).sum() - np.log(n)) / dim
-            )
+    def test_holds_about_the_target_count(self):
+        """The property that matters, measured on uniform points: the
+        old radius-space margin gave 1.6 neighbours at d=2 and 31 at
+        d=64; this must stay flat across dimension."""
+        from torann.brute import exact_radius
+
+        for dim, n in ((2, 512), (8, 512), (16, 1024), (32, 1024), (64, 1024)):
             r = _l1_radius_heuristic(dim, n)
-            self.assertGreaterEqual(r, min(packing, dim / 4.0) * 0.99, (dim, n))
+            pts = np.random.default_rng(0).random((n, dim))
+            indptr, _, _ = exact_radius(pts, pts, r, np.arange(n))
+            mean_count = float(np.diff(indptr).mean())
+            self.assertGreater(mean_count, K_LOCAL * 0.4, (dim, n, mean_count))
+            self.assertLess(mean_count, K_LOCAL * 2.5, (dim, n, mean_count))
+
+    def test_sparse_regime_uses_the_distance_law(self):
+        """Where the L1 ball would exceed the torus, the radius follows
+        the CLT quantile around the mean pairwise distance d/4."""
+        dim, n = 64, 1024
+        r = _l1_radius_heuristic(dim, n)
+        self.assertLess(r, dim / 4.0)              # below the mean distance
+        self.assertGreater(r, dim / 4.0 - 6.0 * math.sqrt(dim / 48.0))
 
 
 if __name__ == "__main__":
