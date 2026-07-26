@@ -363,6 +363,108 @@ def projection_discrepancy(
     )
 
 
+#: Cache for `expected_nn_toroidal_l1`, keyed by ``(n, dim)``. The quadrature
+#: costs a few FFTs, and the benchmarks ask for the same shapes repeatedly.
+_NULL_CACHE: dict[tuple[int, int], float] = {}
+
+
+def expected_nn_toroidal_l1(n: int, dim: int) -> float:
+    r"""Mean nearest-neighbour toroidal $L_1$ distance of $n$ uniform points.
+
+    The null hypothesis Clark-Evans divides by. Computed exactly rather
+    than asymptotically, which matters above $d \approx 8$.
+
+    On the torus each coordinate distance $|u_i|_{\circ}$ of a uniform
+    point is itself uniform on $[0, 1/2]$, so the distance to a uniform
+    point is a sum of $d$ i.i.d. $U(0, 1/2)$ variables — an Irwin-Hall
+    variable halved. With the other $n - 1$ points independent,
+
+    $$ V(t) = P(S \le t), \qquad P(R > t) = (1 - V(t))^{n-1}, \qquad
+       \mathbb{E}[R] = \int_0^{d/2} (1 - V(t))^{n-1} \, dt $$
+
+    and this is exact for a fixed-$n$ uniform design. $V$ comes from
+    convolving the one-coordinate density $d$ times by FFT, which is
+    stable where the closed-form Irwin-Hall alternating sum is not.
+
+    The Poisson asymptotic
+    $\mathbb{E}[r] = \Gamma(1 + 1/d)(d!/n)^{1/d}/2$ substitutes
+    $\exp(-nV)$ for $(1-V)^{n-1}$ and uses $V(t) = (2t)^d/d!$, the
+    volume of an $L_1$ ball *that fits inside the torus*. Both premises
+    fail in high dimension — at $d = 32$ the mean nearest-neighbour
+    distance is $\approx 4.9$, so the ball has wrapped around in every
+    coordinate. Measured bias of the asymptotic against uniform samples
+    (5 seeds), which is exactly the error it puts into the index:
+
+    | $d$ | 2 | 4 | 8 | 16 | 32 | 64 |
+    | --- | --- | --- | --- | --- | --- | --- |
+    | $n = 256$ | +2.1% | −0.5% | +0.2% | +3.3% | +8.2% | +13.6% |
+    | $n = 4000$ | −0.1% | −0.0% | −0.1% | +1.1% | +5.0% | +10.3% |
+
+    With this null the same samples score 0.995–1.003 at every cell.
+
+    Args:
+        n (int): Number of points.
+        dim (int): Dimensionality $d$.
+
+    Returns:
+        float: The expected nearest-neighbour distance under uniformity.
+    """
+    key = (int(n), int(dim))
+    if key in _NULL_CACHE:
+        return _NULL_CACHE[key]
+    if n < 2:
+        return 0.0
+    poisson = (math.gamma(1.0 + 1.0 / dim)
+               * math.exp((math.lgamma(dim + 1) - math.log(n)) / dim) / 2.0)
+    # The integrand decays over a range of order E[R] itself, so the grid has
+    # to be fine relative to that, not to the support of S.
+    step = min(2.0e-4, poisson / 400.0)
+    m = int(round(dim * 0.5 / step)) + 1
+    size = 1 << int(math.ceil(math.log2(2 * m)))
+    half = int(round(0.5 / step)) + 1
+    dens = np.zeros(size)
+    dens[:half] = 2.0                       # U(0, 1/2) has density 2
+    dens[0] = dens[half - 1] = 1.0          # trapezoid end weights
+    dens *= step
+    pdf = np.fft.irfft(np.fft.rfft(dens) ** dim, size)[:m]
+    cdf = np.clip(np.cumsum(pdf), 0.0, 1.0)
+    out = float(np.trapezoid(np.power(1.0 - cdf, n - 1), dx=step))
+    _NULL_CACHE[key] = out
+    return out
+
+
+def toroidal_separation(points: np.ndarray) -> float:
+    r"""Separation of a design in the metric ESS optimizes.
+
+    $$ d_{\min} = \min_{i \ne j} d_{L_1}^{tor}(x_i, x_j) $$
+
+    the shortest distance between any two points, wrap-around included —
+    the maximin criterion, and the metric that keeps discriminating when
+    nearest-neighbour *means* flatten out in high dimension (at $d = 32$,
+    $n = 4000$: ESS 5.52 against 3.94 for uniform and 3.92 for LHS,
+    where the coverage radius differs by under 1%).
+
+    Note:
+        Not the same quantity as `calculate_min_pairwise_distance`, which
+        is Euclidean and ignores the wrap: on four points with one pair
+        straddling the seam it reports 0.633 where this returns 0.020.
+        Prefer this one for anything on the torus.
+
+    Args:
+        points (np.ndarray): Design of shape $(N, D)$, reduced modulo 1.
+
+    Returns:
+        float: The minimum pairwise distance, or 0.0 if $N < 2$.
+    """
+    from torann.brute import exact_knn
+
+    pts = np.mod(np.asarray(points, dtype=np.float64), 1.0)
+    if pts.shape[0] < 2:
+        return 0.0
+    _, dists = exact_knn(pts, pts, 2)
+    return float(np.min(dists[:, 1]))
+
+
 def toroidal_clark_evans(points: np.ndarray) -> float:
     r"""Clark-Evans index under the toroidal $L_1$ metric.
 
@@ -373,23 +475,22 @@ def toroidal_clark_evans(points: np.ndarray) -> float:
     $d=8$ and 1.42 at $d=64$ instead of 1), and it rewards designs that
     pile points onto the domain faces.
 
-    For a Poisson process of $n$ points on the unit torus, the $L_1$
-    ball of radius $r$ has volume $(2r)^d/d!$, so the expected distance
-    to the nearest neighbour is
-
-    $$ \mathbb{E}[r] = \frac{\Gamma(1 + 1/d)}{2}
-       \left( \frac{d!}{n} \right)^{1/d} $$
-
-    and the index is the observed mean nearest-neighbour distance
-    divided by it. Values above 1 mean more regular than random.
+    The index is the observed mean nearest-neighbour distance divided by
+    its value under uniformity, `expected_nn_toroidal_l1`. Values above 1
+    mean more regular than random.
 
     Note:
         Like every nearest-neighbour statistic this loses discriminative
         power once concentration of measure flattens the distance
         distribution; above roughly $d = 32$ prefer
-        `projection_discrepancy`. The attainable maximum is
+        `projection_discrepancy`, or `toroidal_separation`, which still
+        separates ESS from LHS at $d = 32$. The attainable maximum is
         $2/\Gamma(1+1/d)$ (2.257 in 2D), reached by a perfect $L_1$
-        lattice packing.
+        lattice packing — the *diagonal* lattice, since $L_1$ balls are
+        diamonds and diamonds tile; the axis-aligned grid reaches only
+        1.599. That ceiling is itself a Poisson-asymptotic figure, so
+        against the exact null a perfect lattice can sit a hair above it
+        (2.2574 vs 2.2568 at $n = 128$).
 
     Args:
         points (np.ndarray): Design of shape $(N, D)$, reduced modulo 1.
@@ -405,9 +506,4 @@ def toroidal_clark_evans(points: np.ndarray) -> float:
         return 0.0
 
     _, dists = exact_knn(pts, pts, 2)
-    expected = (
-        math.gamma(1.0 + 1.0 / dim)
-        * math.exp((math.lgamma(dim + 1) - math.log(n)) / dim)
-        / 2.0
-    )
-    return float(np.mean(dists[:, 1]) / expected)
+    return float(np.mean(dists[:, 1]) / expected_nn_toroidal_l1(n, dim))

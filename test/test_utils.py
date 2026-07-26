@@ -8,8 +8,10 @@ from ess import utils
 from ess.ess import _scale, _inv_scale, METRIC_REGISTRY
 from ess.utils import (
     expected_discrepancy,
+    expected_nn_toroidal_l1,
     projection_discrepancy,
     toroidal_clark_evans,
+    toroidal_separation,
     wrap_around_discrepancy,
 )
 
@@ -149,13 +151,49 @@ class TestDiscrepancy(unittest.TestCase):
 
     def test_toroidal_clark_evans_calibration(self):
         """Unlike the box version, the toroidal index reads ~1 for a
-        random design at every dimension (no edge bias)."""
-        for dim in (2, 8, 32):
+        random design at every dimension (no edge bias).
+
+        The tolerance is tight on purpose: with the Poisson asymptotic as
+        the null this test only passed because of a 0.12 slack that hid a
+        systematic +8% at d=32 and +14% at d=64.
+        """
+        for dim in (2, 8, 16, 32, 64):
             vals = [
-                toroidal_clark_evans(np.random.default_rng(s).random((256, dim)))
+                toroidal_clark_evans(
+                    np.random.default_rng(1000 + s).random((1024, dim))
+                )
                 for s in range(3)
             ]
-            self.assertAlmostEqual(float(np.mean(vals)), 1.0, delta=0.12)
+            self.assertAlmostEqual(float(np.mean(vals)), 1.0, delta=0.03)
+
+    def test_expected_nn_matches_simulation(self):
+        """The analytic null must match the mean nearest-neighbour distance
+        of an actual uniform sample, at low and high dimension."""
+        from torann.brute import exact_knn
+
+        for dim, n in ((4, 512), (32, 512)):
+            obs = []
+            for s in range(3):
+                pts = np.random.default_rng(2000 + s).random((n, dim))
+                obs.append(exact_knn(pts, pts, 2)[1][:, 1].mean())
+            self.assertAlmostEqual(
+                float(np.mean(obs)) / expected_nn_toroidal_l1(n, dim),
+                1.0, delta=0.02,
+            )
+
+    def test_toroidal_separation_sees_the_wrap(self):
+        """The pair straddling the seam is 0.02 apart, not 0.98."""
+        pts = np.array([[0.01, 0.5], [0.99, 0.5], [0.5, 0.1], [0.5, 0.9]])
+        self.assertAlmostEqual(toroidal_separation(pts), 0.02, places=9)
+        # the Euclidean version measures a different geometry entirely
+        self.assertGreater(utils.calculate_min_pairwise_distance(pts), 0.6)
+
+    def test_toroidal_separation_matches_all_pairs(self):
+        pts = np.random.default_rng(5).random((256, 3))
+        d = np.abs(pts[:, None, :] - pts[None, :, :])
+        d = np.minimum(d, 1.0 - d).sum(-1)
+        np.fill_diagonal(d, np.inf)
+        self.assertEqual(toroidal_separation(pts), float(d.min()))
 
     def test_toroidal_clark_evans_ranks_grid_above_random(self):
         g = np.stack(np.meshgrid(*[np.arange(16) / 16.0] * 2), -1).reshape(-1, 2)
