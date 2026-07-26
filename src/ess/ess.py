@@ -25,6 +25,7 @@ Note:
 import collections.abc
 import logging
 import math
+import statistics
 
 import numpy as np
 from torann import ToroidalNN
@@ -87,7 +88,7 @@ def gaussian_force(
 
 
 def softened_inverse_force(
-    d: np.ndarray, epsilon: float = 0.1, alpha: float = 1.0, power: float = 2.0,
+    d: np.ndarray, epsilon: float = 0.5, alpha: float = 1.0, power: float = 2.0,
     **kwargs,
 ) -> np.ndarray:
     r"""Softened inverse-power repulsion in log-space (the default law).
@@ -100,9 +101,16 @@ def softened_inverse_force(
     dimension-dependent exponent $\max(2, D-1)$ is gone: normalising by
     the interaction radius already absorbs the dimensional scale, so a
     fixed $p = 2$ behaves consistently across dimensions. With
-    $\alpha = 1$ the force is exactly $\approx 1$ at the interaction
-    radius, so the default step $\eta F$ is a meaningful fraction of the
-    local spacing.
+    $\alpha = 1$ the force is $\approx 0.8$ at the interaction radius,
+    so the default step $\eta F$ is a meaningful fraction of the local
+    spacing.
+
+    The softening also sets the *ceiling*: $\epsilon = 1/2$ caps the
+    force at $\alpha\epsilon^{-p} = 4$, in line with the other laws. A
+    much smaller $\epsilon$ (0.1 caps at 100) makes close pairs fire
+    steps that saturate the per-epoch displacement cap, so points move
+    randomly instead of settling — in 2D that alone drops the toroidal
+    Clark-Evans index from 1.94 to 1.01.
 
     Args:
         d (np.ndarray): Normalised distances $\hat{d} = d_{L1}/R$.
@@ -231,32 +239,57 @@ def _inv_scale(
     return scl_arr * (max_val - min_val) + min_val
 
 
-def _l1_radius_heuristic(dim: int, n_points: int) -> float:
-    r"""Interaction radius from ideal packing under toroidal L1.
+def _l1_radius_heuristic(dim: int, n_points: int, target: int = K_LOCAL) -> float:
+    r"""Radius expected to contain `target` neighbours, from the exact
+    toroidal L1 distance law.
 
-    The L1 ball of radius $r$ (for $r \le 1/2$) has volume
-    $\frac{(2r)^d}{d!}$, so equating one ball per point in the unit torus,
-    $\frac{(2r)^d}{d!} = \frac{1}{N}$, gives
+    Per dimension the toroidal distance between two uniform points is
+    $u = \min(\delta,\, 1-\delta)$ with $\delta$ uniform, so
+    $u \sim \mathrm{U}(0, 1/2)$ *exactly*; the full distance is a sum of
+    $d$ such terms, with mean $d/4$ and variance $d/48$. Inverting
 
-    $$ r = \frac{1}{2} \left( \frac{d!}{N} \right)^{1/d}
-         \;\approx\; \frac{d}{2e} \, N^{-1/d} $$
+    $$ N \cdot P(\mathrm{dist} \le R) = \text{target} $$
 
-    (Stirling). The returned radius is $1.25\,r$ — a 25% margin so the
-    neighbourhood reaches past the nearest shell — capped at $d/4$, the
-    mean toroidal L1 distance between random points (per-dimension
-    distances average $1/4$). A tighter cap starves the neighbourhood in
-    the sparse high-$d$ regime, where the packing radius approaches the
-    mean distance itself.
+    gives the radius in either regime:
+
+    * **Dense** — while $R \le 1/2$ the sum is still in its first
+      Irwin-Hall piece, where $P(\mathrm{dist} \le R) = (2R)^d/d!$ is
+      exactly the L1 ball volume, so
+      $R = \tfrac{1}{2}\,(\text{target} \cdot d!/N)^{1/d}$.
+    * **Sparse** — beyond that the ball volume exceeds the torus and the
+      formula is meaningless, but the central limit theorem applies:
+      $R = d/4 + z_{\text{target}/N}\,\sqrt{d/48}$.
+
+    Note:
+        The previous version multiplied the packing radius by a fixed
+        1.25 "safety margin". A margin on the *radius* is a margin of
+        $1.25^d$ on the *count* — 1.6 neighbours at $d=2$, but 1262 at
+        $d=32$ and $1.6\times10^{6}$ at $d=64$ — so the neighbourhood
+        grew without bound and had to be clamped at the mean pairwise
+        distance, which is why radius mode went global (and blew up
+        memory) in high dimension. Targeting the count directly is what
+        keeps it local at every $d$.
 
     Args:
         dim (int): Dimensionality $d$.
         n_points (int): Total number of points $N$ (static + generated).
+        target (int): Desired neighbours inside the ball. Defaults to
+            `K_LOCAL` so radius mode and k-NN mode see comparable
+            neighbourhoods.
 
     Returns:
         float: The interaction radius in toroidal L1 units.
     """
-    log_r = (math.lgamma(dim + 1) - math.log(max(n_points, 2))) / dim - math.log(2.0)
-    return min(1.25 * math.exp(log_r), dim / 4.0)
+    n = max(n_points, 2)
+    count = max(min(target, n - 1), 1)
+
+    log_r = (math.lgamma(dim + 1) + math.log(count) - math.log(n)) / dim
+    dense = 0.5 * math.exp(log_r)
+    if dense <= 0.5:
+        return dense  # exact: still inside the first Irwin-Hall piece
+
+    z = statistics.NormalDist().inv_cdf(count / n)
+    return min(max(dim / 4.0 + z * math.sqrt(dim / 48.0), 1e-6), dim / 2.0)
 
 
 def _smart_init(
