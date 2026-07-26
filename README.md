@@ -106,12 +106,48 @@ new_points = esa(
 1. **k-NN Mode**: Points are repelled by their  nearest neighbors. Good for maintaining local uniformity.
 2. **Radius Mode (New)**: Points are repelled by **all** neighbors within a specific cutoff radius . This mimics real electrostatic fields and prevents "tunneling" in high-density regions.
 
-**Force Functions**:
+**Force Functions** (all evaluated on the distance normalised by the
+interaction radius, so their parameters are dimension-free):
 
+* `gaussian`: Smooth, short-range repulsion. **Default** — best mean
+  dispersion in the benchmark.
 * `softened_inverse`: Standard electrostatic repulsion (Coulomb-like).
-* `gaussian`: Smooth, short-range repulsion.
-* `linear`: Simple linear drop-off (Hookean spring).
+* `linear`: Simple linear drop-off (Hookean spring), hard cutoff at the radius.
 * `cauchy`: Heavy-tailed distribution for global separation.
+
+**Repulsion is local.** Only the nearest few neighbours matter: further
+ones add an isotropic pressure that moves points without improving
+separation. The default `k` is therefore capped (`ess.K_LOCAL`, 5) rather
+than growing as `2d+1` — with a growing `k`, a 64-dimensional design has
+every point interacting with a quarter of the whole set, which collapses
+the one-dimensional marginals and leaves packing *worse* than random.
+
+## Measuring a design
+
+Uniformity metrics do not survive high dimension equally well, so
+`ess.utils` offers the ones appropriate to each regime:
+
+| function | what it measures | use when |
+| --- | --- | --- |
+| `toroidal_clark_evans` | nearest-neighbour regularity on the torus; calibrated (random = 1), bounded by $2/\Gamma(1+1/d)$ | $d \lesssim 16$ |
+| `wrap_around_discrepancy` | periodic $L_2$ discrepancy — deviation from uniform over every wrap-around box | any $d$ |
+| `projection_discrepancy` | the same, averaged over 1-D / 2-D projections; fixed scale in any ambient dimension | high $d$ (DoE effect sparsity) |
+| `calculate_grid_coverage`, `calculate_min_pairwise_distance` | occupancy and separation | any $d$ |
+
+`calculate_clark_evans_index` (Euclidean, box) is kept for backwards
+compatibility but is **not** recommended: it carries an uncorrected edge
+bias (a random design scores 1.42 at $d = 64$, not 1) and rewards designs
+that pile points against the domain walls.
+
+## Benchmark
+
+`examples/benchmark_dispersion.py` runs the calibration behind the
+defaults — force-law selection, a tuning grid, and the main sweep over
+$d \in \{2,\dots,64\}$ with the number of points scaled to the dimension:
+
+```bash
+python examples/benchmark_dispersion.py --phase all --seeds 10
+```
 
 ## Documentation
 

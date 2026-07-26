@@ -1,19 +1,35 @@
 """Dispersion benchmark for the toroidal (torann-backed) ESS.
 
 Measures, for d in {2, 4, 8, 16, 32, 64} and both search modes, the
-quality of the dispersion (Clark-Evans index and the maximin gain over
-a same-seed random-uniform baseline), the wall time and the epochs the
-early stop actually used — every run repeated over several independent
-seeds that drive the initial candidates (LHS init, smart-init pools and
-the hash functions).
+quality of the dispersion, the wall time and the epochs the early stop
+actually used, over several independent seeds driving the initial
+candidates (LHS init, smart-init pools, tie-breaking noise and the
+torann hash functions).
 
-Three phases, each writing JSON to ``examples/out/``:
+Metrics are chosen per dimension, because none is valid everywhere:
 
-  force   pick the best-performing force law (subset of dims/seeds)
-  tune    grid-search lr x decay, then patience, with the winning law
-  main    the full dims x modes x seeds sweep with the tuned settings
+  toroidal Clark-Evans   nearest-neighbour regularity in the geometry
+                         that is actually optimized. Calibrated (random
+                         = 1) and bounded by 2/Gamma(1+1/d). Reported
+                         for every d but only *trusted* up to ~16: above
+                         that, concentration of measure flattens the
+                         distance distribution and every design looks
+                         alike. The Euclidean box version is not used at
+                         all -- it is biased upward (random scores 1.42
+                         at d=64) and rewards piling points on the walls.
 
-Run from the repository root::
+  projection discrepancy wrap-around L2 discrepancy averaged over 1-D
+                         and 2-D projections, normalized so 1.0 = random.
+                         Fixed scale regardless of ambient dimension, no
+                         distance contrasts involved: this is the
+                         high-dimensional criterion, and it also encodes
+                         the DoE effect-sparsity principle (what matters
+                         is that every factor and every pair be covered).
+
+The number of points scales with the dimension -- 256 points in 64D is
+far too sparse for any packing question to be meaningful.
+
+Three phases plus a plot, each writing JSON to ``examples/out/``::
 
     python examples/benchmark_dispersion.py --phase all
     python examples/benchmark_dispersion.py --phase main --seeds 10
@@ -30,52 +46,68 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import ess  # noqa: E402
-from ess import utils  # noqa: E402
+from ess.samplers import LHCSampler  # noqa: E402
+from ess.utils import (  # noqa: E402
+    expected_discrepancy,
+    projection_discrepancy,
+    toroidal_clark_evans,
+)
 
 OUT = os.path.join(os.path.dirname(__file__), "out")
 
 DIMS = [2, 4, 8, 16, 32, 64]
 MODES = ["k_nn", "radius"]
-FORCES = ["softened_inverse", "gaussian", "linear", "cauchy"]
-N_POINTS = 256
+FORCES = ["gaussian", "softened_inverse", "linear", "cauchy"]
+
+# n grows with d: a fixed 256 would leave 64D so sparse that the ideal
+# packing spacing exceeds the domain and there is nothing to optimize.
+N_BY_DIM = {2: 256, 4: 256, 8: 512, 16: 512, 32: 1024, 64: 1024}
 
 
-def run_once(dim, mode, seed, metric, n=N_POINTS, **params):
+def score(pts, dim):
+    """The metric panel for one design (see the module docstring)."""
+    n = len(pts)
+    return {
+        "torus_ce": toroidal_clark_evans(pts),
+        "proj1": projection_discrepancy(pts, 1) / expected_discrepancy(n, 1),
+        "proj2": (
+            projection_discrepancy(pts, 2, max_projections=60)
+            / expected_discrepancy(n, 2)
+        ),
+    }
+
+
+def run_once(dim, mode, seed, metric, n=None, **params):
     """One ESS run from scratch; returns the measured record."""
+    n = n or N_BY_DIM[dim]
     bounds = np.array([[0.0, 1.0]] * dim)
     stats = {}
     t0 = time.perf_counter()
     pts = ess.esa(
-        np.empty((0, dim)),
-        bounds,
-        n=n,
-        seed=seed,
-        search_mode=mode,
-        metric=metric,
-        stats=stats,
-        **params,
+        np.empty((0, dim)), bounds, n=n, seed=seed, search_mode=mode,
+        metric=metric, stats=stats, **params,
     )
     wall = time.perf_counter() - t0
 
-    rng = np.random.default_rng(seed)
-    random_pts = rng.uniform(0.0, 1.0, (n, dim))
-    maximin = utils.calculate_min_pairwise_distance(pts)
-    maximin_rnd = utils.calculate_min_pairwise_distance(random_pts)
-
     return {
-        "dim": dim,
-        "mode": mode,
-        "seed": seed,
-        "metric": metric,
-        **params,
-        "ce": utils.calculate_clark_evans_index(pts, bounds),
-        "maximin": maximin,
-        "maximin_gain": maximin / max(maximin_rnd, 1e-12),
+        "dim": dim, "mode": mode, "seed": seed, "metric": metric, "n": n,
+        **{k: v for k, v in params.items() if not isinstance(v, (list, dict))},
+        **score(pts, dim),
         "time_s": wall,
         "epochs": stats["epochs_total"],
-        "epochs_per_batch": float(np.mean(stats["batch_epochs"])),
         "radius": stats["radius"],
     }
+
+
+def baseline(dim, seed, n=None):
+    """LHS initialization, i.e. the quality of not relaxing at all."""
+    n = n or N_BY_DIM[dim]
+    pts = LHCSampler(random_state=seed).sample(n, dim)
+    return {"dim": dim, "mode": "LHS (no relaxation)", "seed": seed,
+            "n": n, **score(pts, dim), "time_s": 0.0, "epochs": 0}
+
+
+COLS = ("torus_ce", "proj1", "proj2", "epochs", "time_s")
 
 
 def summarize(rows, keys):
@@ -84,9 +116,9 @@ def summarize(rows, keys):
     for r in rows:
         groups.setdefault(tuple(r[k] for k in keys), []).append(r)
     out = []
-    for gk, rs in sorted(groups.items()):
+    for gk, rs in sorted(groups.items(), key=lambda kv: str(kv[0])):
         rec = dict(zip(keys, gk))
-        for col in ("ce", "maximin_gain", "time_s", "epochs_per_batch"):
+        for col in COLS:
             vals = np.array([r[col] for r in rs], dtype=float)
             rec[col] = float(vals.mean())
             rec[col + "_std"] = float(vals.std())
@@ -95,14 +127,14 @@ def summarize(rows, keys):
     return out
 
 
-def table(rows, keys, cols=("ce", "maximin_gain", "epochs_per_batch", "time_s")):
-    head = list(keys) + [c for col in cols for c in (col, "±")]
+def table(rows, keys):
+    head = list(keys) + ["torus-CE", "proj1", "proj2", "epochs", "time[s]"]
     print("| " + " | ".join(head) + " |")
     print("|" + "---|" * len(head))
     for r in rows:
         cells = [str(r[k]) for k in keys]
-        for col in cols:
-            cells += [f"{r[col]:.3f}", f"{r[col + '_std']:.3f}"]
+        cells += [f"{r['torus_ce']:.3f}", f"{r['proj1']:.3f}", f"{r['proj2']:.3f}",
+                  f"{r['epochs']:.0f}", f"{r['time_s']:.2f}"]
         print("| " + " | ".join(cells) + " |")
 
 
@@ -124,55 +156,48 @@ def phase_force(seeds):
         for seed in range(seeds)
     ]
     save("bench_force.json", rows)
-    agg = summarize(rows, ("metric", "mode", "dim"))
-    table(agg, ("metric", "mode", "dim"))
-
-    # winner: best mean CE across all cells, tie-broken by maximin gain
-    by_metric = summarize(rows, ("metric",))
-    best = max(by_metric, key=lambda r: (round(r["ce"], 2), r["maximin_gain"]))
-    print(f"\n>>> best force law: {best['metric']} "
-          f"(CE {best['ce']:.3f}, maximin x{best['maximin_gain']:.2f})")
+    table(summarize(rows, ("metric", "mode", "dim")), ("metric", "mode", "dim"))
+    best = max(summarize(rows, ("metric",)), key=lambda r: r["torus_ce"])
+    print(f"\n>>> best force law: {best['metric']} (torus-CE {best['torus_ce']:.3f})")
     return best["metric"]
 
 
 def phase_tune(metric, seeds):
-    """Grid lr x decay (patience fixed), then patience, on 3 dims."""
-    dims = (4, 16, 64)
-    rows = [
-        run_once(dim, mode, seed, metric, lr=lr, decay=decay)
-        for lr in (0.005, 0.01, 0.02)
-        for decay in (0.90, 0.95, 0.99)
-        for dim in dims
-        for mode in MODES
-        for seed in range(seeds)
-    ]
-    save("bench_tune_lr.json", rows)
-    agg = summarize(rows, ("lr", "decay"))
-    table(agg, ("lr", "decay"))
-    # quality first (CE within 1% of the best), then fewest epochs
-    top_ce = max(r["ce"] for r in agg)
-    ok = [r for r in agg if r["ce"] >= top_ce * 0.99]
-    best = min(ok, key=lambda r: r["epochs_per_batch"])
-    lr, decay = best["lr"], best["decay"]
-    print(f"\n>>> lr={lr}, decay={decay} "
-          f"(CE {best['ce']:.3f}, {best['epochs_per_batch']:.0f} ep/batch)")
+    """The two knobs that dominate quality (batch_size, patience) and
+    the one that dominates high-dimensional behaviour (k)."""
+    dims = (2, 8, 32)
 
-    rows_p = [
-        run_once(dim, mode, seed, metric, lr=lr, decay=decay, patience=patience)
-        for patience in (5, 10, 20)
+    rows = [
+        run_once(dim, "k_nn", seed, metric, batch_size=bs, patience=pat)
+        for bs in (50, None)
+        for pat in (5, 25, 50)
         for dim in dims
-        for mode in MODES
         for seed in range(seeds)
     ]
-    save("bench_tune_patience.json", rows_p)
-    agg_p = summarize(rows_p, ("patience",))
-    table(agg_p, ("patience",))
-    top_ce = max(r["ce"] for r in agg_p)
-    ok = [r for r in agg_p if r["ce"] >= top_ce * 0.99]
-    best_p = min(ok, key=lambda r: r["epochs_per_batch"])
-    print(f"\n>>> patience={best_p['patience']} "
-          f"(CE {best_p['ce']:.3f}, {best_p['epochs_per_batch']:.0f} ep/batch)")
-    return {"lr": lr, "decay": decay, "patience": best_p["patience"]}
+    save("bench_tune_stop.json", rows)
+    agg = summarize(rows, ("batch_size", "patience"))
+    table(agg, ("batch_size", "patience"))
+    top = max(r["torus_ce"] for r in agg)
+    ok = [r for r in agg if r["torus_ce"] >= top * 0.99]
+    best = min(ok, key=lambda r: r["epochs"])
+    print(f"\n>>> batch_size={best['batch_size']}, patience={best['patience']}")
+
+    rows_k = [
+        run_once(dim, "k_nn", seed, metric, batch_size=best["batch_size"],
+                 patience=best["patience"], k=k)
+        for k in (5, 9, 17, 33)
+        for dim in dims
+        for seed in range(seeds)
+    ]
+    save("bench_tune_k.json", rows_k)
+    agg_k = summarize(rows_k, ("k",))
+    table(agg_k, ("k",))
+    # keep every projection better than random, then maximise regularity
+    safe = [r for r in agg_k if r["proj1"] < 1.0] or agg_k
+    best_k = max(safe, key=lambda r: r["torus_ce"])
+    print(f"\n>>> k={best_k['k']} (proj1 {best_k['proj1']:.3f} < 1 = better than random)")
+    return {"batch_size": best["batch_size"], "patience": best["patience"],
+            "k": best_k["k"]}
 
 
 def phase_main(metric, params, seeds):
@@ -182,15 +207,14 @@ def phase_main(metric, params, seeds):
         for dim in DIMS
         for mode in MODES
         for seed in range(seeds)
-    ]
+    ] + [baseline(dim, seed) for dim in DIMS for seed in range(seeds)]
     save("bench_main.json", rows)
-    agg = summarize(rows, ("dim", "mode"))
-    table(agg, ("dim", "mode"))
+    table(summarize(rows, ("dim", "mode")), ("dim", "mode"))
     return rows
 
 
 def phase_plot():
-    """Three-panel summary figure from bench_main.json."""
+    """Four-panel summary figure from bench_main.json."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -200,23 +224,26 @@ def phase_plot():
         rows = json.load(fh)
     agg = summarize(rows, ("dim", "mode"))
 
-    slate, blue, teal = "#64748b", "#3b82f6", "#14b8a6"
+    slate, blue, teal, amber = "#64748b", "#3b82f6", "#14b8a6", "#f59e0b"
     plt.rcParams.update({
-        "figure.dpi": 200, "font.size": 10, "text.color": slate,
+        "figure.dpi": 200, "font.size": 9, "text.color": slate,
         "axes.edgecolor": slate, "axes.labelcolor": slate,
         "xtick.color": slate, "ytick.color": slate,
         "axes.titlecolor": slate, "legend.frameon": False,
     })
-    fig, axes = plt.subplots(1, 3, figsize=(11.5, 3.6))
+    fig, axes = plt.subplots(1, 4, figsize=(14.5, 3.5))
     panels = (
-        ("ce", "Clark-Evans index (higher = more dispersed)"),
-        ("epochs_per_batch", "epochs per batch (early stop)"),
-        ("time_s", "wall time per run [s]"),
+        ("torus_ce", "toroidal Clark-Evans\n(higher better; trust to d~16)", False),
+        ("proj1", "1-D projection discrepancy\n(lower better, 1 = random)", True),
+        ("epochs", "epochs used (early stop)", False),
+        ("time_s", "wall time per run [s]", True),
     )
-    for ax, (col, title) in zip(axes, panels):
-        for mode, color in (("k_nn", blue), ("radius", teal)):
-            sel = sorted((r for r in agg if r["mode"] == mode),
-                         key=lambda r: r["dim"])
+    series = (("k_nn", blue), ("radius", teal), ("LHS (no relaxation)", amber))
+    for ax, (col, title, logy) in zip(axes, panels):
+        for mode, color in series:
+            sel = sorted((r for r in agg if r["mode"] == mode), key=lambda r: r["dim"])
+            if not sel or (col in ("epochs", "time_s") and mode.startswith("LHS")):
+                continue
             dims = [r["dim"] for r in sel]
             mean = np.array([r[col] for r in sel])
             std = np.array([r[col + "_std"] for r in sel])
@@ -225,14 +252,16 @@ def phase_plot():
         ax.set_xscale("log", base=2)
         ax.set_xticks(DIMS, [str(d) for d in DIMS])
         ax.set_xlabel("dimensions")
-        ax.set_title(title, fontsize=10)
-        if col == "ce":
+        ax.set_title(title, fontsize=9)
+        if logy:
+            ax.set_yscale("log")
+        if col == "torus_ce":
             ax.axhline(1.0, color=slate, lw=0.8, ls="--")
-            ax.annotate("random", (DIMS[-1], 1.0), textcoords="offset points",
-                        xytext=(0, 4), ha="right", color=slate, fontsize=8)
-        ax.legend()
-    fig.suptitle(f"toroidal ESS: {N_POINTS} points from scratch, "
-                 "10 seeds, tuned defaults", color=slate)
+        if col == "proj1":
+            ax.axhline(1.0, color=slate, lw=0.8, ls="--")
+        ax.legend(fontsize=8)
+    fig.suptitle("toroidal ESS: n scaled with d (256 to 1024), 10 seeds, tuned defaults",
+                 color=slate)
     fig.tight_layout()
     path = os.path.join(OUT, "bench_dispersion.png")
     fig.savefig(path)
@@ -256,7 +285,7 @@ if __name__ == "__main__":
     if args.phase in ("force", "all") and metric is None:
         print("\n=== phase: force selection ===")
         metric = phase_force(args.tune_seeds)
-    metric = metric or "softened_inverse"
+    metric = metric or "gaussian"
 
     if args.phase in ("tune", "all"):
         print(f"\n=== phase: tuning (metric={metric}) ===")
