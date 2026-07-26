@@ -14,7 +14,7 @@ import unittest
 import numpy as np
 
 from ess.ess import (
-    K_LOCAL,
+    NEIGHBOUR_TARGET,
     METRIC_REGISTRY,
     _compute_forces,
     _l1_radius_heuristic,
@@ -182,11 +182,11 @@ class TestPadRagged(unittest.TestCase):
 
 class TestRadiusHeuristic(unittest.TestCase):
     """The contract is a *count*, not a distance: the ball should hold
-    about `K_LOCAL` neighbours at every dimension."""
+    about `NEIGHBOUR_TARGET` neighbours at every dimension."""
 
     def test_matches_the_exact_dense_formula(self):
         # dense regime (R <= 1/2): R = 0.5 * (target * d! / n)^(1/d)
-        expected = 0.5 * math.sqrt(K_LOCAL * 2.0 / 100.0)
+        expected = 0.5 * math.sqrt(NEIGHBOUR_TARGET * 2.0 / 100.0)
         self.assertAlmostEqual(_l1_radius_heuristic(2, 100), expected, places=9)
 
     def test_decreases_with_density(self):
@@ -213,8 +213,8 @@ class TestRadiusHeuristic(unittest.TestCase):
             pts = np.random.default_rng(0).random((n, dim))
             indptr, _, _ = exact_radius(pts, pts, r, np.arange(n))
             mean_count = float(np.diff(indptr).mean())
-            self.assertGreater(mean_count, K_LOCAL * 0.4, (dim, n, mean_count))
-            self.assertLess(mean_count, K_LOCAL * 2.5, (dim, n, mean_count))
+            self.assertGreater(mean_count, NEIGHBOUR_TARGET * 0.4, (dim, n, mean_count))
+            self.assertLess(mean_count, NEIGHBOUR_TARGET * 2.5, (dim, n, mean_count))
 
     def test_sparse_regime_uses_the_distance_law(self):
         """Where the L1 ball would exceed the torus, the radius follows

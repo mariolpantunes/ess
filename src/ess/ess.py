@@ -36,6 +36,35 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 """logging.Logger: Module-level logger for debugging ESA optimization steps."""
 
+STEP_CAP = 0.02
+r"""float: Per-epoch travel budget, as a fraction of the interaction radius.
+
+Displacement is capped in the **L1** metric the radius is expressed in,
+so a point never crosses more than 2% of its local spacing per epoch.
+Early on the cap binds, which turns the update into a constant-speed
+flow along the force direction — only the *direction* matters, which is
+why `lr` barely affects the outcome; as the learning rate decays the
+step falls below the cap and the run anneals into place.
+
+Two failure modes this avoids, both measured at $d = 32$: capping the
+L2 norm instead lets each coordinate move by $R/\sqrt{d}$ rather than
+$R/d$ (a quarter of the domain per epoch, toroidal Clark-Evans 1.28 ->
+1.06), and a loose cap of 0.25 leaves every step maximal, which never
+settles (1.14 versus 1.30 here).
+"""
+
+NEIGHBOUR_TARGET = 2
+r"""int: Neighbours the default interaction radius should contain.
+
+The smallest radius that costs nothing. k-NN mode is insensitive to it
+above 2 (it only normalises the force there — measured 1.469 vs 1.477
+at $d=8$, 1.299 vs 1.296 at $d=32$ for targets 2 and 3), while 1 is too
+tight in low dimension (2D toroidal Clark-Evans 1.86 versus 2.08).
+Radius mode, where it is the actual search cutoff, keeps improving with
+larger values at proportionally higher cost, so callers who want that
+should pass ``radius=`` (or ``k=``) explicitly.
+"""
+
 K_LOCAL = 5
 r"""int: Cap on the number of interacting neighbours per point.
 
@@ -239,7 +268,9 @@ def _inv_scale(
     return scl_arr * (max_val - min_val) + min_val
 
 
-def _l1_radius_heuristic(dim: int, n_points: int, target: int = K_LOCAL) -> float:
+def _l1_radius_heuristic(
+    dim: int, n_points: int, target: int = NEIGHBOUR_TARGET
+) -> float:
     r"""Radius expected to contain `target` neighbours, from the exact
     toroidal L1 distance law.
 
@@ -274,8 +305,9 @@ def _l1_radius_heuristic(dim: int, n_points: int, target: int = K_LOCAL) -> floa
         dim (int): Dimensionality $d$.
         n_points (int): Total number of points $N$ (static + generated).
         target (int): Desired neighbours inside the ball. Defaults to
-            `K_LOCAL` so radius mode and k-NN mode see comparable
-            neighbourhoods.
+            `NEIGHBOUR_TARGET` — the smallest radius that does not cost
+            quality; callers wanting a wider interaction pass ``radius``
+            to `esa` directly.
 
     Returns:
         float: The interaction radius in toroidal L1 units.
@@ -602,10 +634,20 @@ def _esa(
                 **metric_kwargs,
             )
 
-            step = forces * current_lr
-            step_norm = np.linalg.norm(step, axis=1, keepdims=True)
-            np.multiply(  # norm-cap each step at 1/4: never wrap the torus
-                step, np.minimum(1.0, 0.25 / np.maximum(step_norm, 1e-12)),
+            # Steps are measured in units of the interaction radius, so
+            # stability does not depend on n or d: the forces are already
+            # dimensionless (they see d/R), and a step of lr*R is the same
+            # fraction of the local spacing at every density.
+            step = forces * (current_lr * radius)
+            # Cap travel in the metric the radius is expressed in: an L1
+            # budget of a quarter of the local spacing. Capping the L2
+            # norm instead lets each coordinate move by R/sqrt(d) rather
+            # than R/d, which in 32 dimensions is a quarter of the domain
+            # per epoch and destroys the packing.
+            step_norm = np.abs(step).sum(axis=1, keepdims=True)
+            np.multiply(
+                step,
+                np.minimum(1.0, STEP_CAP * radius / np.maximum(step_norm, 1e-12)),
                 out=step,
             )
             active += step
@@ -650,7 +692,7 @@ def esa(
     n: int,
     index: ToroidalNN | None = None,
     epochs: int = 1024,
-    lr: float = 0.02,
+    lr: float = 0.5,
     search_mode: str = "k_nn",
     decay: float = 0.99,
     batch_size: int | None = None,
@@ -707,7 +749,10 @@ def esa(
             is the index's own size-based decision — there are no engine
             thresholds left in ESS.
         epochs (int): Maximum iterations per batch.
-        lr (float): Initial learning rate $\eta_0$.
+        lr (float): Initial step size $\eta_0$, **in units of the
+            interaction radius**. Largely inert: `STEP_CAP` binds for
+            most of the run, so it mainly sets when annealing takes
+            over (0.2 and 0.5 differ by <2% on every benchmark cell).
         search_mode (str): ``"k_nn"`` (rank-based neighbourhood) or
             ``"radius"`` (metric ball).
         decay (float): Learning-rate decay $\gamma$ per epoch.
