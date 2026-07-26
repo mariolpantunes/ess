@@ -680,13 +680,26 @@ def esa(
         decay (float): Learning-rate decay $\gamma$ per epoch.
         batch_size (int | None): Points optimized together. ``None``
             (default) relaxes **all** $n$ points simultaneously, which
-            is what the toroidal index makes affordable and what the
-            quality numbers below assume. A smaller value processes the
-            points in sequential batches, each frozen once converged —
-            a greedy approximation that trades quality for a smaller
-            per-epoch working set ($O(\text{batch} \cdot k \cdot D)$),
-            worth setting only when $n$ is large enough for memory to
-            matter.
+            is what the toroidal index makes affordable. A smaller value
+            processes the points in sequential batches, each frozen once
+            converged — a greedy approximation.
+
+            Batching is *not* the way to make large runs fast. Measured
+            at $d = 8$ from scratch, wall time and toroidal Clark-Evans:
+
+            | $n$ | all at once | batch 5000 | batch 50 |
+            | --- | --- | --- | --- |
+            | 10 000 | 11.5 s / 1.487 | — | 5.3 s / 1.352 |
+            | 40 000 | 113 s / 1.491 | 94 s / 1.396 | > 750 s |
+
+            Batching saves at most ~20% at $n = 40\,000$ while giving up
+            most of the quality, and small batches become *pathological*
+            — 800 sequential batches, each paying full query cost
+            against an index that keeps growing. Cost is superlinear
+            (~$n^{1.6}$) either way, dominated by index and query work
+            rather than by the batch structure. Set this only to bound
+            the per-epoch working set ($O(\text{batch} \cdot k \cdot D)$)
+            when memory, not time, is the constraint.
         k (int | None): Neighbours in k-NN mode; default
             $\min(2D + 1, \text{`K_LOCAL`})$.
         radius (float | None): Interaction radius; default heuristic.
