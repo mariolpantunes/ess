@@ -181,3 +181,13 @@ plans/
 
 # Generated documentation
 docs/
+
+# Benchmark results: regenerate them, never review them.
+*.json
+!pyrightconfig.json
+examples/out/
+
+# Agent scratch
+.claude/
+.goose/
+.agy/
