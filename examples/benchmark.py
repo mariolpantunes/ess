@@ -25,7 +25,6 @@ def run_benchmark(dimensions, n_samples=10, n_new=50, seed=42):
 
         # 3. Calculate spatial metrics on generated points
         min_dist = utils.euclidean_separation(new_points)
-        ce_index = utils.euclidean_clark_evans(new_points, bounds)
 
         # Grid coverage (limit grid resolution in higher dimensions to prevent memory/time explosion)
         grid_res = 3 if dim > 5 else 10
@@ -34,7 +33,10 @@ def run_benchmark(dimensions, n_samples=10, n_new=50, seed=42):
         results[str(dim)] = {
             "execution_time_seconds": elapsed,
             "min_pairwise_distance": min_dist,
-            "clark_evans_index": ce_index,
+            "wrap_discrepancy": (
+                utils.wrap_around_discrepancy(new_points)
+                / utils.expected_discrepancy(len(new_points), new_points.shape[1])
+            ),
             "grid_coverage": coverage,
             "grid_resolution": grid_res,
         }

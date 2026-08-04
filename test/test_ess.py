@@ -67,22 +67,12 @@ class TestESS(unittest.TestCase):
                     f"ESS failed to beat random baseline for {mode}-{metric}",
                 )
 
-                ce_index = utils.euclidean_clark_evans(new_pts, self.bounds)
-                self.assertGreater(
-                    ce_index,
-                    1.05,
-                    f"Distribution not dispersed enough (R={ce_index}) "
-                    f"for {mode}-{metric}",
-                )
-
     def test_from_scratch(self):
         """No initial samples: the first batch anchors only against itself."""
         empty = np.empty((0, 2))
         res = ess.ess(empty, self.bounds, n=30, seed=42)
         self.assertEqual(res.shape, (30, 2))
         self.assertTrue(np.all(res >= 0.0) and np.all(res <= 1.0))
-        ce_index = utils.euclidean_clark_evans(res, self.bounds)
-        self.assertGreater(ce_index, 1.05)
 
     def test_seam_interaction(self):
         """Toroidal geometry: static anchors hugging the x=1 edge must

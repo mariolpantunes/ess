@@ -33,14 +33,16 @@ Modules
 -------
 * `ess`: Core generation logic and force-field definitions.
 * `samplers`: Space-filling initial-position samplers (LHS, uniform).
-* `utils`: Metrics for spatial distribution. Three families, and the
-  distinction matters: `projection_discrepancy` / `wrap_around_discrepancy`
-  reference no point metric and are the ones that rank designs;
-  `toroidal_separation` / `toroidal_clark_evans` are $L_1$ statistics valid
-  within one fixed geometry; `euclidean_separation` /
-  `euclidean_clark_evans` are their non-wrapping counterparts, kept for
-  provenance. Never rank arms that optimised different geometries with the
-  latter two families.
+* `utils`: Metrics for spatial distribution. **Rank designs with
+  `projection_discrepancy` and `wrap_around_discrepancy`** — they measure
+  deviation from uniformity and reference no point metric at all, so no
+  choice of geometry can flatter an arm that optimised it.
+  `toroidal_separation` is a raw $L_1$ gap, useful as a diagnostic within
+  one fixed geometry; `euclidean_separation` is its non-wrapping
+  counterpart, kept for provenance. Clark-Evans is gone: it only has
+  meaning divided by an expected nearest-neighbour distance, which makes it
+  a statistic *about a metric* rather than about uniformity, and it was
+  measurably blunt besides.
 * `legacy`: Reference implementations of earlier sequential strategies.
 """
 

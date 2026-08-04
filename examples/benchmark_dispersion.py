@@ -50,7 +50,8 @@ from ess.samplers import LHCSampler  # noqa: E402
 from ess.utils import (  # noqa: E402
     expected_discrepancy,
     projection_discrepancy,
-    toroidal_clark_evans,
+    wrap_around_discrepancy,
+    expected_discrepancy,
 )
 
 OUT = os.path.join(os.path.dirname(__file__), "out")
@@ -68,7 +69,7 @@ def score(pts, dim):
     """The metric panel for one design (see the module docstring)."""
     n = len(pts)
     return {
-        "torus_ce": toroidal_clark_evans(pts),
+        "wrap_disc": wrap_around_discrepancy(pts) / expected_discrepancy(len(pts), pts.shape[1]),
         "proj1": projection_discrepancy(pts, 1) / expected_discrepancy(n, 1),
         "proj2": (
             projection_discrepancy(pts, 2, max_projections=60)

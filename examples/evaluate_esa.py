@@ -4,7 +4,7 @@ import numpy as np
 
 from ess import esa as current_esa
 from ess.legacy import _esa_01 as legacy_esa
-from ess.utils import euclidean_clark_evans
+from ess.utils import expected_discrepancy, wrap_around_discrepancy
 
 
 def run_benchmark():
@@ -30,14 +30,16 @@ def run_benchmark():
             start_legacy = time.perf_counter()
             points_legacy = legacy_esa(samples, bounds, n=n, seed=42)
             time_legacy = time.perf_counter() - start_legacy
-            quality_legacy = euclidean_clark_evans(points_legacy, bounds)
+            quality_legacy = wrap_around_discrepancy(points_legacy) / expected_discrepancy(
+                len(points_legacy), points_legacy.shape[1])
 
             # --- Benchmark Current Version ---
             # esa optimizes points as a batch, repelling each other and 'samples'
             start_current = time.perf_counter()
             points_current = current_esa(samples, bounds, n=n, seed=42)
             time_current = time.perf_counter() - start_current
-            quality_current = euclidean_clark_evans(points_current, bounds)
+            quality_current = wrap_around_discrepancy(points_current) / expected_discrepancy(
+                len(points_current), points_current.shape[1])
 
             speedup = time_legacy / time_current
 

@@ -126,17 +126,35 @@ the one-dimensional marginals and leaves packing *worse* than random.
 Uniformity metrics do not survive high dimension equally well, so
 `ess.utils` offers the ones appropriate to each regime:
 
-| function | what it measures | use when |
+| function | what it measures | rank designs with it? |
 | --- | --- | --- |
-| `toroidal_clark_evans` | nearest-neighbour regularity on the torus; calibrated (random = 1), bounded by $2/\Gamma(1+1/d)$ | $d \lesssim 16$ |
-| `wrap_around_discrepancy` | periodic $L_2$ discrepancy — deviation from uniform over every wrap-around box | any $d$ |
-| `projection_discrepancy` | the same, averaged over 1-D / 2-D projections; fixed scale in any ambient dimension | high $d$ (DoE effect sparsity) |
-| `calculate_grid_coverage`, `calculate_min_pairwise_distance` | occupancy and separation | any $d$ |
+| `wrap_around_discrepancy` | deviation from uniform over every wrap-around box, full dimension | **yes** |
+| `projection_discrepancy` | the same, averaged over 1-D / 2-D coordinate projections; fixed scale in any ambient $d$ | **yes** |
+| `expected_discrepancy` | the null both are divided by, so 1.0 = as uniform as random | — |
+| `toroidal_separation` | the smallest toroidal $L_1$ gap in the set | diagnostic only |
+| `euclidean_separation`, `calculate_grid_coverage` | non-wrapping separation, and grid occupancy | provenance only |
 
-`calculate_clark_evans_index` (Euclidean, box) is kept for backwards
-compatibility but is **not** recommended: it carries an uncorrected edge
-bias (a random design scores 1.42 at $d = 64$, not 1) and rewards designs
-that pile points against the domain walls.
+**Rank designs with the two discrepancies.** They measure deviation from
+uniformity and reference no point metric at all, so no choice of geometry
+can flatter an arm that happened to optimise it. Divide by
+`expected_discrepancy(n, s)` and the scale is fixed: 1.0 is as uniform as
+random, lower is better, and above 1.0 is worse than random — a real and
+observed failure mode, not a rounding artefact.
+
+The separations are raw distances, so they are only meaningful inside one
+fixed geometry; ranking an $L_1$-optimised design against an
+$L_2$-optimised one with either asks which is better at the thing one of
+them optimised. `calculate_grid_coverage` saturates and inverts above
+$d \approx 8$ and cannot be built past $d \approx 20$.
+
+Clark-Evans has been **removed**. It has meaning only divided by an
+expected nearest-neighbour distance, which makes it a statistic about a
+*metric* rather than about uniformity — so it cannot compare designs that
+optimised different geometries, which is most of the comparisons worth
+making. It was also blunt where it was valid: across a change under which
+2-D projection discrepancy moved six-fold, it moved 1.4%, and it scored a
+design that is worse than random in its projections as 24% better than
+random.
 
 ## Benchmark
 

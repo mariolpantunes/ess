@@ -66,7 +66,8 @@ import ess  # noqa: E402
 from ess.samplers import LHCSampler, UniformSampler  # noqa: E402
 from ess.utils import (  # noqa: E402
     expected_discrepancy,
-    toroidal_clark_evans,
+    wrap_around_discrepancy,
+    expected_discrepancy,
     wrap_around_discrepancy,
 )
 
@@ -91,7 +92,7 @@ def score(anchors, new, marginal_dims=8):
     return {
         "void_mean": float(void.mean()),
         "void_min": float(void.min()),
-        "combined_ce": toroidal_clark_evans(union),
+        "combined_wrap_disc": wrap_around_discrepancy(union) / expected_discrepancy(len(union), union.shape[1]),
         "marginal_disc": float(disc / expected_discrepancy(len(union), 1)),
         # Diagnostic only -- see the module docstring on why the batch
         # alone is the wrong set to score.
