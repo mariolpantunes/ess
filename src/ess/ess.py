@@ -458,11 +458,6 @@ def _pad_ragged(
 #: from allocating gigabytes.
 _FORCE_BLOCK_ELEMENTS = 8_000_000
 
-#: Floor on a coordinate gap before it is raised to $p - 1 < 0$ in the force
-#: direction. Only reached by near-coincident coordinates, which are rare
-#: enough that four orders of magnitude barely move the result — a guard
-#: against division by zero, not a knob.
-_GRAD_EPS = 1e-9
 
 
 def _accumulate(timers: dict | None, key: str, started: float) -> None:
@@ -507,7 +502,6 @@ def _compute_forces(
     radius: float,
     metric_fn: collections.abc.Callable,
     rng: np.random.Generator,
-    force_p: float = 1.0,
     **metric_kwargs,
 ) -> np.ndarray:
     r"""Net repulsive force on each active point from its neighbour list.
@@ -526,31 +520,14 @@ def _compute_forces(
     the whole domain.
 
     **The direction is the gradient of the metric supplying the
-    magnitudes**, which is what `force_p` selects. $\vec{u}$ is
-    $\nabla d_p$ up to the positive scalar $d_p^{1-p}$, which the
-    normalisation removes:
-
-    | `force_p` | direction | pushes hardest along |
-    |---|---|---|
-    | 2 | $r_l$ | the coordinates that already differ most |
-    | 1 | $\operatorname{sign}(r_l)$ | every coordinate equally |
-    | <1 | $\lvert r_l\rvert^{p-1}\operatorname{sign}(r_l)$ | the coordinates that nearly **coincide** |
-
-    Until this was parameterised the kernel always used $r_l/\lVert r
-    \rVert_2$ — the $p = 2$ gradient — while `dists` carried toroidal
-    **L1** magnitudes, so the applied force was the gradient of no
-    potential ESS defines. The default is now $1$, matching the metric.
-    Passing ``force_p=2.0`` restores the historic behaviour exactly and is
-    a regression anchor, not a recommended mode: every ESS quality figure
-    recorded before 2026-07-28 was measured with it.
-
-    Two conventions at $r_l = 0$, where $\lvert r_l\rvert^{p-1}
-    \operatorname{sign}(r_l)$ jumps from $-\infty$ to $+\infty$. An
-    *exactly* shared coordinate contributes nothing, since
-    $\operatorname{sign}(0) = 0$ — the symmetric subgradient, and the only
-    choice that does not invent a direction. A *nearly* shared one gets the
-    largest push, bounded by `_GRAD_EPS`. Exact ties have measure zero
-    here, so the second case is the one that occurs.
+    magnitudes.** For toroidal L1 that is $\operatorname{sign}(r_l)$: every
+    coordinate is pushed equally, rather than hardest along the one that
+    already differs most. Until 2026-07-28 the kernel used
+    $r_l/\lVert r\rVert_2$ — the $L_2$ gradient — while `dists` carried
+    L1 magnitudes, so the applied force descended no potential ESS
+    defines. An exactly shared coordinate contributes nothing, since
+    $\operatorname{sign}(0) = 0$, which is the symmetric subgradient and
+    the only choice that does not invent a direction.
 
     Numerics: $f$ is evaluated in log-space, the per-point maximum
     $M_i$ is subtracted before exponentiation (log-sum-exp trick), and the
@@ -568,10 +545,6 @@ def _compute_forces(
         radius (float): Interaction radius $R$ used to normalise distances.
         metric_fn (Callable): Log-space force law $\log f(\hat{d})$.
         rng (np.random.Generator): Generator for tie-breaking noise.
-        force_p (float): Exponent whose gradient sets the push direction.
-            Must match the metric that produced `dists` for the force to be
-            a gradient; ``1.0`` is toroidal L1 and is the default, ``2.0``
-            reproduces the historic direction.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
     Returns:
@@ -588,30 +561,24 @@ def _compute_forces(
         safe_ids = np.where(valid, block_ids, 0)
         disp = active[lo:hi, None, :] - all_data[safe_ids]
         disp -= np.round(disp)  # toroidal wrap: shortest displacement per axis
-        norms = np.linalg.norm(disp, axis=2, keepdims=True)
+        # Every norm here is L1, because every distance here is L1: torann
+        # returns toroidal L1, the force law is evaluated on it, and the step
+        # is capped in it. A single geometry end to end.
+        norms = np.abs(disp).sum(axis=2, keepdims=True)
 
         stacked = (norms[..., 0] < 1e-9) & valid
         if np.any(stacked):
             noise = rng.standard_normal(size=disp.shape)
-            noise /= np.linalg.norm(noise, axis=2, keepdims=True) + 1e-9
+            noise /= np.abs(noise).sum(axis=2, keepdims=True) + 1e-9
             disp = np.where(stacked[..., None], noise, disp)
             norms = np.where(stacked[..., None], 1.0, norms)
 
-        # grad(d_p) up to a positive scalar. p=2 is the displacement itself,
-        # so that branch runs the arithmetic the kernel has always run and
-        # stays bit-identical; the rng draw above is unconditional, so seeds
-        # hit the same code path whichever direction is selected.
-        if force_p == 2.0:
-            grad = disp
-        elif force_p == 1.0:
-            grad = np.sign(disp)
-            norms = np.linalg.norm(grad, axis=2, keepdims=True)
-        else:
-            grad = np.abs(disp)
-            np.maximum(grad, _GRAD_EPS, out=grad)
-            np.power(grad, force_p - 1.0, out=grad)
-            grad *= np.sign(disp)
-            norms = np.linalg.norm(grad, axis=2, keepdims=True)
+        # grad(d_L1) = sign(delta): every coordinate is pushed equally, which
+        # is what descending L1 means. An exactly shared coordinate
+        # contributes nothing, since sign(0) = 0 — the symmetric subgradient,
+        # and the only choice that does not invent a direction.
+        grad = np.sign(disp)
+        norms = np.abs(grad).sum(axis=2, keepdims=True)
 
         d_hat = np.where(valid, block_dists, 1.0) / radius
         log_mag = metric_fn(d_hat, **metric_kwargs)
@@ -650,7 +617,6 @@ def _esa(
     metric_fn: collections.abc.Callable,
     rng: np.random.Generator,
     init_sampler: samplers.Sampler,
-    force_p: float = 1.0,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -704,8 +670,6 @@ def _esa(
         metric_fn (Callable): Log-space force law.
         rng (np.random.Generator): Random number generator.
         init_sampler (samplers.Sampler): Sampler for initial positions.
-        force_p (float): Exponent whose gradient sets the push direction;
-            see `_compute_forces`.
         stats (dict | None): Optional run-statistics sink; see `esa`.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
@@ -769,7 +733,7 @@ def _esa(
             started = time.perf_counter()
             forces = _compute_forces(
                 active, all_data, ids, dists, radius, metric_fn, rng,
-                force_p=force_p, **metric_kwargs,
+                **metric_kwargs,
             )
             _accumulate(timers, "force_s", started)
 
@@ -799,7 +763,7 @@ def _esa(
             index.update(active)
             _accumulate(timers, "update_s", started)
 
-            f_max = float(np.max(np.linalg.norm(forces, axis=1)))
+            f_max = float(np.max(np.abs(forces).sum(axis=1)))
             ema = f_max if ema is None else 0.5 * ema + 0.5 * f_max
             if ema < best_ema * (1.0 - rel_improve):
                 best_ema = ema
@@ -849,7 +813,6 @@ def esa(
     metric: str | collections.abc.Callable = "gaussian",
     seed: int | np.random.Generator | None = None,
     init_sampler: samplers.Sampler | int | None = None,
-    force_p: float = 1.0,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -940,14 +903,6 @@ def esa(
         seed (int | np.random.Generator | None): Seed or Generator.
         init_sampler (samplers.Sampler | int | None): Initial-position
             sampler; None = LHS.
-        force_p (float): Exponent whose gradient sets the push direction.
-            The default ``1.0`` is the gradient of toroidal L1, the metric
-            the distances are measured in, so the force is the gradient of
-            the potential ESS actually defines. ``2.0`` restores the
-            pre-2026-07-28 behaviour — the kernel pushed along
-            $\delta/\lVert\delta\rVert_2$ whatever metric supplied the
-            magnitudes — and exists as a regression anchor for reproducing
-            figures recorded under it. See `_compute_forces`.
         stats (dict | None): Optional dictionary filled in place with run
             statistics — ``batch_epochs`` (epochs used per batch),
             ``batch_force_ema`` (final force EMA per batch),
@@ -1015,7 +970,6 @@ def esa(
         metric_fn=metric_fn,
         rng=rng,
         init_sampler=samplers.check_sampler(init_sampler, default_random_state=rng),
-        force_p=float(force_p),
         stats=stats,
         **metric_kwargs,
     )

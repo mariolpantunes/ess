@@ -234,40 +234,49 @@ if __name__ == "__main__":
 class TestForceDirection(unittest.TestCase):
     """The push direction must be the gradient of the metric measuring it.
 
-    Before this was parameterised the kernel always pushed along
-    `delta / ||delta||_2` -- the p=2 gradient -- while `dists` carried
-    toroidal L1 magnitudes, so the applied force descended no potential ESS
-    defines. `force_p` selects the exponent and defaults to 1, matching the
-    metric.
+    Distances here are toroidal L1 -- torann returns L1, the force law is
+    evaluated on it, the step is capped in it -- so the direction is
+    `grad(d_L1) = sign(delta)`, which pushes every coordinate equally.
+
+    Until 2026-07-28 the kernel used `delta/||delta||_2` regardless, the L2
+    gradient, so the applied force descended no potential ESS defines. The
+    exponent was briefly a parameter while `p != 1` was explored; that arm
+    lives on `wip_lp` and main is L1 end to end, so there is nothing left to
+    select and the geometry is checked here instead.
     """
 
     def setUp(self):
         self.bounds = np.array([[0.0, 1.0]] * 8)
         self.static = np.random.default_rng(0).random((60, 8))
 
-    def test_default_is_the_l1_gradient(self):
-        self.assertEqual(
-            inspect.signature(esa).parameters["force_p"].default, 1.0)
+    def test_no_metric_exponent_is_exposed(self):
+        params = inspect.signature(esa).parameters
+        self.assertNotIn("force_p", params)
+        self.assertNotIn("p", params)
 
-    def test_p2_is_a_regression_anchor_and_differs_from_the_default(self):
-        """`force_p=2.0` exists to reproduce figures recorded before the
-        fix, so it must stay reachable *and* stay distinguishable."""
-        historic = esa(self.static, self.bounds, n=24, seed=7, force_p=2.0)
-        again = esa(self.static, self.bounds, n=24, seed=7, force_p=2.0)
-        default = esa(self.static, self.bounds, n=24, seed=7)
-        np.testing.assert_array_equal(historic, again)
-        self.assertFalse(np.allclose(historic, default))
+    def test_direction_is_the_l1_subgradient(self):
+        """Equal push per coordinate, and a shared coordinate gets none."""
+        active = np.array([[0.5, 0.5, 0.5]])
+        # one neighbour: differs a lot on axis 0, a little on 1, not at all on 2
+        nbrs = np.array([[0.2, 0.48, 0.5]])
+        ids = np.array([[0]])
+        dists = np.abs(active - nbrs).sum(axis=1, keepdims=True)
+        f = _compute_forces(active, nbrs, ids, dists, 1.0,
+                            METRIC_REGISTRY["gaussian"],
+                            np.random.default_rng(0))
+        self.assertGreater(f[0, 0], 0.0)                       # pushed away
+        self.assertAlmostEqual(f[0, 0], f[0, 1], places=12)    # equally
+        self.assertAlmostEqual(f[0, 2], 0.0, places=12)        # shared: none
 
-    def test_every_direction_stays_in_bounds(self):
-        for fp in (0.5, 1.0, 2.0):
-            out = esa(self.static, self.bounds, n=16, seed=3, force_p=fp)
-            self.assertTrue((out >= 0.0).all() and (out <= 1.0).all(), fp)
-            self.assertTrue(np.isfinite(out).all(), fp)
+    def test_runs_stay_finite_and_in_bounds(self):
+        out = esa(self.static, self.bounds, n=16, seed=3)
+        self.assertTrue((out >= 0.0).all() and (out <= 1.0).all())
+        self.assertTrue(np.isfinite(out).all())
 
-    def test_coincident_coordinates_do_not_produce_nan(self):
-        """`|r|**(p-1)` diverges as a gap closes; `_GRAD_EPS` floors it."""
-        static = np.zeros((12, 8)) + 0.5      # every coordinate shared
-        out = esa(static, self.bounds, n=8, seed=1, force_p=0.5)
+    def test_coincident_points_do_not_produce_nan(self):
+        """Every coordinate shared: the tie-break noise has to take over."""
+        static = np.zeros((12, 8)) + 0.5
+        out = esa(static, self.bounds, n=8, seed=1)
         self.assertTrue(np.isfinite(out).all())
 
 
