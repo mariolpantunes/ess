@@ -1,4 +1,5 @@
 import abc
+
 import numpy as np
 
 
@@ -33,7 +34,6 @@ class Sampler(abc.ABC):
         Returns:
             np.ndarray: Array of shape (n, dim) with samples in [0, 1]^dim.
         """
-        pass
 
 
 class LHCSampler(Sampler):

@@ -267,8 +267,8 @@ def _check_metric_kwargs(
 # --- Helpers ----------------------------------------------------------------
 def _scale(
     arr: np.ndarray,
-    min_val: np.ndarray | np.number | float | int | None = None,
-    max_val: np.ndarray | np.number | float | int | None = None,
+    min_val: np.ndarray | np.number | float | None = None,
+    max_val: np.ndarray | np.number | float | None = None,
 ) -> tuple[
     np.ndarray,
     np.ndarray | np.number | float | int,
@@ -308,8 +308,8 @@ def _scale(
 
 def _inv_scale(
     scl_arr: np.ndarray,
-    min_val: np.ndarray | np.number | float | int,
-    max_val: np.ndarray | np.number | float | int,
+    min_val: np.ndarray | np.number | float,
+    max_val: np.ndarray | np.number | float,
 ) -> np.ndarray:
     r"""Restores scaled data from $[0, 1)^D$ back to its original domain.
 

@@ -43,31 +43,36 @@ Modules
   meaning divided by an expected nearest-neighbour distance, which makes it
   a statistic *about a metric* rather than about uniformity, and it was
   measurably blunt besides.
+* `baseline`: Reference constructions for *testing* ESS, not for using it
+  -- `dart` (Mitchell's best-candidate: the ablation of the relaxation),
+  `random_fill` (the null), and `grid_oracle` (the emptiest point by
+  exhaustion, at low `d`).
 * `legacy`: Reference implementations of earlier sequential strategies.
 """
 
 # 1. Internal Module Imports
-from . import legacy, samplers, utils
+# 3. Neighbour-search engine (re-exported for custom configuration)
+from torann import ToroidalNN
+
+from . import baseline, legacy, samplers, utils
 
 # 2. Main API Exports
 from .ess import esa, ess
-
-# 3. Neighbour-search engine (re-exported for custom configuration)
-from torann import ToroidalNN
 
 # 4. Sampler Exports
 from .samplers import LHCSampler, Sampler, UniformSampler, check_sampler
 
 # Define __all__ to control what 'from ess import *' exports
 __all__ = [
+    "LHCSampler",
+    "Sampler",
+    "ToroidalNN",
+    "UniformSampler",
+    "baseline",
+    "check_sampler",
     "esa",
     "ess",
-    "ToroidalNN",
-    "Sampler",
-    "LHCSampler",
-    "UniformSampler",
-    "check_sampler",
-    "utils",
     "legacy",
     "samplers",
+    "utils",
 ]
