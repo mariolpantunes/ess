@@ -208,6 +208,118 @@ METRIC_REGISTRY = {
 }
 
 
+def _rank_normalise(values: np.ndarray) -> np.ndarray:
+    r"""Attractiveness to $[0, 1]$ by rank, highest = 1.
+
+    **The force must never see the caller's raw units.** Objective values
+    span orders of magnitude between problems and between regions of one
+    problem, so an `attraction_weight` calibrated on a landscape scoring
+    $10^{-3}$ means something else entirely on one scoring $10^{6}$ — the
+    balance point would be set by the objective rather than by the knob.
+
+    That exact defect has been paid for once already, in an optimizer that
+    blended fitness and diversity through a Boltzmann softmax over raw
+    scores: the blend point moved with the objective's scale, so the weight
+    was inert on one pool and saturated on another, and two axes of a
+    399-arm factorial measured nothing.
+
+    Ranks are used rather than z-scores because they are bounded and
+    outlier-proof: one catastrophic sample cannot compress every other point
+    into a corner of the range. Ties share the mean rank, so equally
+    attractive points pull equally. A constant vector maps to all ones —
+    every point equally attractive, which is the sensible reading.
+
+    Args:
+        values (np.ndarray): Raw attractiveness, higher = more attractive.
+
+    Returns:
+        np.ndarray: Ranks scaled to $[0, 1]$, same shape.
+    """
+    v = np.asarray(values, dtype=np.float64).ravel()
+    if v.size == 0:
+        return v
+    order = np.argsort(v, kind="stable")
+    ranks = np.empty(v.size, dtype=np.float64)
+    ranks[order] = np.arange(v.size, dtype=np.float64)
+    # average the ranks of tied values so equals pull equally
+    uniq, inv, counts = np.unique(v, return_inverse=True, return_counts=True)
+    if uniq.size < v.size:
+        sums = np.zeros(uniq.size)
+        np.add.at(sums, inv, ranks)
+        ranks = (sums / counts)[inv]
+    span = ranks.max() - ranks.min()
+    return np.ones_like(ranks) if span == 0 else (ranks - ranks.min()) / span
+
+
+def _check_attraction_balance(
+    metric_fn: collections.abc.Callable,
+    metric_kwargs: dict,
+    attraction_fn: collections.abc.Callable,
+    attraction_kwargs: dict,
+    weight: float,
+) -> None:
+    r"""Refuse an attraction that can out-pull repulsion at contact.
+
+    Dart cannot collapse: it picks from discrete candidates and re-measures
+    novelty against everything placed. A continuous relaxation can — an
+    attraction that dominates at short range piles every active point onto
+    the most attractive static one, and the plateau detector would report
+    that as convergence, because the forces really have stopped changing.
+
+    Every law in `METRIC_REGISTRY` is finite at $\hat d = 0$, so the guard
+    is one inequality and can be *checked* rather than tested for:
+
+    $$ w \cdot a_{\max} \cdot F_{\text{att}}(0) \;<\; F_{\text{rep}}(0) $$
+
+    with $a_{\max} = 1$ after `_rank_normalise`, which is the worst case.
+
+    A second condition decides whether the attraction does anything at all.
+    It only overcomes repulsion somewhere if it decays *more slowly*, so the
+    net force must change sign at some separation; if it never does, the
+    term merely scales repulsion down near attractive neighbours. That is a
+    legitimate configuration — points still settle closer to good regions —
+    but it is not what "attraction" suggests, so it warns. The common way to
+    land there is using one law for both sides: two `linear` terms are
+    proportional and can never cross.
+
+    Args:
+        metric_fn (Callable): Repulsion law, log-space.
+        metric_kwargs (dict): Its parameters.
+        attraction_fn (Callable): Attraction law, log-space.
+        attraction_kwargs (dict): Its parameters.
+        weight (float): $w$.
+
+    Raises:
+        ValueError: If the guard fails, naming both magnitudes.
+    """
+    zero = np.zeros(1)
+    f_rep = float(np.exp(metric_fn(zero, **metric_kwargs))[0])
+    f_att = float(np.exp(attraction_fn(zero, **attraction_kwargs))[0])
+    if weight * f_att >= f_rep:
+        raise ValueError(
+            f"attraction would out-pull repulsion at contact: "
+            f"weight * F_att(0) = {weight * f_att:.4g} >= F_rep(0) = "
+            f"{f_rep:.4g}. Every active point would collapse onto its most "
+            f"attractive neighbour, and the plateau detector would call that "
+            f"convergence. Lower attraction_weight below {f_rep / f_att:.4g}, "
+            f"or give the attraction a shallower law."
+        )
+
+    d_hat = np.linspace(1e-3, 4.0, 512)
+    net = (np.exp(metric_fn(d_hat, **metric_kwargs))
+           - weight * np.exp(attraction_fn(d_hat, **attraction_kwargs)))
+    if not (net < 0).any():
+        logger.warning(
+            "attraction never overcomes repulsion at any separation, so it "
+            "only weakens the push near attractive neighbours rather than "
+            "pulling toward them. This is what happens when both sides use "
+            "the same law with the same shape (two `linear` terms are "
+            "proportional and can never cross). Give the attraction a "
+            "slower-decaying law via attraction_metric, or raise "
+            "attraction_weight."
+        )
+
+
 def _check_metric_kwargs(
     metric_fn: collections.abc.Callable, metric_kwargs: dict, named: bool
 ) -> None:
@@ -502,9 +614,13 @@ def _compute_forces(
     radius: float,
     metric_fn: collections.abc.Callable,
     rng: np.random.Generator,
+    attract: np.ndarray | None = None,
+    attraction_weight: float = 1.0,
+    attraction_fn: collections.abc.Callable | None = None,
+    attraction_kwargs: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
-    r"""Net repulsive force on each active point from its neighbour list.
+    r"""Net force on each active point from its neighbour list.
 
     This is the single force kernel for both search modes: k-NN passes the
     dense `ToroidalNN.query` result, radius mode passes the padded output
@@ -518,6 +634,21 @@ def _compute_forces(
     wrapped into $[-1/2, 1/2)$ by $r \leftarrow r - \operatorname{round}(r)$
     — so near the seam the push points the short way around, never across
     the whole domain.
+
+    **With `attract` given the sum has a second, signed term:**
+
+    $$ \vec{F}_i = \sum_j \hat u_{ij} f_{\text{rep}}(\hat d_{ij})
+       \;-\; w \sum_j \hat u_{ij}\, a_j\, f_{\text{att}}(\hat d_{ij}) $$
+
+    where $a_j \in [0, 1]$ is the neighbour's normalised attractiveness. Both
+    terms share the neighbour list and the direction $\hat u$; only the
+    magnitude law and the sign differ. Static points carry $a_j$; points this
+    call is placing carry zero, because they have no evaluated quality and
+    inventing one would be fabrication.
+
+    Note this is a *pairwise* pull, not the gradient of an interpolated
+    field, so a weight tuned against a Shepard-style surrogate does not
+    transfer to it.
 
     **The direction is the gradient of the metric supplying the
     magnitudes.** For toroidal L1 that is $\operatorname{sign}(r_l)$: every
@@ -545,6 +676,14 @@ def _compute_forces(
         radius (float): Interaction radius $R$ used to normalise distances.
         metric_fn (Callable): Log-space force law $\log f(\hat{d})$.
         rng (np.random.Generator): Generator for tie-breaking noise.
+        attract (np.ndarray | None): Per-row attractiveness over `all_data`,
+            already rank-normalised to $[0, 1]$, zero for rows that are not
+            static points. ``None`` evaluates no second term at all — not a
+            second term weighted zero — so the default path keeps exactly the
+            instruction stream it had before attraction existed.
+        attraction_weight (float): $w$, the balance against repulsion.
+        attraction_fn (Callable | None): Attraction law, log-space.
+        attraction_kwargs (dict | None): Its parameters.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
     Returns:
@@ -595,6 +734,28 @@ def _compute_forces(
         force_cap = 1000.0
         forces[lo:hi] = np.exp(np.minimum(m_i, np.log(force_cap))) * net
 
+        if attract is not None:
+            # The log-sum-exp trick is per *term*, not across terms: a signed
+            # sum cannot share one max-subtract, because the shift that keeps
+            # one term in range can push the other under it. So the attraction
+            # gets its own maximum, its own exponentiation, and the two are
+            # combined in linear space. It looks fusable and is not.
+            a = attract[safe_ids] * valid
+            log_att = attraction_fn(d_hat, **attraction_kwargs)
+            log_att = np.where(valid, log_att, -np.inf)
+            m_a = np.max(log_att, axis=1, keepdims=True)
+            m_a = np.where(np.isneginf(m_a), 0.0, m_a)
+            w_att = np.exp(log_att - m_a) * a
+            w_att[~valid] = 0.0
+            pull = np.sum(directions * w_att[..., None], axis=1)
+            # `directions` points from the neighbour towards the active point,
+            # so repulsion adds along it and attraction subtracts.
+            forces[lo:hi] -= (
+                attraction_weight
+                * np.exp(np.minimum(m_a, np.log(force_cap)))
+                * pull
+            )
+
     return forces
 
 
@@ -618,6 +779,10 @@ def _esa(
     rng: np.random.Generator,
     init_sampler: samplers.Sampler,
     init_pool: int = 64,
+    attract: np.ndarray | None = None,
+    attraction_weight: float = 1.0,
+    attraction_fn: collections.abc.Callable | None = None,
+    attraction_kwargs: dict | None = None,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -672,6 +837,11 @@ def _esa(
         rng (np.random.Generator): Random number generator.
         init_sampler (samplers.Sampler): Sampler for initial positions.
         init_pool (int): Candidates per slot for `_smart_init`; see `esa`.
+        attract (np.ndarray | None): Normalised attractiveness over
+            `all_data`; see `_compute_forces`.
+        attraction_weight (float): Balance against repulsion.
+        attraction_fn (Callable | None): Attraction law, log-space.
+        attraction_kwargs (dict | None): Its parameters.
         stats (dict | None): Optional run-statistics sink; see `esa`.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
@@ -736,6 +906,10 @@ def _esa(
             started = time.perf_counter()
             forces = _compute_forces(
                 active, all_data, ids, dists, radius, metric_fn, rng,
+                attract=attract,
+                attraction_weight=attraction_weight,
+                attraction_fn=attraction_fn,
+                attraction_kwargs=attraction_kwargs,
                 **metric_kwargs,
             )
             _accumulate(timers, "force_s", started)
@@ -817,6 +991,10 @@ def esa(
     seed: int | np.random.Generator | None = None,
     init_sampler: samplers.Sampler | int | None = None,
     init_pool: int = 64,
+    attractiveness: np.ndarray | None = None,
+    attraction_weight: float = 0.5,
+    attraction_metric: str | collections.abc.Callable | None = None,
+    attraction_kwargs: dict | None = None,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -942,6 +1120,41 @@ def esa(
             discriminating. 64 is the default because it takes most of the
             low-$d$ gain at 1.7x the cost of 15 and does no harm above;
             1024 buys another 2% at $d = 8$ for roughly 15x the cost.
+        attractiveness (np.ndarray | None): One value per row of `samples`,
+            **higher = more attractive**. ``None`` (default) is pure
+            repulsion and evaluates no second term at all -- not a term
+            weighted zero -- so the default path is unchanged.
+
+            The polarity is in the name on purpose: ESS is not told whether
+            the caller minimises or maximises, and cannot guess. A caller
+            minimising an objective passes the negated values.
+
+            Only existing points carry it. The points being placed have no
+            evaluated quality, and inventing one would be fabrication; they
+            exert repulsion alone.
+
+            Values are rank-normalised to $[0, 1]$ internally, so the units
+            never reach the force and `attraction_weight` means the same
+            thing on every objective. See `_rank_normalise`.
+        attraction_weight (float): $w$, the balance against repulsion.
+            Refused at setup if $w \cdot F_{\text{att}}(0) \ge
+            F_{\text{rep}}(0)$, which would let attraction win at contact and
+            collapse every active point onto its most attractive neighbour --
+            a failure the plateau detector would report as convergence.
+        attraction_metric (str | Callable | None): Force law for the pull.
+            ``None`` means the same law as `metric`.
+
+            **The same law on both sides cannot produce a well.** Identical
+            shapes are proportional, so the net force never changes sign and
+            attraction only weakens the push near attractive neighbours
+            rather than pulling toward them. That is a legitimate mode -- and
+            it is what `linear` on both sides can *only* do, having no shape
+            parameter -- but it is rarely what is wanted, so it warns. For a
+            genuine equilibrium give the attraction a slower-decaying law,
+            e.g. ``metric="softened_inverse", attraction_metric="cauchy"``.
+        attraction_kwargs (dict | None): Parameters for that law, kept
+            separate from `metric_kwargs` because both laws take parameters
+            of the same names and one ``**kwargs`` cannot serve two.
         stats (dict | None): Optional dictionary filled in place with run
             statistics — ``batch_epochs`` (epochs used per batch),
             ``batch_force_ema`` (final force EMA per batch),
@@ -970,6 +1183,40 @@ def esa(
     else:
         metric_fn = metric
     _check_metric_kwargs(metric_fn, metric_kwargs, isinstance(metric, str))
+
+    attract = None
+    attraction_fn = None
+    attraction_kw = dict(attraction_kwargs or {})
+    if attractiveness is not None:
+        # Shape first: it is the most basic thing that can be wrong, and its
+        # message should not be pre-empted by a balance complaint.
+        a = _rank_normalise(np.asarray(attractiveness, dtype=np.float64))
+        if a.size != samples.shape[0]:
+            raise ValueError(
+                f"attractiveness has {a.size} values for {samples.shape[0]} "
+                f"samples. One per existing point: the points being placed "
+                f"have no evaluated quality yet, so they carry none."
+            )
+        # Laid out over `all_data`, which is [static | placed]; the placed
+        # rows stay zero and so exert no pull.
+        attract = np.zeros(samples.shape[0] + n, dtype=np.float64)
+        attract[: samples.shape[0]] = a
+
+        chosen = metric if attraction_metric is None else attraction_metric
+        if isinstance(chosen, str):
+            attraction_fn = METRIC_REGISTRY.get(chosen.lower())
+            if attraction_fn is None:
+                raise ValueError(f"Unknown attraction_metric '{chosen}'")
+        else:
+            attraction_fn = chosen
+        if attraction_metric is None and not attraction_kw:
+            # same law, same parameters: proportional, so it can never cross
+            attraction_kw = dict(metric_kwargs)
+        _check_metric_kwargs(attraction_fn, attraction_kw, isinstance(chosen, str))
+        _check_attraction_balance(
+            metric_fn, metric_kwargs, attraction_fn, attraction_kw,
+            float(attraction_weight),
+        )
 
     if isinstance(seed, np.random.Generator):
         rng = seed
@@ -1010,6 +1257,10 @@ def esa(
         rng=rng,
         init_sampler=samplers.check_sampler(init_sampler, default_random_state=rng),
         init_pool=int(init_pool),
+        attract=attract,
+        attraction_weight=float(attraction_weight),
+        attraction_fn=attraction_fn,
+        attraction_kwargs=attraction_kw,
         stats=stats,
         **metric_kwargs,
     )

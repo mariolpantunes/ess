@@ -16,6 +16,7 @@ import numpy as np
 
 from ess.ess import (
     NEIGHBOUR_TARGET,
+    _rank_normalise,
     esa,
     METRIC_REGISTRY,
     _compute_forces,
@@ -339,3 +340,136 @@ class TestMetricKwargsAreChecked(unittest.TestCase):
         stats: dict = {}
         self.run_esa(stats=stats)
         self.assertIn("epochs_total", stats)
+
+
+class TestAttraction(unittest.TestCase):
+    """The second, signed term: repulsion for novelty, attraction for
+    fine-tuning toward regions the caller says are good.
+
+    Everything here is about the properties that make it safe to enable --
+    that it is off by default, that its units cannot leak in, and that it
+    cannot pull hard enough to collapse the design.
+    """
+
+    def setUp(self):
+        self.b = np.array([[0.0, 1.0]] * 4)
+        self.static = np.random.default_rng(0).random((30, 4))
+        self.centre = np.full(4, 0.25)
+        # "good" near (0.25, ...), so the pull has somewhere to go
+        self.q = -np.abs(self.static - self.centre).sum(axis=1)
+        self.slow = {"attraction_metric": "cauchy",
+                     "attraction_kwargs": {"power": 1.0}}
+
+    def pull_distance(self, **kw):
+        out = esa(self.static, self.b, n=15, seed=1, **kw)
+        return float(np.abs(out - self.centre).sum(axis=1).mean())
+
+    def test_off_by_default_and_byte_for_byte_unchanged(self):
+        """`None` must evaluate no second term, not a zero-weighted one."""
+        a = esa(self.static, self.b, n=15, seed=1)
+        b = esa(self.static, self.b, n=15, seed=1, attractiveness=None)
+        np.testing.assert_array_equal(a, b)
+
+    def test_it_pulls_towards_the_attractive_region(self):
+        plain = self.pull_distance()
+        pulled = self.pull_distance(attractiveness=self.q,
+                                    attraction_weight=0.8, **self.slow)
+        self.assertLess(pulled, plain)
+
+    def neighbour_quality(self, seeds=8, **kw):
+        """Mean normalised attractiveness of each placed point's nearest
+        existing neighbour.
+
+        This is the direct measure of what the term does: it should place
+        points beside good ones. Distance to some fixed "good" coordinate is
+        not -- the attractive points are scattered, so that proxy mixes the
+        effect with wherever they happen to be, and it reads ~3% where this
+        reads ~30%.
+        """
+        out = []
+        for s in range(seeds):
+            static = np.random.default_rng(s).random((30, 4))
+            q = -np.abs(static - 0.25).sum(axis=1)
+            a = _rank_normalise(q)
+            call = dict(kw)
+            if "attractiveness" in call:
+                call["attractiveness"] = q
+            placed = esa(static, self.b, n=15, seed=s, **call)
+            d = np.abs(placed[:, None, :] - static[None, :, :])
+            d = np.minimum(d, 1.0 - d).sum(-1)
+            out.append(a[d.argmin(axis=1)].mean())
+        return float(np.mean(out))
+
+    def test_pure_repulsion_is_indifferent_to_quality(self):
+        """The control: with no attraction the nearest neighbour of a placed
+        point is of average quality, because nothing told ESS about it."""
+        self.assertAlmostEqual(self.neighbour_quality(), 0.5, delta=0.05)
+
+    def test_attraction_places_points_beside_good_neighbours(self):
+        got = self.neighbour_quality(attractiveness=True,
+                                     attraction_weight=0.5, **self.slow)
+        self.assertGreater(got, 0.7)
+
+    def test_a_little_attraction_already_moves_it(self):
+        """Monotonicity in the weight does *not* hold -- past roughly 0.5 the
+        points cluster onto the single best neighbour instead of spreading
+        over the good regions, and the measure falls back. So the claim is
+        that any real weight beats none, not that more is always better."""
+        none = self.neighbour_quality()
+        for w in (0.2, 0.5, 1.0, 2.0):
+            got = self.neighbour_quality(attractiveness=True,
+                                         attraction_weight=w, **self.slow)
+            self.assertGreater(got, none + 0.15, f"weight={w}")
+
+    def test_units_of_the_objective_cannot_reach_the_force(self):
+        """The defect this guards against: a weight calibrated on one
+        objective's scale meaning something else on another."""
+        a = esa(self.static, self.b, n=15, seed=1, attractiveness=self.q,
+                attraction_weight=0.8, **self.slow)
+        for factor, shift in ((1e6, 0.0), (1e-6, 0.0), (1.0, 5e5)):
+            b = esa(self.static, self.b, n=15, seed=1,
+                    attractiveness=self.q * factor + shift,
+                    attraction_weight=0.8, **self.slow)
+            np.testing.assert_array_equal(a, b)
+
+    def test_monotone_rescaling_is_all_that_matters(self):
+        """Rank-normalised, so any order-preserving transform is identical."""
+        a = esa(self.static, self.b, n=15, seed=1, attractiveness=self.q,
+                attraction_weight=0.8, **self.slow)
+        b = esa(self.static, self.b, n=15, seed=1,
+                attractiveness=np.exp(self.q), attraction_weight=0.8,
+                **self.slow)
+        np.testing.assert_array_equal(a, b)
+
+    def test_collapse_is_refused_at_setup(self):
+        with self.assertRaises(ValueError) as cm:
+            esa(self.static, self.b, n=15, seed=1, attractiveness=self.q,
+                attraction_weight=50.0, **self.slow)
+        self.assertIn("collapse", str(cm.exception).lower())
+
+    def test_one_value_per_existing_point(self):
+        with self.assertRaises(ValueError) as cm:
+            esa(self.static, self.b, n=15, seed=1, attractiveness=self.q[:5])
+        self.assertIn("5 values", str(cm.exception))
+
+    def test_same_law_on_both_sides_warns_that_it_cannot_cross(self):
+        with self.assertLogs("ess.ess", level="WARNING") as log:
+            esa(self.static, self.b, n=15, seed=1, attractiveness=self.q,
+                attraction_weight=0.5)
+        self.assertIn("never overcomes", "".join(log.output))
+
+    def test_a_constant_attractiveness_pulls_everything_equally(self):
+        """No information in the values, so no preferred direction: the
+        result must stay a valid design rather than degenerate."""
+        out = esa(self.static, self.b, n=15, seed=1,
+                  attractiveness=np.ones(len(self.static)),
+                  attraction_weight=0.8, **self.slow)
+        self.assertTrue(np.isfinite(out).all())
+        self.assertTrue((out >= 0.0).all() and (out <= 1.0).all())
+
+    def test_placed_points_never_attract(self):
+        """They have no evaluated quality; only the static block pulls."""
+        out = esa(self.static, self.b, n=15, seed=1, attractiveness=self.q,
+                  attraction_weight=0.8, **self.slow)
+        self.assertEqual(out.shape, (15, 4))
+        self.assertTrue(np.isfinite(out).all())
