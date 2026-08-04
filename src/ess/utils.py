@@ -479,12 +479,35 @@ def toroidal_clark_evans(points: np.ndarray) -> float:
     its value under uniformity, `expected_nn_toroidal_l1`. Values above 1
     mean more regular than random.
 
+    Warning:
+        **Never rank designs that optimize different geometries with
+        this.** It divides by an $L_1$ null, so it is an $L_1$ statistic:
+        scoring an $L_1$-optimised arm against an $L^{0.75}$- or
+        $L_2$-optimised one asks which is better at $L_1$ spacing when
+        one arm optimised exactly that. Rigged by construction, not
+        merely noisy. This covers the force *direction* as much as the
+        metric — a kernel pushing along $\operatorname{sign}(\delta)$
+        descends $L_1$, one pushing along $\delta/\lVert\delta\rVert_2$
+        descends $L_2$. Use `projection_discrepancy` or
+        `wrap_around_discrepancy`: they measure deviation from
+        uniformity and reference no point metric at all.
+
+        It is also **blunt, not merely biased**. Measured at $d = 32$,
+        $n = 128$, 6 seeds, over exactly those two force directions,
+        this index moved 1.4% (1.2406 to 1.2575) across a change under
+        which mean 2-D projection discrepancy moved *six-fold* (1.331 to
+        0.224) — and the worse arm scored 1.331 against a random-uniform
+        0.989, i.e. **worse than random**, while this index called it
+        24% better than random. Within a single fixed geometry it stays
+        meaningful; as an arbiter of design quality it is not.
+
     Note:
         Like every nearest-neighbour statistic this loses discriminative
         power once concentration of measure flattens the distance
         distribution; above roughly $d = 32$ prefer
         `projection_discrepancy`, or `toroidal_separation`, which still
-        separates ESS from LHS at $d = 32$. The attainable maximum is
+        separates ESS from LHS at $d = 32$ (and carries the same $L_1$
+        bias — it is the minimum toroidal $L_1$ gap). The attainable maximum is
         $2/\Gamma(1+1/d)$ (2.257 in 2D), reached by a perfect $L_1$
         lattice packing — the *diagonal* lattice, since $L_1$ balls are
         diamonds and diamonds tile; the axis-aligned grid reaches only
