@@ -30,3 +30,15 @@ Issues = "https://github.com/mariolpantunes/ess/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 120
+
+[tool.basedpyright]
+typeCheckingMode = "standard"
+include = ["src/ess"]
+reportImportCycles = "none"
+
+[tool.vulture]
+paths = ["src/ess"]
+min_confidence = 80

@@ -734,14 +734,16 @@ def _compute_forces(
         force_cap = 1000.0
         forces[lo:hi] = np.exp(np.minimum(m_i, np.log(force_cap))) * net
 
-        if attract is not None:
+        # Both are set together by `esa`; testing the callable is what makes
+        # that pairing explicit, and it is the thing actually invoked.
+        if attract is not None and attraction_fn is not None:
             # The log-sum-exp trick is per *term*, not across terms: a signed
             # sum cannot share one max-subtract, because the shift that keeps
             # one term in range can push the other under it. So the attraction
             # gets its own maximum, its own exponentiation, and the two are
             # combined in linear space. It looks fusable and is not.
             a = attract[safe_ids] * valid
-            log_att = attraction_fn(d_hat, **attraction_kwargs)
+            log_att = attraction_fn(d_hat, **(attraction_kwargs or {}))
             log_att = np.where(valid, log_att, -np.inf)
             m_a = np.max(log_att, axis=1, keepdims=True)
             m_a = np.where(np.isneginf(m_a), 0.0, m_a)
