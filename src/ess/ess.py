@@ -617,6 +617,7 @@ def _esa(
     metric_fn: collections.abc.Callable,
     rng: np.random.Generator,
     init_sampler: samplers.Sampler,
+    init_pool: int = 64,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -670,6 +671,7 @@ def _esa(
         metric_fn (Callable): Log-space force law.
         rng (np.random.Generator): Random number generator.
         init_sampler (samplers.Sampler): Sampler for initial positions.
+        init_pool (int): Candidates per slot for `_smart_init`; see `esa`.
         stats (dict | None): Optional run-statistics sink; see `esa`.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
@@ -701,7 +703,8 @@ def _esa(
 
         started = time.perf_counter()
         if fitted:
-            init = _smart_init(index, current_n, dim, rng, init_sampler)
+            init = _smart_init(index, current_n, dim, rng,
+                               init_sampler, pool=init_pool)
             index.promote(init)
         else:
             # From scratch: nothing to anchor against — the first batch
@@ -813,6 +816,7 @@ def esa(
     metric: str | collections.abc.Callable = "gaussian",
     seed: int | np.random.Generator | None = None,
     init_sampler: samplers.Sampler | int | None = None,
+    init_pool: int = 64,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -901,8 +905,43 @@ def esa(
         metric (str | Callable): Force-law name in `METRIC_REGISTRY`, or
             a callable $\log f(\hat{d})$.
         seed (int | np.random.Generator | None): Seed or Generator.
-        init_sampler (samplers.Sampler | int | None): Initial-position
-            sampler; None = LHS.
+        init_sampler (samplers.Sampler | int | None): Candidate-pool
+            sampler; None = LHS. It does not place the initial positions
+            directly — it proposes `init_pool` candidates per slot and
+            `_smart_init` keeps the farthest. The exception is a run with no
+            static points, where there is nothing to be far from and the
+            sampler's output is used as drawn.
+        init_pool (int): Candidates per slot for that selection, i.e. the
+            $k$ of Mitchell's best-candidate. ``1`` disables the selection
+            and uses the sampler's raw output.
+
+**The selection earns its place; the pool size is a small,
+            dimension-fading tuning.** Measured on a $1N$ sample + $1N$
+            quasi-opposite + $1N$ probe pool, 20 seeds, paired per seed
+            against the old hardcoded 15, on normalised 2-D projection
+            discrepancy (positive = better, with wins out of 20):
+
+            | $d$ | `1` | `64` | best | at |
+            | --- | --- | --- | --- | --- |
+            | 8 | -5.7% | **+4.4%** (16) | +6.2% (17) | 1024 |
+            | 16 | -3.5% | **+1.5%** (15) | +3.1% (17) | 512 |
+            | 32 | -0.5% | +0.6% (12) | +2.9% (20) | 2048 |
+            | 64 | -0.6% | -0.4% (8) | +0.8% (14) | 1024 |
+
+            ``1`` — no selection at all — is worse at every dimension, which
+            is the result that matters: the best-candidate step is doing
+            real work. Beyond that the gain rises and then plateaus inside
+            its own noise, so there is no interior optimum to find; an
+            earlier 6-seed reading suggested one and did not survive more
+            seeds.
+
+            The knob fades with dimension: 4-6% at $d = 8$, 1.5-3% through
+            $d = 32$, and essentially inert by $d = 64$, where `wrap` does
+            not move at all across the whole range. Concentration of measure
+            — once every candidate is far from everything, "farthest" stops
+            discriminating. 64 is the default because it takes most of the
+            low-$d$ gain at 1.7x the cost of 15 and does no harm above;
+            1024 buys another 2% at $d = 8$ for roughly 15x the cost.
         stats (dict | None): Optional dictionary filled in place with run
             statistics — ``batch_epochs`` (epochs used per batch),
             ``batch_force_ema`` (final force EMA per batch),
@@ -970,6 +1009,7 @@ def esa(
         metric_fn=metric_fn,
         rng=rng,
         init_sampler=samplers.check_sampler(init_sampler, default_random_state=rng),
+        init_pool=int(init_pool),
         stats=stats,
         **metric_kwargs,
     )

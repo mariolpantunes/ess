@@ -240,3 +240,38 @@ class TestESS(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestInitPool(unittest.TestCase):
+    """`init_pool` is the k of Mitchell's best-candidate inside `_smart_init`.
+
+    The sampler does not place the initial positions; it proposes
+    `init_pool` candidates per slot and the farthest from everything already
+    indexed wins. `init_pool=1` is therefore the ablation of that selection,
+    and it measures worse at every dimension tested -- which is why the step
+    exists.
+    """
+
+    def setUp(self):
+        self.bounds = np.array([[0.0, 1.0]] * 6)
+        self.static = np.random.default_rng(0).random((40, 6))
+
+    def test_pool_is_reachable_and_changes_the_result(self):
+        a = ess.esa(self.static, self.bounds, n=20, seed=1, init_pool=1)
+        b = ess.esa(self.static, self.bounds, n=20, seed=1, init_pool=256)
+        self.assertEqual(a.shape, b.shape)
+        self.assertFalse(np.allclose(a, b))
+
+    def test_every_pool_size_stays_in_bounds(self):
+        for p in (1, 15, 64, 512):
+            out = ess.esa(self.static, self.bounds, n=16, seed=2, init_pool=p)
+            self.assertTrue((out >= 0.0).all() and (out <= 1.0).all(), p)
+            self.assertTrue(np.isfinite(out).all(), p)
+
+    def test_empty_start_ignores_the_pool(self):
+        """With no static points there is nothing to be far from, so the
+        sampler's output is used as drawn and the pool cannot matter."""
+        empty = np.empty((0, 6))
+        a = ess.esa(empty, self.bounds, n=20, seed=3, init_pool=1)
+        b = ess.esa(empty, self.bounds, n=20, seed=3, init_pool=512)
+        np.testing.assert_allclose(a, b)
