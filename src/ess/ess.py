@@ -30,6 +30,7 @@ import time
 
 import numpy as np
 from torann import ToroidalNN
+from torann.brute import exact_knn, exact_radius
 
 from . import samplers
 
@@ -325,8 +326,51 @@ def _l1_radius_heuristic(
     return min(max(dim / 4.0 + z * math.sqrt(dim / 48.0), 1e-6), dim / 2.0)
 
 
+def _lp_radius_empirical(
+    dim: int,
+    n_points: int,
+    p: float,
+    rng: np.random.Generator,
+    target: int = NEIGHBOUR_TARGET,
+    cap: int = 512,
+) -> float:
+    r"""Interaction radius for a general `p`, by Monte Carlo.
+
+    `_l1_radius_heuristic` inverts the **exact L1** ball volume, which has
+    no closed form under a general $L^p$ — and for $p < 1$ the "ball" is
+    not even convex. The quantity it computes, though, is metric-agnostic:
+    *the radius that contains `target` neighbours among $N$ uniform points
+    on the torus*. So estimate that directly — draw a uniform sample, take
+    each point's `target`-th nearest $L^p$ neighbour, and use the median.
+
+    Assumption-free and self-calibrating in `p`, which matters because the
+    un-rooted quasi-norm scale runs away as $p \to 0$ ($d_p = d^{1/p} M_p$,
+    reaching 1.4e5 at $d = 32$, $p = 0.25$). Since the force law sees
+    $d_p / R$ only, an empirically calibrated $R$ cancels that scale
+    exactly, which is why the exploration runs were numerically stable.
+
+    Args:
+        dim (int): Dimensionality $d$.
+        n_points (int): Total points $N$ the design will hold.
+        p (float): Metric exponent.
+        rng (np.random.Generator): Generator for the Monte-Carlo draw.
+        target (int): Neighbours the ball should contain.
+        cap (int): Largest Monte-Carlo sample; the estimate is a median
+            over a scale-free statistic, so a few hundred points already
+            pin it and the cost is $O(\text{cap}^2 d)$.
+
+    Returns:
+        float: The interaction radius in $L^p$ units.
+    """
+    n = max(min(n_points, cap), target + 1)
+    pts = np.ascontiguousarray(rng.random((n, dim)))
+    count = max(min(target, n - 1), 1)
+    _, dists = exact_knn(pts, pts, count + 1, p=p)  # +1: self is at rank 0
+    return max(float(np.median(dists[:, count])), 1e-12)
+
+
 def _smart_init(
-    index: ToroidalNN,
+    index: "ToroidalNN | _LpIndex",
     n_new: int,
     dim: int,
     rng: np.random.Generator,
@@ -365,6 +409,101 @@ def _smart_init(
     return np.mod(picked + jitter, 1.0)
 
 
+class _LpIndex:
+    r"""Exact toroidal $L^p$ neighbour search, for the `p != 1` arms.
+
+    Implements the slice of `ToroidalNN` the ESA loop uses — `fit`,
+    `update`, `promote`, `query`, `query_radius`, two tiers, global ids
+    into one arena — on top of `torann.brute`, so `_esa` and `_smart_init`
+    run unchanged.
+
+    **Exact and brute-force by necessity, not by preference.** For
+    $p < 1$ the quasi-norm satisfies the triangle inequality only up to a
+    factor, so every bound the LSH path prunes with — prefix relaxation,
+    bucket bounds, the collision guarantee — is invalid; and torann's grid
+    hash collides with probability $1 - B\delta$ per dimension, making
+    $\log P(\text{collide})$ a function of **L1 and nothing else**. Two
+    points with equal L1 and very different $L^{0.5}$ are retrieved
+    equally often, which caps an L1-retrieve-then-rerank scheme at 93.2%
+    recall against the true $L^{0.5}$ neighbours — a structural ceiling,
+    not a tuning one. So there is no approximate $L^p$ path to fall back
+    to until one is built.
+
+    Cost is $O(n^2 d)$ per epoch. That is the right trade at the sizes
+    this serves: OBLESA runs ESS on 60-120 points, and torann's own
+    brute-force crossover sits at 512.
+    """
+
+    def __init__(self, p: float):
+        self.p = float(p)
+        self._arena = np.empty((0, 0))
+        self._n_static = 0
+        self._k_hint: int | None = None
+
+    @property
+    def n_points(self) -> int:
+        return self._arena.shape[0]
+
+    @property
+    def n_static(self) -> int:
+        return self._n_static
+
+    @property
+    def n_candidates(self) -> int:
+        return self.n_points - self._n_static
+
+    def fit(self, static_points, candidate_points=None, k=None, radius=None):
+        """Build both tiers from zero; ``radius`` is accepted and unused
+        (there is no structure to size)."""
+        del radius
+        S = np.mod(np.atleast_2d(np.asarray(static_points, np.float64)), 1.0)
+        if S.size == 0:
+            S = S.reshape(0, S.shape[-1])
+        C = (np.mod(np.atleast_2d(np.asarray(candidate_points, np.float64)), 1.0)
+             if candidate_points is not None and np.size(candidate_points)
+             else np.empty((0, S.shape[1])))
+        self._arena = np.ascontiguousarray(np.vstack([S, C]))
+        self._n_static = S.shape[0]
+        self._k_hint = k
+        return self
+
+    def update(self, coordinates) -> None:
+        """Move the candidate tier in place."""
+        self._arena[self._n_static:] = np.mod(
+            np.asarray(coordinates, np.float64), 1.0)
+
+    def promote(self, new_candidates=None) -> None:
+        """Freeze the candidates into the static tier, append the new batch."""
+        self._n_static = self.n_points
+        if new_candidates is not None and np.size(new_candidates):
+            C = np.mod(np.atleast_2d(np.asarray(new_candidates, np.float64)), 1.0)
+            self._arena = np.ascontiguousarray(np.vstack([self._arena, C]))
+
+    def _resolve(self, queries):
+        """Default query is the candidate self-join, self excluded."""
+        if queries is None:
+            return (self._arena[self._n_static:],
+                    np.arange(self._n_static, self.n_points, dtype=np.int64))
+        return np.mod(np.atleast_2d(np.asarray(queries, np.float64)), 1.0), None
+
+    def query(self, k=None, queries=None, exclude_ids=None):
+        """Exact $L^p$ k-NN — ids are arena rows, matching `ToroidalNN`."""
+        Q, ex = self._resolve(queries)
+        if exclude_ids is not None:
+            ex = np.asarray(exclude_ids, np.int64)
+        kq = int(k) if k is not None else (self._k_hint or 2 * self._arena.shape[1])
+        return exact_knn(self._arena, np.ascontiguousarray(Q), kq, ex, self.p)
+
+    def query_radius(self, radius, queries=None, exact=True):
+        """Exact $L^p$ range query, one ``(ids, dists)`` pair per query."""
+        del exact  # always exact here
+        Q, ex = self._resolve(queries)
+        indptr, ids, dst = exact_radius(
+            self._arena, np.ascontiguousarray(Q), float(radius), ex, self.p)
+        return [(ids[indptr[i]:indptr[i + 1]], dst[indptr[i]:indptr[i + 1]])
+                for i in range(Q.shape[0])]
+
+
 def _pad_ragged(
     results: list[tuple[np.ndarray, np.ndarray]],
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -400,6 +539,12 @@ def _pad_ragged(
 #: lists become the whole design in sparse high-dimensional regimes —
 #: from allocating gigabytes.
 _FORCE_BLOCK_ELEMENTS = 8_000_000
+
+#: Floor on a coordinate gap before it is raised to $p - 1 < 0$ in the
+#: force direction. Only reached by near-coincident coordinates, which
+#: are rare enough that four orders of magnitude barely move the result
+#: (see `_compute_forces`) — a guard against division by zero, not a knob.
+_GRAD_EPS = 1e-9
 
 
 def _accumulate(timers: dict | None, key: str, started: float) -> None:
@@ -444,6 +589,7 @@ def _compute_forces(
     radius: float,
     metric_fn: collections.abc.Callable,
     rng: np.random.Generator,
+    force_p: float = 1.0,
     **metric_kwargs,
 ) -> np.ndarray:
     r"""Net repulsive force on each active point from its neighbour list.
@@ -452,13 +598,53 @@ def _compute_forces(
     dense `ToroidalNN.query` result, radius mode passes the padded output
     of `_pad_ragged`. For active point $x_i$ with neighbours $y_j$:
 
-    $$ \vec{F}_i = \sum_{j} \frac{\vec{r}_{ij}}{\lVert\vec{r}_{ij}\rVert_2}
-       \, f\!\left(\frac{d_{L1}(x_i, y_j)}{R}\right) $$
+    $$ \vec{F}_i = \sum_{j} \frac{\vec{u}_{ij}}{\lVert\vec{u}_{ij}\rVert_2}
+       \, f\!\left(\frac{d_p(x_i, y_j)}{R}\right), \qquad
+       u_{ij,l} \;=\; \lvert r_{ij,l}\rvert^{\,p-1}\operatorname{sign}(r_{ij,l}) $$
 
     where $\vec{r}_{ij}$ is the **toroidal** displacement — each component
     wrapped into $[-1/2, 1/2)$ by $r \leftarrow r - \operatorname{round}(r)$
     — so near the seam the push points the short way around, never across
     the whole domain.
+
+    **The direction is the gradient of the metric supplying the
+    magnitudes**, which is what `force_p` selects. $\vec{u}$ is
+    $\nabla d_p$ up to the positive scalar $d_p^{1-p}$, which the
+    normalisation removes:
+
+    | `force_p` | direction | pushes hardest along |
+    |---|---|---|
+    | 2 | $r_l$ | the coordinates that already differ most |
+    | 1 | $\operatorname{sign}(r_l)$ | every coordinate equally |
+    | <1 | $\lvert r_l\rvert^{p-1}\operatorname{sign}(r_l)$ | the coordinates that nearly **coincide** |
+
+    Until this was parameterised the kernel always used $r_l/\lVert r
+    \rVert_2$ — the $p = 2$ gradient — while `dists` carried toroidal
+    **L1** magnitudes, so the applied force was the gradient of no
+    potential ESS defines. Correcting it is never worse and is
+    significantly better at high dimension from an empty start: +0.0170
+    toroidal Clark-Evans at $d = 32$, +0.0161 at $d = 40$, around four
+    pooled standard deviations. Passing ``force_p=2.0`` alongside L1
+    distances restores the historic behaviour exactly, which is how the
+    two are compared; it is a regression anchor, not a recommended mode.
+
+    Two conventions at $r_l = 0$, where $\lvert r_l\rvert^{p-1}
+    \operatorname{sign}(r_l)$ jumps from $-\infty$ to $+\infty$. An
+    *exactly* shared coordinate contributes nothing, since
+    $\operatorname{sign}(0) = 0$ — the symmetric subgradient, and the only
+    choice that does not invent a direction. A *nearly* shared one gets
+    the largest push, which is the whole point of $p < 1$, bounded by the
+    floor below. Exact ties have measure zero here (the 1st percentile of
+    $\min_l \lvert r_l \rvert$ is 1.7e-4), so the second case is the one
+    that occurs.
+
+    For $p < 1$ the magnitude $\lvert r_l\rvert^{p-1}$ diverges as a
+    coordinate gap closes, so gaps are floored at `_GRAD_EPS`. The floor
+    is nearly inert — moving it four orders of magnitude shifts the
+    direction's largest-component share from 0.235 to 0.161 at $d = 32$,
+    $p = 0.25$, because near-degenerate coordinates are rare (1st
+    percentile of $\min_l \lvert r_l \rvert$ is 1.7e-4). It is a
+    numerical guard, not a tuning knob.
 
     Numerics: $f$ is evaluated in log-space, the per-point maximum
     $M_i$ is subtracted before exponentiation (log-sum-exp trick), and the
@@ -476,6 +662,9 @@ def _compute_forces(
         radius (float): Interaction radius $R$ used to normalise distances.
         metric_fn (Callable): Log-space force law $\log f(\hat{d})$.
         rng (np.random.Generator): Generator for tie-breaking noise.
+        force_p (float): Exponent whose gradient sets the push direction.
+            Must match the metric that produced `dists` for the force to
+            be a gradient; ``2.0`` reproduces the historic direction.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
     Returns:
@@ -501,6 +690,22 @@ def _compute_forces(
             disp = np.where(stacked[..., None], noise, disp)
             norms = np.where(stacked[..., None], 1.0, norms)
 
+        # grad(d_p) up to a positive scalar. p=2 is the displacement
+        # itself, so that branch runs the arithmetic the kernel has
+        # always run and stays bit-identical; the rng draw above is
+        # unconditional on p, so seeds hit the same code path either way.
+        if force_p == 2.0:
+            grad = disp
+        elif force_p == 1.0:
+            grad = np.sign(disp)
+            norms = np.linalg.norm(grad, axis=2, keepdims=True)
+        else:
+            grad = np.abs(disp)
+            np.maximum(grad, _GRAD_EPS, out=grad)
+            np.power(grad, force_p - 1.0, out=grad)
+            grad *= np.sign(disp)
+            norms = np.linalg.norm(grad, axis=2, keepdims=True)
+
         d_hat = np.where(valid, block_dists, 1.0) / radius
         log_mag = metric_fn(d_hat, **metric_kwargs)
         log_mag = np.where(valid, log_mag, -np.inf)
@@ -510,7 +715,7 @@ def _compute_forces(
         weights = np.exp(log_mag - m_i)
         weights[~valid] = 0.0
 
-        directions = disp / np.maximum(norms, 1e-9)
+        directions = grad / np.maximum(norms, 1e-9)
         net = np.sum(directions * weights[..., None], axis=1)
 
         force_cap = 1000.0
@@ -522,7 +727,7 @@ def _compute_forces(
 # --- Core Logic --------------------------------------------------------------
 def _esa(
     samples01: np.ndarray,
-    index: ToroidalNN,
+    index: "ToroidalNN | _LpIndex",
     *,
     n: int,
     dim: int,
@@ -532,12 +737,14 @@ def _esa(
     batch_size: int,
     k: int,
     radius: float,
+    step_radius: float,
     search_mode: str,
     tol: float,
     patience: int,
     metric_fn: collections.abc.Callable,
     rng: np.random.Generator,
     init_sampler: samplers.Sampler,
+    force_p: float = 1.0,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -582,8 +789,11 @@ def _esa(
         decay (float): Learning-rate decay $\gamma$ per epoch.
         batch_size (int): Points optimized together per batch.
         k (int): Neighbours per query (k-NN mode).
-        radius (float): Interaction radius $R$ (search cutoff in radius
-            mode; force normalisation scale in both modes).
+        radius (float): Interaction radius $R$ in $L^p$ units (search
+            cutoff in radius mode; force normalisation scale in both).
+        step_radius (float): Local spacing in **L1** units, setting the
+            step size and the travel cap. Equal to `radius` at $p = 1$;
+            see the step block for why they must separate below it.
         search_mode (str): ``"k_nn"`` or ``"radius"``.
         tol (float): Absolute convergence floor on the force EMA.
         patience (int): Consecutive non-improving epochs (< 1% relative)
@@ -591,6 +801,8 @@ def _esa(
         metric_fn (Callable): Log-space force law.
         rng (np.random.Generator): Random number generator.
         init_sampler (samplers.Sampler): Sampler for initial positions.
+        force_p (float): Exponent whose gradient sets the push direction;
+            see `_compute_forces`.
         stats (dict | None): Optional run-statistics sink; see `esa`.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
@@ -654,26 +866,36 @@ def _esa(
             started = time.perf_counter()
             forces = _compute_forces(
                 active, all_data, ids, dists, radius, metric_fn, rng,
-                **metric_kwargs,
+                force_p=force_p, **metric_kwargs,
             )
             _accumulate(timers, "force_s", started)
 
             started = time.perf_counter()
 
-            # Steps are measured in units of the interaction radius, so
+            # Steps are measured in units of the local spacing, so
             # stability does not depend on n or d: the forces are already
-            # dimensionless (they see d/R), and a step of lr*R is the same
-            # fraction of the local spacing at every density.
-            step = forces * (current_lr * radius)
-            # Cap travel in the metric the radius is expressed in: an L1
-            # budget of a quarter of the local spacing. Capping the L2
-            # norm instead lets each coordinate move by R/sqrt(d) rather
-            # than R/d, which in 32 dimensions is a quarter of the domain
-            # per epoch and destroys the packing.
+            # dimensionless (they see d_p/R), and a step of lr*R_1 is the
+            # same fraction of that spacing at every density.
+            #
+            # `step_radius` is *not* `radius` once p != 1. The force
+            # normalisation must be in L^p units, but travel is capped in
+            # L1 — a per-coordinate budget — and the two scales diverge
+            # violently as p falls: at d=32 the L^p radius is 6.2 at p=1
+            # and 1.5e5 at p=0.25, where STEP_CAP*radius would exceed the
+            # largest step the torus admits by 188x and the cap would
+            # never bind at all. Mixing them turns the update into a
+            # random teleport, which is the failure the cap exists to
+            # prevent. At p=1 the two are the same number.
+            step = forces * (current_lr * step_radius)
+            # Cap travel in L1: a budget of a fixed fraction of the local
+            # spacing. Capping the L2 norm instead lets each coordinate
+            # move by R/sqrt(d) rather than R/d, which in 32 dimensions is
+            # a quarter of the domain per epoch and destroys the packing.
             step_norm = np.abs(step).sum(axis=1, keepdims=True)
             np.multiply(
                 step,
-                np.minimum(1.0, STEP_CAP * radius / np.maximum(step_norm, 1e-12)),
+                np.minimum(
+                    1.0, STEP_CAP * step_radius / np.maximum(step_norm, 1e-12)),
                 out=step,
             )
             active += step
@@ -734,6 +956,8 @@ def esa(
     metric: str | collections.abc.Callable = "gaussian",
     seed: int | np.random.Generator | None = None,
     init_sampler: samplers.Sampler | int | None = None,
+    p: float = 1.0,
+    force_p: float | None = None,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -824,6 +1048,25 @@ def esa(
         seed (int | np.random.Generator | None): Seed or Generator.
         init_sampler (samplers.Sampler | int | None): Initial-position
             sampler; None = LHS.
+        p (float): Metric exponent for the toroidal distance,
+            $d_p = (\sum_l \delta_l^p)^{1/p}$ with $\delta$ the per-axis
+            wrap. ``1.0`` (default) is toroidal L1 and keeps the indexed
+            path. Any other value forces exact brute-force search
+            (`_LpIndex`) and an empirically calibrated radius
+            (`_lp_radius_empirical`), because torann's hash is an L1
+            family and $p < 1$ is not a metric. Lower `p` pushes hardest
+            along the coordinates two points nearly **share**, which is
+            what equalises coordinate gaps; whether that improves the
+            design is an open measurement, not a settled result.
+        force_p (float | None): Exponent whose gradient sets the push
+            direction. ``None`` (default) matches `p`, so the force is
+            the gradient of the metric supplying the magnitudes.
+            ``2.0`` restores the historic
+            L2-direction behaviour and exists as a regression anchor:
+            it is what every ESS quality figure recorded before
+            2026-07-28 was measured with, and it costs ~0.017 toroidal
+            Clark-Evans at $d \ge 32$ from an empty start. See
+            `_compute_forces`.
         stats (dict | None): Optional dictionary filled in place with run
             statistics — ``batch_epochs`` (epochs used per batch),
             ``batch_force_ema`` (final force EMA per batch),
@@ -864,18 +1107,42 @@ def esa(
 
     k_value = k if k is not None else min(2 * dim + 1, K_LOCAL)
     batch = batch_size if batch_size is not None else max(n, 1)
-    final_radius = (
-        radius if radius is not None
-        else _l1_radius_heuristic(dim, samples.shape[0] + n)
-    )
-    logger.debug("Interaction radius (toroidal L1): %.4f", final_radius)
 
-    if index is None:
-        index = ToroidalNN(seed=int(rng.integers(2**31)))
+    if not p > 0.0:
+        raise ValueError(f"p must be positive, got {p}")
+    if p != 1.0 and index is not None:
+        raise ValueError(
+            "p != 1 has no approximate path: torann's hash collides as a "
+            "function of L1 only, and p < 1 breaks every pruning bound. "
+            "Leave index=None to use the exact L^p engine.")
+
+    if radius is not None:
+        final_radius = radius
+    elif p == 1.0:
+        final_radius = _l1_radius_heuristic(dim, samples.shape[0] + n)
+    else:
+        final_radius = _lp_radius_empirical(dim, samples.shape[0] + n, p, rng)
+    # Travel is capped in L1 whatever metric the force sees, so the step
+    # scale is the L1 spacing and is deliberately independent of `p`. The
+    # two coincide at p=1, including when the caller supplies `radius`.
+    step_radius = (final_radius if p == 1.0
+                   else _l1_radius_heuristic(dim, samples.shape[0] + n))
+    logger.debug("Interaction radius (toroidal L^%.4g): %.4f  step scale (L1):"
+                 " %.4f", p, final_radius, step_radius)
+
+    # Drawn unconditionally, and used only by ToroidalNN. The generator
+    # state downstream — every sampler draw, every tie-break — must not
+    # depend on which engine was selected or on `p`, or an arm comparison
+    # varies two things at once and attributes both to the metric.
+    index_seed = int(rng.integers(2**31))
+    engine: ToroidalNN | _LpIndex = (
+        index if index is not None
+        else (ToroidalNN(seed=index_seed) if p == 1.0 else _LpIndex(p))
+    )
 
     generated = _esa(
         scaled_samples,
-        index,
+        engine,
         n=n,
         dim=dim,
         epochs=epochs,
@@ -884,12 +1151,14 @@ def esa(
         batch_size=batch,
         k=k_value,
         radius=final_radius,
+        step_radius=step_radius,
         search_mode=search_mode,
         tol=tol,
         patience=patience,
         metric_fn=metric_fn,
         rng=rng,
         init_sampler=samplers.check_sampler(init_sampler, default_random_state=rng),
+        force_p=float(p) if force_p is None else float(force_p),
         stats=stats,
         **metric_kwargs,
     )
