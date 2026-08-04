@@ -3,6 +3,7 @@
 
 import math
 import unittest
+import warnings
 import numpy as np
 from ess import utils
 from ess.ess import _scale, _inv_scale, METRIC_REGISTRY
@@ -61,18 +62,18 @@ class TestUtils(unittest.TestCase):
         """Test distribution metrics."""
         # Triangle (Regular)
         points = np.array([[0, 0], [1, 0], [0.5, 0.866]])
-        d = utils.calculate_min_pairwise_distance(points)
+        d = utils.euclidean_separation(points)
         self.assertAlmostEqual(d, 1.0, places=3)
 
         # Clark Evans
         # Clustered
         clust = np.zeros((10, 2))
-        ce_c = utils.calculate_clark_evans_index(clust)
+        ce_c = utils.euclidean_clark_evans(clust)
         self.assertLess(ce_c, 1.0)
 
         # Random/Uniform check (Statistical, loose bounds)
         uni = np.random.rand(100, 2) * 10
-        ce_u = utils.calculate_clark_evans_index(uni)
+        ce_u = utils.euclidean_clark_evans(uni)
         self.assertGreater(ce_u, 0.5)
 
     def test_force_functions(self):
@@ -186,7 +187,7 @@ class TestDiscrepancy(unittest.TestCase):
         pts = np.array([[0.01, 0.5], [0.99, 0.5], [0.5, 0.1], [0.5, 0.9]])
         self.assertAlmostEqual(toroidal_separation(pts), 0.02, places=9)
         # the Euclidean version measures a different geometry entirely
-        self.assertGreater(utils.calculate_min_pairwise_distance(pts), 0.6)
+        self.assertGreater(utils.euclidean_separation(pts), 0.6)
 
     def test_toroidal_separation_matches_all_pairs(self):
         pts = np.random.default_rng(5).random((256, 3))
@@ -212,3 +213,43 @@ class TestDiscrepancy(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMetricGeometryIsInTheName(unittest.TestCase):
+    """`utils` holds two Clark-Evans indices and two separations, one pair
+    Euclidean and one toroidal. The old names said what was computed but not
+    in which geometry, which is the thing that decides whether a number means
+    anything — so the names now carry it, and the old ones are deprecated
+    rather than removed, because 0.3.1 published them.
+    """
+
+    def setUp(self):
+        # one pair straddling the seam: adjacent on the torus, far apart in
+        # a box. The whole point of distinguishing the two.
+        self.seam = np.array([[0.01, 0.5], [0.99, 0.5],
+                              [0.50, 0.2], [0.50, 0.8]])
+
+    def test_the_two_geometries_disagree_and_should(self):
+        box = utils.euclidean_separation(self.seam)
+        tor = utils.toroidal_separation(self.seam)
+        self.assertGreater(box, 0.5)     # the seam pair looks distant
+        self.assertLess(tor, 0.05)       # ...and is in fact adjacent
+        self.assertGreater(box, 10 * tor)
+
+    def test_deprecated_aliases_warn_and_agree(self):
+        for old, new, args in (
+            (utils.calculate_min_pairwise_distance, utils.euclidean_separation, ()),
+            (utils.calculate_clark_evans_index, utils.euclidean_clark_evans, ()),
+        ):
+            with self.assertWarns(DeprecationWarning):
+                got = old(self.seam, *args)
+            self.assertEqual(got, new(self.seam, *args))
+
+    def test_deprecation_message_names_the_replacement(self):
+        """A warning that does not say what to use instead is noise."""
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            utils.calculate_min_pairwise_distance(self.seam)
+        msg = str(w[0].message)
+        self.assertIn("euclidean_separation", msg)
+        self.assertIn("toroidal_separation", msg)

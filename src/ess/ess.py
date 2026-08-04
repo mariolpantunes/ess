@@ -23,6 +23,7 @@ Note:
 """
 
 import collections.abc
+import inspect
 import logging
 import math
 import statistics
@@ -205,6 +206,62 @@ METRIC_REGISTRY = {
     "linear": linear_force,
     "cauchy": cauchy_force,
 }
+
+
+def _check_metric_kwargs(
+    metric_fn: collections.abc.Callable, metric_kwargs: dict, named: bool
+) -> None:
+    """Reject keywords the force law does not actually have a parameter for.
+
+    Every law in `METRIC_REGISTRY` ends in ``**kwargs`` — that is what lets a
+    sweep pass one law's parameters to another without crashing, and it is
+    also what made `esa` silently accept anything at all. A misspelled
+    ``sigma`` used to run to completion with the default and report a number,
+    which is the worst possible failure: not an error, just a quietly wrong
+    measurement. This turns that back into a `TypeError`.
+
+    Validation is against the *named* parameters, since ``**kwargs`` is
+    precisely the thing that cannot discriminate. A user-supplied callable
+    that declares ``**kwargs`` is taken at its word and left alone — that is
+    an explicit choice in their code, where the registry's is an
+    implementation detail of this module.
+
+    Args:
+        metric_fn (Callable): The resolved force law.
+        metric_kwargs (dict): Extra keywords bound for it.
+        named (bool): True when `metric` was a registry name, so the law is
+            ours and its ``**kwargs`` carries no promise.
+
+    Raises:
+        TypeError: Naming the offending keyword and what is accepted.
+    """
+    if not metric_kwargs:
+        return
+    try:
+        params = inspect.signature(metric_fn).parameters
+    except (TypeError, ValueError):  # builtins, C callables: nothing to check
+        return
+    if not named and any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values()
+    ):
+        return
+    accepted = {
+        name
+        for name, p in params.items()
+        if p.kind
+        in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+    } - {"d"}
+    unknown = sorted(set(metric_kwargs) - accepted)
+    if unknown:
+        label = getattr(metric_fn, "__name__", repr(metric_fn))
+        raise TypeError(
+            f"{label}() got unexpected keyword argument(s) "
+            f"{', '.join(map(repr, unknown))}; it accepts "
+            f"{', '.join(sorted(accepted)) or '(none)'}. Extra keywords are "
+            f"forwarded to the force law, so a misspelled one would "
+            f"otherwise be ignored and the run would report a number "
+            f"measured with the default."
+        )
 
 
 # --- Helpers ----------------------------------------------------------------
@@ -918,6 +975,7 @@ def esa(
             raise ValueError(f"Unknown metric '{metric}'")
     else:
         metric_fn = metric
+    _check_metric_kwargs(metric_fn, metric_kwargs, isinstance(metric, str))
 
     if isinstance(seed, np.random.Generator):
         rng = seed

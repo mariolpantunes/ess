@@ -33,7 +33,14 @@ Modules
 -------
 * `ess`: Core generation logic and force-field definitions.
 * `samplers`: Space-filling initial-position samplers (LHS, uniform).
-* `utils`: Metrics for spatial distribution (Coverage, Clark-Evans, Maximin).
+* `utils`: Metrics for spatial distribution. Three families, and the
+  distinction matters: `projection_discrepancy` / `wrap_around_discrepancy`
+  reference no point metric and are the ones that rank designs;
+  `toroidal_separation` / `toroidal_clark_evans` are $L_1$ statistics valid
+  within one fixed geometry; `euclidean_separation` /
+  `euclidean_clark_evans` are their non-wrapping counterparts, kept for
+  provenance. Never rank arms that optimised different geometries with the
+  latter two families.
 * `legacy`: Reference implementations of earlier sequential strategies.
 """
 

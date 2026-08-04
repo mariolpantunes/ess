@@ -1,5 +1,6 @@
 import logging
 import math
+import warnings
 
 import numpy as np
 
@@ -8,11 +9,14 @@ logger = logging.getLogger(__name__)
 """logging.Logger: Module-level logger for debugging ESA optimization steps."""
 
 
-def _get_nearest_neighbor_distances(
+def _euclidean_nn_distances(
     points: np.ndarray, batch_size: int = 500
 ) -> np.ndarray:
     """
-    Computes the Euclidean distance to the nearest neighbor (excluding self) for each point.
+    Computes the **Euclidean, non-toroidal** distance to the nearest neighbor
+    (excluding self) for each point. The wrap-aware counterpart is inside
+    `toroidal_separation`; this one is what makes `euclidean_separation` and
+    `euclidean_clark_evans` box metrics.
 
     This method employs a vectorized, chunked approach to calculate the distance matrix
     without allocating the full $N \\times N$ array, making it memory-efficient for large datasets.
@@ -74,6 +78,15 @@ def calculate_grid_coverage(
 ) -> float:
     """
     Calculates the spatial coverage ratio by discretizing the domain into a grid.
+
+    Warning:
+        **Saturates and inverts above roughly $d = 8$**, and cannot be built
+        much past $d \approx 20$ at all ($b^D$ cells). Measured at $d = 8$:
+        LHS 0.988 against ESS 0.981 and uniform 0.981 — it ranks LHS above
+        ESS and cannot separate ESS from random, because once cells greatly
+        outnumber points every design occupies one cell each. Useful as a 2-D
+        or 3-D illustration; not a quality metric. Use
+        `projection_discrepancy` or `wrap_around_discrepancy`.
 
     This function maps continuous coordinates to discrete grid indices to determine how many
     hyper-rectangles (cells) contain at least one point. It uses a sparse tracking method
@@ -138,9 +151,24 @@ def calculate_grid_coverage(
     return float(occupied_count) / float(total_cells)
 
 
-def calculate_min_pairwise_distance(points: np.ndarray) -> float:
-    """
-    Calculates the global minimum distance between any two distinct points in the set.
+def euclidean_separation(points: np.ndarray) -> float:
+    r"""Separation of a design under **plain Euclidean distance, no wrap**.
+
+    The counterpart of `toroidal_separation`, in the other geometry. Which
+    one you want is decided by what produced the points: ESS relaxes on the
+    torus under $L_1$, so `toroidal_separation` is the one that measures
+    what it optimised. This one treats the domain as a box, and a pair
+    straddling a seam reads as far apart when it is adjacent — on four
+    points with one such pair it reports 0.633 where the toroidal version
+    returns 0.020.
+
+    Warning:
+        Retained for provenance: figures recorded against the pre-toroidal
+        implementation used this. **Do not use it to rank designs**, and
+        never to compare designs from different geometries — see
+        `toroidal_clark_evans` for why that is rigged rather than merely
+        noisy. For design quality prefer `projection_discrepancy` or
+        `wrap_around_discrepancy`, which reference no point metric at all.
 
     This metric is effectively the "separation" distance of the distribution. It corresponds
     to the result of the Maximin criterion.
@@ -160,16 +188,27 @@ def calculate_min_pairwise_distance(points: np.ndarray) -> float:
         return 0.0
 
     # Use helper to get distance to nearest neighbor for all points
-    min_dists = _get_nearest_neighbor_distances(points)
+    min_dists = _euclidean_nn_distances(points)
 
     # The result is the minimum of all nearest neighbor distances
     return float(np.min(min_dists))
 
 
-def calculate_clark_evans_index(
+def euclidean_clark_evans(
     points: np.ndarray, bounds: np.ndarray | None = None
 ) -> float:
-    """
+    r"""Clark-Evans index under **plain Euclidean distance, no wrap**.
+
+    The counterpart of `toroidal_clark_evans`, in the other geometry, and
+    subject to every caveat recorded there — it is an $L_2$ statistic in
+    the same way that one is an $L_1$ statistic, so it cannot arbitrate
+    between designs that optimised different metrics, and it is blunt
+    besides. Retained for provenance, because figures recorded against the
+    pre-toroidal implementation used it.
+
+    **For anything on the torus use `toroidal_clark_evans`; for design
+    quality use `projection_discrepancy`.**
+
     Computes the Clark-Evans Nearest Neighbor Index ($R$) for $D$-dimensional space.
 
     The index compares the observed mean nearest-neighbor distance to the expected distance
@@ -204,7 +243,7 @@ def calculate_clark_evans_index(
 
     # 1. Mean Observed Distance
     # Calculate NN distance for every point
-    nn_dists = _get_nearest_neighbor_distances(points)
+    nn_dists = _euclidean_nn_distances(points)
     mean_obs_dist = np.mean(nn_dists)
 
     # 2. Mean Expected Distance (Random)
@@ -277,7 +316,7 @@ def wrap_around_discrepancy(points: np.ndarray, chunk: int = 128) -> float:
     is exactly what makes the measure *periodic*: it identifies opposite
     faces of the cube, so it scores a design on the same torus the
     relaxation optimizes. Unlike nearest-neighbour statistics (see
-    `calculate_clark_evans_index`) it does not rely on distance
+    `euclidean_clark_evans`) it does not rely on distance
     contrasts and therefore stays meaningful when concentration of
     measure flattens pairwise distances in high dimension.
 
@@ -445,7 +484,7 @@ def toroidal_separation(points: np.ndarray) -> float:
     where the coverage radius differs by under 1%).
 
     Note:
-        Not the same quantity as `calculate_min_pairwise_distance`, which
+        Not the same quantity as `euclidean_separation`, which
         is Euclidean and ignores the wrap: on four points with one pair
         straddling the seam it reports 0.633 where this returns 0.020.
         Prefer this one for anything on the torus.
@@ -468,7 +507,7 @@ def toroidal_separation(points: np.ndarray) -> float:
 def toroidal_clark_evans(points: np.ndarray) -> float:
     r"""Clark-Evans index under the toroidal $L_1$ metric.
 
-    The counterpart of `calculate_clark_evans_index` measured in the
+    The counterpart of `euclidean_clark_evans` measured in the
     geometry the relaxation actually optimizes. Because the torus has no
     boundary, the estimator needs no edge correction — the Euclidean
     box version is biased upward (a random uniform design scores 1.17 at
@@ -530,3 +569,47 @@ def toroidal_clark_evans(points: np.ndarray) -> float:
 
     _, dists = exact_knn(pts, pts, 2)
     return float(np.mean(dists[:, 1]) / expected_nn_toroidal_l1(n, dim))
+
+
+# --- Deprecated aliases ------------------------------------------------------
+#
+# The old names said what was computed but not *in which geometry*, which is
+# the thing that decides whether a number means anything: this module holds
+# two Clark-Evans indices and two separations, one pair Euclidean and one
+# toroidal, and the pre-2026-08 names gave no way to tell them apart at a call
+# site. They stay reachable because 0.3.1 is on PyPI and these were public.
+
+def calculate_min_pairwise_distance(points: np.ndarray) -> float:
+    """Deprecated alias of `euclidean_separation`.
+
+    .. deprecated::
+        The name does not say which geometry it measures. Use
+        `euclidean_separation`, or `toroidal_separation` if the points came
+        off the torus — which, for anything ESS produced, they did.
+    """
+    warnings.warn(
+        "calculate_min_pairwise_distance is deprecated: it is the Euclidean, "
+        "non-toroidal separation. Use euclidean_separation, or "
+        "toroidal_separation for points on the torus.",
+        DeprecationWarning, stacklevel=2,
+    )
+    return euclidean_separation(points)
+
+
+def calculate_clark_evans_index(
+    points: np.ndarray, bounds: np.ndarray | None = None
+) -> float:
+    """Deprecated alias of `euclidean_clark_evans`.
+
+    .. deprecated::
+        The name does not say which geometry it measures. Use
+        `euclidean_clark_evans`, or `toroidal_clark_evans` on the torus —
+        and read the warning on either before ranking anything with it.
+    """
+    warnings.warn(
+        "calculate_clark_evans_index is deprecated: it is the Euclidean, "
+        "non-toroidal index. Use euclidean_clark_evans, or "
+        "toroidal_clark_evans for points on the torus.",
+        DeprecationWarning, stacklevel=2,
+    )
+    return euclidean_clark_evans(points, bounds)

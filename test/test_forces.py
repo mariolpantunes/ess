@@ -269,3 +269,64 @@ class TestForceDirection(unittest.TestCase):
         static = np.zeros((12, 8)) + 0.5      # every coordinate shared
         out = esa(static, self.bounds, n=8, seed=1, force_p=0.5)
         self.assertTrue(np.isfinite(out).all())
+
+
+class TestMetricKwargsAreChecked(unittest.TestCase):
+    """`esa` forwards extra keywords to the force law, and every law in the
+    registry ends in `**kwargs`, so anything at all used to be accepted.
+
+    The failure that matters is not the nonsense keyword, it is the typo: a
+    misspelled `sigma` ran to completion with the default and reported a
+    number. Not an error, just a quietly wrong measurement -- which is the
+    expensive kind.
+    """
+
+    def setUp(self):
+        self.bounds = np.array([[0.0, 1.0]] * 3)
+        self.static = np.random.default_rng(0).random((10, 3))
+
+    def run_esa(self, **kw):
+        return esa(self.static, self.bounds, n=5, seed=0, **kw)
+
+    def test_nonsense_keyword_is_rejected(self):
+        with self.assertRaises(TypeError):
+            self.run_esa(bogus_kwarg=7)
+
+    def test_typo_of_a_real_parameter_is_rejected(self):
+        with self.assertRaises(TypeError) as cm:
+            self.run_esa(sigmaa=0.7)
+        self.assertIn("sigmaa", str(cm.exception))
+        self.assertIn("sigma", str(cm.exception))   # says what is accepted
+
+    def test_another_laws_parameter_is_rejected(self):
+        """`power` belongs to softened_inverse; under gaussian it is a
+        silent no-op, which is the same defect wearing a plausible name."""
+        with self.assertRaises(TypeError):
+            self.run_esa(metric="gaussian", power=2.0)
+        self.run_esa(metric="softened_inverse", power=2.0)   # legitimate here
+
+    def test_real_parameters_still_reach_the_law(self):
+        for metric, kw in (("gaussian", {"sigma": 0.7, "alpha": 4.0}),
+                           ("softened_inverse", {"epsilon": 0.4, "power": 3.0}),
+                           ("linear", {"alpha": 2.0}),
+                           ("cauchy", {"power": 1.5})):
+            out = self.run_esa(metric=metric, **kw)
+            self.assertEqual(out.shape, (5, 3))
+
+    def test_a_custom_callable_declaring_kwargs_is_taken_at_its_word(self):
+        """A `**kwargs` in user code is an explicit choice; the registry's is
+        an implementation detail of this module."""
+        out = self.run_esa(metric=lambda d, **k: -d * d, anything=1)
+        self.assertEqual(out.shape, (5, 3))
+
+    def test_a_custom_callable_without_kwargs_is_checked(self):
+        out = self.run_esa(metric=lambda d, scale=1.0: -d * scale, scale=2.0)
+        self.assertEqual(out.shape, (5, 3))
+        with self.assertRaises(TypeError):
+            self.run_esa(metric=lambda d, scale=1.0: -d * scale, scal=2.0)
+
+    def test_stats_is_a_real_parameter_not_a_forwarded_one(self):
+        """The timing breakdown used to crash inside the force kernel."""
+        stats: dict = {}
+        self.run_esa(stats=stats)
+        self.assertIn("epochs_total", stats)

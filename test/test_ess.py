@@ -43,7 +43,7 @@ class TestESS(unittest.TestCase):
 
         rng = np.random.default_rng(42)
         random_points = rng.uniform(0, 1, (self.n_new, 2))
-        baseline_min_dist = utils.calculate_min_pairwise_distance(random_points)
+        baseline_min_dist = utils.euclidean_separation(random_points)
 
         for mode, metric in itertools.product(search_modes, metrics):
             with self.subTest(mode=mode, metric=metric):
@@ -60,14 +60,14 @@ class TestESS(unittest.TestCase):
                 self.assertTrue(np.all(new_pts >= 0.0), np.min(new_pts))
                 self.assertTrue(np.all(new_pts <= 1.0), np.max(new_pts))
 
-                min_dist = utils.calculate_min_pairwise_distance(new_pts)
+                min_dist = utils.euclidean_separation(new_pts)
                 self.assertGreater(
                     min_dist,
                     baseline_min_dist * 1.1,
                     f"ESS failed to beat random baseline for {mode}-{metric}",
                 )
 
-                ce_index = utils.calculate_clark_evans_index(new_pts, self.bounds)
+                ce_index = utils.euclidean_clark_evans(new_pts, self.bounds)
                 self.assertGreater(
                     ce_index,
                     1.05,
@@ -81,7 +81,7 @@ class TestESS(unittest.TestCase):
         res = ess.ess(empty, self.bounds, n=30, seed=42)
         self.assertEqual(res.shape, (30, 2))
         self.assertTrue(np.all(res >= 0.0) and np.all(res <= 1.0))
-        ce_index = utils.calculate_clark_evans_index(res, self.bounds)
+        ce_index = utils.euclidean_clark_evans(res, self.bounds)
         self.assertGreater(ce_index, 1.05)
 
     def test_seam_interaction(self):
@@ -123,7 +123,7 @@ class TestESS(unittest.TestCase):
         self.assertTrue(np.all(res_hd >= 0) and np.all(res_hd <= 1))
         # the d/4 radius cap must not starve the neighbourhood: points moved
         self.assertGreater(
-            utils.calculate_min_pairwise_distance(res_hd[1:]), 1.0
+            utils.euclidean_separation(res_hd[1:]), 1.0
         )
 
     def test_backend_parity(self):
@@ -134,7 +134,7 @@ class TestESS(unittest.TestCase):
         for backend in ("python", "rust"):
             idx = ess.ToroidalNN(seed=0, backend=backend)
             res = ess.ess(self.samples, self.bounds, n=20, index=idx, seed=42)
-            dists[backend] = utils.calculate_min_pairwise_distance(res[1:])
+            dists[backend] = utils.euclidean_separation(res[1:])
         delta = abs(dists["python"] - dists["rust"])
         self.assertLess(delta, dists["python"] * 0.15, dists)
 
@@ -203,7 +203,7 @@ class TestESS(unittest.TestCase):
         res = ess.ess(self.samples, self.bounds, n=15, metric=my_law, seed=42)
         self.assertEqual(len(res), 16)
         self.assertGreater(
-            utils.calculate_min_pairwise_distance(res[1:]), 0.01
+            utils.euclidean_separation(res[1:]), 0.01
         )
 
     def test_samplers(self):
