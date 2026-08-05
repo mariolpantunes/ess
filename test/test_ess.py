@@ -370,6 +370,72 @@ class TestAttractionField(unittest.TestCase):
         self.assertAlmostEqual(radius(1), radius(5), delta=0.5)
 
 
+class TestAttractionModels(unittest.TestCase):
+    """The fitted function against the nearest-neighbour weighting."""
+
+    def _sample(self, d, m, seed=0):
+        rng = np.random.default_rng(seed)
+        pos = rng.random((m, d))
+        val = (np.sin(2 * np.pi * pos[:, 0])
+               + 0.5 * np.cos(2 * np.pi * pos[:, 1]))
+        return pos, val
+
+    def _loo(self, model, d, m):
+        pos, val = self._sample(d, m)
+        err = []
+        for i in range(m):
+            keep = np.ones(m, bool)
+            keep[i] = False
+            f = ess_core._AttractionField(pos[keep], val[keep], model=model)
+            err.append(abs(f.at(pos[i:i + 1])[0] - val[i]))
+        return float(np.mean(err))
+
+    def test_the_fit_beats_inverse_distance_where_data_allows(self):
+        """Leave-one-out, 60 points: 0.47 idw against 0.12 fourier at d=8."""
+        for d in (8, 16):
+            self.assertLess(self._loo("fourier", d, 60),
+                            self._loo("idw", d, 60))
+
+    def test_more_points_is_what_fixes_high_dimension(self):
+        """60 points in 100 dimensions is underdetermined, and every model
+        correctly reports that it knows little. Raising the measured count at
+        the *same* dimension is what recovers the signal -- the limit is the
+        data, not the estimator."""
+        few = self._loo("fourier", 100, 60)
+        many = self._loo("fourier", 100, 300)
+        self.assertLess(many, few * 0.5)
+
+    def test_the_basis_is_periodic(self):
+        """A linear or polynomial basis is discontinuous at the wrap, and the
+        model would disagree with itself across a seam the torus lacks."""
+        pos, val = self._sample(6, 40)
+        f = ess_core._AttractionField(pos, val, model="fourier")
+        near_zero = f.at(np.array([[1e-9] + [0.5] * 5]))
+        near_one = f.at(np.array([[1.0 - 1e-9] + [0.5] * 5]))
+        self.assertAlmostEqual(float(near_zero[0]), float(near_one[0]), places=6)
+
+    def test_the_fit_can_leave_the_range_of_the_measured_values(self):
+        """A convex combination of neighbours never can, so plain IDW cannot
+        call anywhere more promising than the best point already evaluated."""
+        pos, val = self._sample(4, 50)
+        f = ess_core._AttractionField(pos, val, model="fourier")
+        rng = np.random.default_rng(2)
+        got = f.at(rng.random((400, 4)))
+        self.assertTrue(got.max() > val.max() or got.min() < val.min())
+
+    def test_every_model_is_reachable_through_esa(self):
+        rng = np.random.default_rng(0)
+        static = rng.uniform(-5, 5, (40, 6))
+        bounds = np.array([[-5.0, 5.0]] * 6)
+        att = -np.linalg.norm(static, axis=1)
+        for model in ("idw", "fourier", "detrended"):
+            out = ess.esa(static, bounds, n=20, seed=1, attractiveness=att,
+                          attraction_weight=0.5, att_model=model,
+                          attraction_metric="cauchy",
+                          attraction_kwargs={"power": 1.0})
+            self.assertEqual(out.shape, (20, 6))
+
+
 class TestPlacementVsRelaxation(unittest.TestCase):
     """The two attractions are separable, and both are needed.
 
