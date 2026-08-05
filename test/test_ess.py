@@ -405,6 +405,30 @@ class TestAttractionModels(unittest.TestCase):
         many = self._loo("fourier", 100, 300)
         self.assertLess(many, few * 0.5)
 
+    def test_the_table_matches_the_closed_form(self):
+        """The fitted model is tabulated as `d` one-dimensional curves and
+        looked up, so the table must not be a second, different model."""
+        pos, val = self._sample(32, 60)
+        f = ess_core._AttractionField(pos, val, model="fourier")
+        rng = np.random.default_rng(4)
+        q = rng.random((2000, 32))
+        closed = f._features(q) @ f._w + f._bias
+        np.testing.assert_allclose(f.at(q), closed, atol=1e-5)
+
+    def test_the_table_costs_less_than_the_distance_weighting(self):
+        pos, val = self._sample(32, 60)
+        rng = np.random.default_rng(5)
+        q = rng.random((20000, 32))
+        import time
+        out = {}
+        for model in ("idw", "fourier"):
+            f = ess_core._AttractionField(pos, val, model=model)
+            f.at(q[:50])
+            t = time.perf_counter()
+            f.at(q)
+            out[model] = time.perf_counter() - t
+        self.assertLess(out["fourier"], out["idw"])
+
     def test_the_basis_is_periodic(self):
         """A linear or polynomial basis is discontinuous at the wrap, and the
         model would disagree with itself across a seam the torus lacks."""

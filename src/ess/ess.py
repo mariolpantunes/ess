@@ -627,11 +627,11 @@ class _AttractionField:
         decay (float): Confidence multiplier applied to inferred sources.
     """
 
-    __slots__ = ("_bias", "_conf", "_pos", "_val", "_w", "decay", "k",
-                 "model", "n_measured", "power", "ridge")
+    __slots__ = ("_bias", "_conf", "_pos", "_table", "_val", "_w", "bins",
+                 "decay", "k", "model", "n_measured", "power", "ridge")
 
     def __init__(self, positions, values, k=8, power=2.0, decay=0.5,
-                 model="idw", ridge=1e-2):
+                 model="idw", ridge=1e-2, bins=4096):
         self._pos = np.asarray(positions, dtype=np.float64)
         self._val = np.asarray(values, dtype=np.float64)
         self._conf = np.ones(self._val.shape[0], dtype=np.float64)
@@ -642,6 +642,8 @@ class _AttractionField:
         self.model = str(model)
         self.ridge = float(ridge)
         self._w = None
+        self._table = None
+        self.bins = int(bins)
         self._bias = float(self._val.mean()) if self._val.size else 0.0
         if self.model != "idw":
             self._fit()
@@ -678,6 +680,34 @@ class _AttractionField:
         a = (phi * wts[:, None]).T @ phi
         a[np.diag_indices_from(a)] += self.ridge * max(1.0, float(wts.sum()))
         self._w = np.linalg.solve(a, (phi * wts[:, None]).T @ y)
+        self._build_table()
+
+    def _build_table(self) -> None:
+        r"""Tabulate the fitted model, once, as `d` one-dimensional curves.
+
+        A general function of position cannot be tabulated in these dimensions
+        -- a grid is $g^d$ cells, which at $d=100$ is beyond counting. This one
+        can, because it is *additive over the axes*:
+
+        $$ \hat a(x) = b + \sum_j f_j(x_j), \qquad
+           f_j(t) = \alpha_j \sin 2\pi t + \beta_j \cos 2\pi t $$
+
+        so what gets tabulated is $d$ separate one-dimensional curves rather
+        than one $d$-dimensional surface: $d \times B$ floats, 3.3 MB at
+        $d=100$ with 4096 bins. Prediction is then integer indexing and a sum
+        with no transcendental calls at all.
+
+        The curves are periodic, so the table wraps rather than clamps at the
+        ends -- the same reason the basis is trigonometric.
+        """
+        if self._w is None:
+            return
+        d = self._pos.shape[1]
+        grid = (np.arange(self.bins) + 0.5) / self.bins
+        ang = 2.0 * np.pi * grid
+        # (d, bins): each row is one axis's contribution across the circle
+        self._table = (np.sin(ang)[None, :] * self._w[:d, None]
+                       + np.cos(ang)[None, :] * self._w[d:, None])
 
     def at(self, positions: np.ndarray) -> np.ndarray:
         """Estimated attractiveness at `positions`, shape $(Q,)$.
@@ -696,18 +726,42 @@ class _AttractionField:
                 pos, self._pos, self._val, k=self.k, power=self.power,
                 confidence=self._conf,
             )
-        trend = self._features(pos) @ self._w + self._bias
+        trend = self._evaluate(pos)
         if self.model == "fourier":
             return trend
         # detrended: the trend can leave the range of the measured values,
         # which is the point -- a convex combination of neighbours never can,
         # so plain IDW cannot call anywhere more promising than the best
         # point already evaluated.
-        resid = self._val - (self._features(self._pos) @ self._w + self._bias)
+        resid = self._val - self._evaluate(self._pos)
         return trend + _estimate_attractiveness(
             pos, self._pos, resid, k=self.k, power=self.power,
             confidence=self._conf,
         )
+
+    def _evaluate(self, positions: np.ndarray) -> np.ndarray:
+        """The fitted model at `positions`, via the table when it exists."""
+        if self._table is None:
+            assert self._w is not None
+            return self._features(positions) @ self._w + self._bias
+        # Linear interpolation between adjacent bins, wrapping at the end.
+        # Nearest-bin would be marginally cheaper but quantises the curve, and
+        # a point drifting across a bin boundary would see the field step --
+        # an artefact of the table rather than of the space. Interpolating
+        # keeps the evaluation continuous and still calls no transcendental.
+        # -0.5 because the table stores each curve at bin *centres*,
+        # (i + 0.5) / B. Indexing as though the values sat at the left edges
+        # offsets every lookup by half a bin, which costs more accuracy than
+        # the interpolation recovers.
+        t = (positions % 1.0) * self.bins - 0.5
+        lo = np.floor(t)
+        frac = t - lo
+        i0 = lo.astype(np.intp, copy=False) % self.bins
+        i1 = (i0 + 1) % self.bins
+        axes = np.arange(positions.shape[1])
+        v0 = self._table[axes, i0]
+        v1 = self._table[axes, i1]
+        return (v0 + (v1 - v0) * frac).sum(axis=1) + self._bias
 
     def add_inferred(self, positions: np.ndarray, values: np.ndarray) -> None:
         """Fold settled-but-unmeasured points in as reduced-confidence sources.
