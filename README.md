@@ -52,7 +52,7 @@ import numpy as np
 import ess
 
 # Define existing points (e.g., obstacles)
-obstacles = np.array([[0.5, 0.5]]) 
+obstacles = np.array([[0.5, 0.5]])
 bounds = np.array([[0, 1], [0, 1]])
 
 # Generate 100 new points
@@ -86,14 +86,14 @@ lhs_sampler = LHCSampler(random_state=42)
 # Run ESA (returns ONLY the new points)
 # search_mode='radius' activates the dense physical interaction model
 new_points = esa(
-    obstacles, 
-    bounds, 
-    n=500, 
+    obstacles,
+    bounds,
+    n=500,
     index=index,
     init_sampler=lhs_sampler,  # Set custom LHS sampler
     search_mode='radius',      # Use radius instead of k-NN
     radius=None,               # None = Auto-compute based on density
-    batch_size=100, 
+    batch_size=100,
     epochs=256
 )
 ```
