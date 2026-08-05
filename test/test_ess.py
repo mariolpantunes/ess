@@ -460,6 +460,70 @@ class TestAttractionModels(unittest.TestCase):
             self.assertEqual(out.shape, (20, 6))
 
 
+class TestEstimateImprovesWithData(unittest.TestCase):
+    """More measured points must make the estimate better, monotonically.
+
+    This is the property the whole design rests on. The attractiveness
+    function is fitted from the points whose objective has actually been paid
+    for, so the guarantee a caller needs is that paying for more of them buys
+    a better function -- and that the estimator is never the thing standing in
+    the way.
+
+    It is also what settles the high-dimension question. At d=100 with 60
+    measured points every model is near-useless, and it would be easy to read
+    that as a defect in the estimator. It is not: 60 samples cannot determine
+    a function in 100 dimensions. Hold the dimension fixed, raise the count,
+    and the error falls -- so the lever is the population, not the maths.
+    """
+
+    @staticmethod
+    def _truth(x):
+        """Smooth and periodic, with a second harmonic the model cannot
+        represent, so the error falls to the model's own bias rather than to
+        zero -- which is the honest shape of the curve."""
+        return (np.sin(2 * np.pi * x[:, 0])
+                + 0.5 * np.cos(2 * np.pi * x[:, 1])
+                + 0.25 * np.sin(4 * np.pi * x[:, 2]))
+
+    def _error(self, d, m, model="fourier", seeds=5):
+        """Mean absolute error on a held-out set, averaged over seeds."""
+        errs = []
+        for seed in range(seeds):
+            rng = np.random.default_rng(1000 + seed)
+            pos = rng.random((m, d))
+            f = ess_core._AttractionField(pos, self._truth(pos), model=model)
+            q = rng.random((500, d))
+            errs.append(float(np.abs(f.at(q) - self._truth(q)).mean()))
+        return float(np.mean(errs))
+
+    def test_error_falls_as_measured_points_are_added(self):
+        for d in (8, 32):
+            ladder = [(m, self._error(d, m)) for m in (20, 40, 80, 160, 320)]
+            errs = [e for _, e in ladder]
+            # non-increasing, with a little slack for sampling noise
+            for (m0, e0), (m1, e1) in zip(ladder, ladder[1:]):
+                self.assertLessEqual(
+                    e1, e0 * 1.10,
+                    f"d={d}: error rose from {e0:.4f} at M={m0} to "
+                    f"{e1:.4f} at M={m1}")
+            self.assertLess(errs[-1], errs[0] * 0.75, f"d={d}: {errs}")
+
+    def test_the_same_holds_where_the_data_is_scarcest(self):
+        """d=100 is where the estimate looks worst, and where it is most
+        important that more data is the answer."""
+        few = self._error(100, 60)
+        many = self._error(100, 600)
+        self.assertLess(many, few * 0.75, f"{few:.4f} -> {many:.4f}")
+
+    def test_it_holds_for_every_model(self):
+        """Whatever the estimator, paying for more points must not make it
+        worse -- otherwise the caller cannot reason about the trade at all."""
+        for model in ("idw", "fourier", "detrended"):
+            lo = self._error(16, 40, model=model)
+            hi = self._error(16, 320, model=model)
+            self.assertLess(hi, lo, f"{model}: {lo:.4f} -> {hi:.4f}")
+
+
 class TestPlacementVsRelaxation(unittest.TestCase):
     """The two attractions are separable, and both are needed.
 
