@@ -500,6 +500,7 @@ def _estimate_attractiveness(
     attract_static: np.ndarray,
     k: int = 8,
     power: float = 2.0,
+    confidence: np.ndarray | None = None,
 ) -> np.ndarray:
     r"""Attractiveness a candidate position is *expected* to have.
 
@@ -536,6 +537,11 @@ def _estimate_attractiveness(
             already normalised to $[0, 1]$.
         k (int): Neighbours averaged over. Clamped to $M$.
         power (float): Inverse-distance exponent $p$.
+        confidence (np.ndarray | None): Per-source weight in $(0, 1]$, folded
+            into $w_i$. Measured points sit at 1; a value inferred earlier
+            enters at less than 1 so a chain of inference fades toward the
+            mean instead of asserting itself. ``None`` treats every source as
+            measured.
 
     Returns:
         np.ndarray: Estimated attractiveness, shape $(Q,)$, within the range of
@@ -572,6 +578,8 @@ def _estimate_attractiveness(
         exact = d_near <= 0.0
         with np.errstate(divide="ignore", invalid="ignore"):
             w = np.where(exact, 0.0, d_near ** (-float(power)))
+        if confidence is not None:
+            w = w * confidence[nearest]
         total = w.sum(axis=1)
         chunk = np.full(hi - lo, fallback)
         ok = total > 0
@@ -583,6 +591,75 @@ def _estimate_attractiveness(
             chunk[hit] = a_near[hit, np.argmax(exact[hit], axis=1)]
         out[lo:hi] = chunk
     return out
+
+
+class _AttractionField:
+    r"""Attractiveness as a field over the torus, and the only source of
+    estimates for it.
+
+    Two things this exists to make unmissable.
+
+    **Where estimation happens.** Every inferred attractiveness in the library
+    comes out of `at`. Nothing else writes into the estimated region, so the
+    question "is this number measured or inferred?" is answered by reading one
+    class rather than tracing an array through a loop.
+
+    **That attractiveness belongs to a position, not to a point.** The estimate
+    used to be taken once at placement and carried by the point for the whole
+    relaxation, which made one side of the force balance live and the other
+    stale. A point that relaxed *into* a good region kept its old low value and
+    never became an attractor; worse, a point that drifted *out* of one kept
+    its old high value and went on pulling everything else toward where it no
+    longer was. Repulsion has always depended on current positions; now
+    attraction does too.
+
+    Sources carry a confidence. Measured points -- the ones whose objective was
+    actually paid for -- sit at 1 and never decay. A value that was itself
+    inferred enters at `decay` times the confidence of what it was inferred
+    from, so a chain of inference fades toward the mean instead of laundering
+    itself into ground truth.
+
+    Args:
+        positions (np.ndarray): Measured points, shape $(M, D)$, in $[0, 1)$.
+        values (np.ndarray): Their attractiveness, shape $(M,)$, normalised.
+        k (int): Neighbours an estimate averages over.
+        power (float): Inverse-distance exponent.
+        decay (float): Confidence multiplier applied to inferred sources.
+    """
+
+    __slots__ = ("_conf", "_pos", "_val", "decay", "k", "n_measured", "power")
+
+    def __init__(self, positions, values, k=8, power=2.0, decay=0.5):
+        self._pos = np.asarray(positions, dtype=np.float64)
+        self._val = np.asarray(values, dtype=np.float64)
+        self._conf = np.ones(self._val.shape[0], dtype=np.float64)
+        self.n_measured = int(self._val.shape[0])
+        self.k = int(k)
+        self.power = float(power)
+        self.decay = float(decay)
+
+    def at(self, positions: np.ndarray) -> np.ndarray:
+        """Estimated attractiveness at `positions`, shape $(Q,)$."""
+        return _estimate_attractiveness(
+            np.asarray(positions, dtype=np.float64), self._pos, self._val,
+            k=self.k, power=self.power, confidence=self._conf,
+        )
+
+    def add_inferred(self, positions: np.ndarray, values: np.ndarray) -> None:
+        """Fold settled-but-unmeasured points in as reduced-confidence sources.
+
+        For a batched run, where an earlier batch has finished relaxing and its
+        points now anchor the next one. Their values were inferred, so they
+        enter at `decay` times the mean confidence of the sources that produced
+        them rather than as ground truth.
+        """
+        if len(values) == 0:
+            return
+        conf = self.decay * float(self._conf.mean())
+        self._pos = np.vstack((self._pos, np.asarray(positions, np.float64)))
+        self._val = np.concatenate((self._val, np.asarray(values, np.float64)))
+        self._conf = np.concatenate(
+            (self._conf, np.full(len(values), conf, dtype=np.float64)))
 
 
 def _zscore(values: np.ndarray) -> np.ndarray:
@@ -604,11 +681,8 @@ def _smart_init(
     rng: np.random.Generator,
     init_sampler: samplers.Sampler,
     pool: int = 15,
-    static: np.ndarray | None = None,
-    attract_static: np.ndarray | None = None,
+    field: "_AttractionField | None" = None,
     attraction_weight: float = 0.0,
-    k_att: int = 8,
-    power: float = 2.0,
 ) -> np.ndarray:
     r"""Initializes new points by Best Candidate Sampling against the index.
 
@@ -643,14 +717,10 @@ def _smart_init(
         rng (np.random.Generator): Random number generator.
         init_sampler (samplers.Sampler): Candidate-pool sampler (e.g. LHS).
         pool (int): Candidates drawn per slot.
-        static (np.ndarray | None): Points with known attractiveness, in
-            $[0, 1)$. Omit for repulsive placement.
-        attract_static (np.ndarray | None): Their attractiveness, normalised.
-            Omit for repulsive placement.
+        field (_AttractionField | None): Source of the attractiveness
+            estimate. Omit for repulsive placement.
         attraction_weight (float): Balance against novelty in the composite
             score. Zero reproduces the repulsive placement exactly.
-        k_att (int): Neighbours the attractiveness estimate averages over.
-        power (float): Inverse-distance exponent of that estimate.
 
     Returns:
         np.ndarray: Initial positions, shape $(n_{new}, D)$, in $[0, 1)$.
@@ -659,7 +729,7 @@ def _smart_init(
     _, dists = index.query(k=1, queries=candidates)
     novelty = dists.reshape(n_new, pool)
 
-    if static is None or attract_static is None or attraction_weight == 0.0:
+    if field is None or attraction_weight == 0.0:
         # Repulsive ESS: placement is repulsive too. Bit-identical to the
         # behaviour before the composite mode existed, so a run without
         # `attractiveness` is unchanged and the composite path is an ablation
@@ -671,9 +741,7 @@ def _smart_init(
         # as far from the good regions -- and then asks the relaxation's
         # attraction to drag it back. That is the attraction spending its
         # budget undoing the placement instead of refining it.
-        a_hat = _estimate_attractiveness(
-            candidates, static, attract_static, k=k_att, power=power,
-        ).reshape(n_new, pool)
+        a_hat = field.at(candidates).reshape(n_new, pool)
         score = np.empty_like(novelty)
         for i in range(n_new):
             # Standardised per slot, so `attraction_weight` is scale-free:
@@ -941,6 +1009,7 @@ def _esa(
     k_att: int = 8,
     att_power: float = 2.0,
     placement_weight: float | None = None,
+    att_every: int = 5,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -1004,6 +1073,8 @@ def _esa(
         att_power (float): Inverse-distance exponent of that estimate.
         placement_weight (float | None): Attraction weight for the placement
             only; ``None`` uses `attraction_weight`.
+        att_every (int): Refresh the attractiveness field every this many
+            epochs. 1 refreshes every epoch.
         stats (dict | None): Optional run-statistics sink; see `esa`.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
@@ -1017,6 +1088,14 @@ def _esa(
 
     radius_hint = radius if search_mode == "radius" else None
     fitted = n_static > 0
+
+    # One field, built from the measured points, used for both the placement
+    # score and the per-epoch refresh below. Every estimate in the run comes
+    # out of this object.
+    field = None
+    if attract is not None and n_static > 0:
+        field = _AttractionField(all_data[:n_static], attract[:n_static],
+                                 k=k_att, power=att_power)
     if fitted:
         index.fit(all_data[:n_static], k=k, radius=radius_hint)
 
@@ -1037,13 +1116,10 @@ def _esa(
         if fitted:
             init = _smart_init(
                 index, current_n, dim, rng, init_sampler, pool=init_pool,
-                static=all_data[:n_static] if attract is not None else None,
-                attract_static=attract[:n_static] if attract is not None
-                else None,
+                field=field,
                 attraction_weight=(attraction_weight
                                    if placement_weight is None
                                    else placement_weight),
-                k_att=k_att, power=att_power,
             )
             index.promote(init)
         else:
@@ -1059,19 +1135,13 @@ def _esa(
         all_data[cursor : cursor + current_n] = init
         active = all_data[cursor : cursor + current_n]  # view into the buffer
 
-        if attract is not None and n_static > 0:
-            # Give the new points an attractiveness of their own. Left at the
-            # zero this buffer was created with, they would sit at the bottom
-            # of the normalised scale -- modelled as the least attractive
-            # things in the space -- so they would repel each other with no
-            # attraction between them, and the only pull in the system would
-            # be toward the static points. The estimate is what makes the
-            # relaxation a balance among *all* the points rather than a
-            # one-way drag toward the anchors.
-            attract[cursor : cursor + current_n] = _estimate_attractiveness(
-                init, all_data[:n_static], attract[:n_static],
-                k=k_att, power=att_power,
-            )
+        if field is not None and attract is not None:
+            # Seed the active rows. Left at the zero this buffer was created
+            # with they would sit at the *bottom* of the normalised scale --
+            # modelled as the least attractive things in the space -- so they
+            # would repel each other with no attraction between them. Refreshed
+            # every epoch below, because the value belongs to the position.
+            attract[cursor : cursor + current_n] = field.at(active)
 
         current_lr = lr
         ema = None
@@ -1086,6 +1156,21 @@ def _esa(
             else:
                 ids, dists = index.query(k=k)
             _accumulate(timers, "query_s", started)
+
+            if (field is not None and attract is not None
+                    and epochs_used % att_every == 0):
+                # Attractiveness is a field, so it is read at the positions
+                # the points currently occupy rather than carried from where
+                # they started.
+                #
+                # On a stride because `STEP_CAP` bounds a point to 2% of the
+                # interaction radius per epoch, while the field varies on the
+                # scale of the radius itself -- so between refreshes the value
+                # can drift by only a few percent, and refreshing every epoch
+                # buys accuracy the physics cannot use. It is the difference
+                # between the composite path costing ~1.5x the repulsive one
+                # and ~1.1x.
+                attract[cursor : cursor + current_n] = field.at(active)
 
             started = time.perf_counter()
             forces = _compute_forces(
@@ -1182,6 +1267,7 @@ def esa(
     k_att: int = 8,
     att_power: float = 2.0,
     placement_weight: float | None = None,
+    att_every: int = 5,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -1353,6 +1439,10 @@ def esa(
             drift off the good regions they were put on and push the rest of
             the design around -- but it is the arm that shows why the
             relaxation term is needed rather than assuming it.
+        att_every (int): Epochs between refreshes of the attractiveness
+            field. The estimate belongs to a position, so it is re-read as the
+            points move; a stride of 5 is enough because a point travels at
+            most 2% of the interaction radius per epoch.
         attraction_kwargs (dict | None): Parameters for that law, kept
             separate from `metric_kwargs` because both laws take parameters
             of the same names and one ``**kwargs`` cannot serve two.
@@ -1470,6 +1560,7 @@ def esa(
         att_power=float(att_power),
         placement_weight=(None if placement_weight is None
                           else float(placement_weight)),
+        att_every=max(1, int(att_every)),
         stats=stats,
         **metric_kwargs,
     )

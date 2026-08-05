@@ -309,6 +309,67 @@ class TestGuidedPlacement(unittest.TestCase):
         self.assertTrue((out <= self.BOUNDS[:, 1]).all())
 
 
+class TestAttractionField(unittest.TestCase):
+    """Attractiveness belongs to a position, not to a point.
+
+    The estimate used to be taken once at placement and carried for the whole
+    relaxation, which left one side of the force balance live and the other
+    stale: a point that drifted out of a good region kept its old high value
+    and went on pulling everything else toward where it no longer was.
+    """
+
+    def _field(self, k=4):
+        pos = np.array([[0.1, 0.1], [0.9, 0.9], [0.1, 0.9], [0.9, 0.1]])
+        val = np.array([1.0, 0.0, 0.5, 0.5])
+        return ess_core._AttractionField(pos, val, k=k)
+
+    def test_the_value_follows_the_position(self):
+        f = self._field()
+        near_good = f.at(np.array([[0.12, 0.12]]))[0]
+        near_bad = f.at(np.array([[0.88, 0.88]]))[0]
+        self.assertGreater(near_good, near_bad)
+
+    def test_measured_sources_start_at_full_confidence(self):
+        f = self._field()
+        self.assertEqual(f.n_measured, 4)
+
+    def test_inferred_sources_enter_below_full_confidence(self):
+        """Otherwise a cached batch launders an estimate into ground truth."""
+        f = self._field()
+        before = f.at(np.array([[0.5, 0.5]]))[0]
+        f.add_inferred(np.array([[0.5, 0.5]]), np.array([1.0]))
+        after = f.at(np.array([[0.5, 0.5]]))[0]
+        # the new source sits exactly on the query, so it dominates, but it
+        # was added as an estimate rather than as a measurement
+        self.assertNotEqual(before, after)
+        self.assertEqual(f.n_measured, 4)
+
+    def test_adding_nothing_changes_nothing(self):
+        f = self._field()
+        before = f.at(np.array([[0.4, 0.6]]))[0]
+        f.add_inferred(np.zeros((0, 2)), np.zeros(0))
+        self.assertEqual(f.at(np.array([[0.4, 0.6]]))[0], before)
+
+    def test_the_refresh_stride_does_not_change_the_outcome_much(self):
+        """A point moves at most 2% of the interaction radius per epoch, so
+        refreshing every epoch buys accuracy the physics cannot use."""
+        rng = np.random.default_rng(0)
+        d, bounds = 16, np.array([[-5.0, 5.0]] * 16)
+        static = rng.uniform(-5, 5, (60, d))
+        attract = -np.linalg.norm(static, axis=1)
+        kw = dict(attractiveness=attract, attraction_weight=0.5,
+                  attraction_metric="cauchy", attraction_kwargs={"power": 1.0})
+
+        def radius(every):
+            return float(np.median([
+                float(np.linalg.norm(
+                    ess.esa(static, bounds, n=60, seed=s, att_every=every,
+                            **kw), axis=1).mean())
+                for s in range(6)]))
+
+        self.assertAlmostEqual(radius(1), radius(5), delta=0.5)
+
+
 class TestPlacementVsRelaxation(unittest.TestCase):
     """The two attractions are separable, and both are needed.
 
