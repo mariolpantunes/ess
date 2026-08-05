@@ -940,6 +940,7 @@ def _esa(
     attraction_kwargs: dict | None = None,
     k_att: int = 8,
     att_power: float = 2.0,
+    placement_weight: float | None = None,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -1001,6 +1002,8 @@ def _esa(
         attraction_kwargs (dict | None): Its parameters.
         k_att (int): Neighbours the attractiveness estimate averages over.
         att_power (float): Inverse-distance exponent of that estimate.
+        placement_weight (float | None): Attraction weight for the placement
+            only; ``None`` uses `attraction_weight`.
         stats (dict | None): Optional run-statistics sink; see `esa`.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
@@ -1037,7 +1040,9 @@ def _esa(
                 static=all_data[:n_static] if attract is not None else None,
                 attract_static=attract[:n_static] if attract is not None
                 else None,
-                attraction_weight=attraction_weight,
+                attraction_weight=(attraction_weight
+                                   if placement_weight is None
+                                   else placement_weight),
                 k_att=k_att, power=att_power,
             )
             index.promote(init)
@@ -1176,6 +1181,7 @@ def esa(
     attraction_kwargs: dict | None = None,
     k_att: int = 8,
     att_power: float = 2.0,
+    placement_weight: float | None = None,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -1333,6 +1339,20 @@ def esa(
             parameter -- but it is rarely what is wanted, so it warns. For a
             genuine equilibrium give the attraction a slower-decaying law,
             e.g. ``metric="softened_inverse", attraction_metric="cauchy"``.
+        placement_weight (float | None): Attraction weight used when
+            *placing* the points, separately from the weight used in the
+            relaxation. ``None`` (default) uses `attraction_weight` for both,
+            which is the sensible pairing.
+
+            The two are different mechanisms and separating them is what makes
+            their contributions measurable: ``placement_weight=0`` is guided
+            relaxation on a repulsive placement (ESS before 0.5.0), while
+            ``attraction_weight=0`` with a non-zero `placement_weight` is a
+            guided placement that then relaxes on repulsion alone. The second
+            is not recommended -- with nothing holding them, the placed points
+            drift off the good regions they were put on and push the rest of
+            the design around -- but it is the arm that shows why the
+            relaxation term is needed rather than assuming it.
         attraction_kwargs (dict | None): Parameters for that law, kept
             separate from `metric_kwargs` because both laws take parameters
             of the same names and one ``**kwargs`` cannot serve two.
@@ -1448,6 +1468,8 @@ def esa(
         attraction_kwargs=attraction_kw,
         k_att=int(k_att),
         att_power=float(att_power),
+        placement_weight=(None if placement_weight is None
+                          else float(placement_weight)),
         stats=stats,
         **metric_kwargs,
     )
