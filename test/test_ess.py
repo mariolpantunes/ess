@@ -2,6 +2,7 @@
 
 """End-to-end tests of the toroidal ESA/ESS pipeline."""
 
+import importlib
 import itertools
 import logging
 import unittest
@@ -10,6 +11,10 @@ import numpy as np
 
 import ess
 import ess.utils as utils
+
+# `ess.ess` is the exported *function*, which shadows the submodule of
+# the same name, so the private helpers need an explicit module import.
+ess_core = importlib.import_module("ess.ess")
 from torann import available_backends
 
 # Disable info logging during tests to keep output clean
@@ -240,6 +245,115 @@ class TestESS(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGuidedPlacement(unittest.TestCase):
+    """Placement mirrors the mode: repulsive alone, composite with attraction.
+
+    Scoring candidates on novelty alone puts each one as far from everything
+    as possible -- including as far from the good regions -- and then leaves
+    the relaxation's attraction to drag it back. On the OBLESA sweep that
+    placement was worth nothing: unguided dart tied uniform noise 233-243 over
+    480 paired cells, while the same search with a fitness term in the
+    *placement* beat it 309-169.
+    """
+
+    D = 8
+    BOUNDS = np.array([[-5.0, 5.0]] * D)
+
+    def _setup(self, seed=0, m=40):
+        rng = np.random.default_rng(seed)
+        static = rng.uniform(-5, 5, (m, self.D))
+        # "good" means near the origin, so the effect is measurable as a radius
+        return static, -np.linalg.norm(static, axis=1)
+
+    def _composite(self, static, attract, weight=0.5, seed=11, n=30, **kw):
+        return ess.esa(static, self.BOUNDS, n=n, seed=seed,
+                       attractiveness=attract, attraction_weight=weight,
+                       attraction_metric="cauchy",
+                       attraction_kwargs={"power": 1.0}, **kw)
+
+    def test_weight_zero_reproduces_repulsive_placement_exactly(self):
+        """The composite path has to be an ablation of the repulsive one, not
+        a different algorithm, or no comparison between them means anything."""
+        static, attract = self._setup()
+        rep = ess.esa(static, self.BOUNDS, n=30, seed=11)
+        zero = self._composite(static, attract, weight=0.0)
+        np.testing.assert_allclose(zero, rep)
+
+    def test_attraction_pulls_placement_toward_the_good_region(self):
+        static, attract = self._setup()
+        rep = ess.esa(static, self.BOUNDS, n=30, seed=11)
+        com = self._composite(static, attract)
+        self.assertLess(np.linalg.norm(com, axis=1).mean(),
+                        np.linalg.norm(rep, axis=1).mean())
+
+    def test_more_weight_pulls_harder(self):
+        static, attract = self._setup(seed=3)
+        radii = [float(np.linalg.norm(
+            self._composite(static, attract, weight=w), axis=1).mean())
+            for w in (0.0, 0.5, 2.0)]
+        self.assertLess(radii[1], radii[0])
+        self.assertLess(radii[2], radii[1])
+
+    def test_runs_stay_reproducible(self):
+        static, attract = self._setup()
+        a = self._composite(static, attract)
+        b = self._composite(static, attract)
+        np.testing.assert_array_equal(a, b)
+
+    def test_results_stay_inside_the_bounds(self):
+        static, attract = self._setup()
+        out = self._composite(static, attract)
+        self.assertTrue((out >= self.BOUNDS[:, 0]).all())
+        self.assertTrue((out <= self.BOUNDS[:, 1]).all())
+
+
+class TestAttractivenessEstimate(unittest.TestCase):
+    """The candidate-side estimate.
+
+    Attractiveness is known only for the static points. Before this existed
+    the active rows were left at 0.0, which is not "unknown" but the *bottom*
+    of the normalised scale -- every candidate modelled as the least
+    attractive thing in the space.
+    """
+
+    def test_a_point_on_a_static_point_takes_its_value(self):
+        static = np.array([[0.1, 0.1], [0.8, 0.8]])
+        a = np.array([0.25, 0.75])
+        got = ess_core._estimate_attractiveness(static.copy(), static, a)
+        np.testing.assert_allclose(got, a)
+
+    def test_the_estimate_is_bounded_by_the_known_values(self):
+        rng = np.random.default_rng(1)
+        static = rng.random((30, 5))
+        a = rng.random(30)
+        q = rng.random((200, 5))
+        got = ess_core._estimate_attractiveness(q, static, a)
+        self.assertGreaterEqual(got.min(), a.min() - 1e-12)
+        self.assertLessEqual(got.max(), a.max() + 1e-12)
+
+    def test_it_is_nearer_the_closer_neighbour(self):
+        """Inverse-distance weighting: the near value must dominate."""
+        static = np.array([[0.10, 0.5], [0.90, 0.5]])
+        a = np.array([0.0, 1.0])
+        got = ess_core._estimate_attractiveness(
+            np.array([[0.15, 0.5]]), static, a)
+        self.assertLess(got[0], 0.25)
+
+    def test_no_static_points_is_not_an_error(self):
+        got = ess_core._estimate_attractiveness(
+            np.zeros((4, 3)), np.zeros((0, 3)), np.zeros(0))
+        self.assertEqual(got.shape, (4,))
+
+    def test_it_wraps_around_the_torus(self):
+        """0.02 and 0.98 are close on the unit torus; a non-toroidal metric
+        would call them the two most distant points in the axis."""
+        static = np.array([[0.98, 0.5], [0.50, 0.5]])
+        a = np.array([1.0, 0.0])
+        got = ess_core._estimate_attractiveness(
+            np.array([[0.02, 0.5]]), static, a)
+        self.assertGreater(got[0], 0.5)
 
 
 class TestInitPool(unittest.TestCase):

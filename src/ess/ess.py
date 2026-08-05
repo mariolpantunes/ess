@@ -494,6 +494,96 @@ def _l1_radius_heuristic(
     return min(max(dim / 4.0 + z * math.sqrt(dim / 48.0), 1e-6), dim / 2.0)
 
 
+def _estimate_attractiveness(
+    queries: np.ndarray,
+    static: np.ndarray,
+    attract_static: np.ndarray,
+    k: int = 8,
+    power: float = 2.0,
+) -> np.ndarray:
+    r"""Attractiveness a candidate position is *expected* to have.
+
+    Attractiveness is only ever known for the static points -- they are the
+    ones whose objective has been paid for. A candidate has none, and treating
+    that as zero is not neutral: `_rank_normalise` puts the scale on $[0, 1]$,
+    so zero is the *bottom* of it, and every candidate is modelled as the least
+    attractive thing in the space. Candidates that should pull on each other
+    repel instead, and the only attraction in the system is toward the static
+    points.
+
+    The estimate is Shepard's method -- inverse-distance weighting over the `k`
+    nearest static points, under the same toroidal $L_1$ metric everything else
+    here uses:
+
+    $$ \hat a(c) = \frac{\sum_i w_i\, a_i}{\sum_i w_i},
+       \qquad w_i = d_{L1}^{tor}(c, x_i)^{-p} $$
+
+    A candidate sitting exactly on a static point takes that point's value
+    rather than dividing by zero.
+
+    The known limitation is the one every distance-weighted surrogate carries:
+    in high dimension distances concentrate, the weights flatten and $\hat a$
+    tends to the mean of `attract_static`. It degrades to "no information"
+    rather than to something wrong, which is the right failure mode, but the
+    guidance does fade as `dim` grows.
+
+    Args:
+        queries (np.ndarray): Positions to estimate, shape $(Q, D)$, in
+            $[0, 1)$.
+        static (np.ndarray): Points with known attractiveness, shape $(M, D)$,
+            in $[0, 1)$.
+        attract_static (np.ndarray): Their attractiveness, shape $(M,)$,
+            already normalised to $[0, 1]$.
+        k (int): Neighbours averaged over. Clamped to $M$.
+        power (float): Inverse-distance exponent $p$.
+
+    Returns:
+        np.ndarray: Estimated attractiveness, shape $(Q,)$, within the range of
+        `attract_static`.
+    """
+    m = static.shape[0]
+    q = queries.shape[0]
+    if m == 0 or q == 0:
+        return np.zeros(q, dtype=np.float64)
+
+    # Toroidal L1: per axis the wrap-around distance is min(|d|, 1-|d|),
+    # because the space is the unit torus -- the same metric the index uses.
+    delta = np.abs(queries[:, None, :] - static[None, :, :])
+    dist = np.minimum(delta, 1.0 - delta).sum(axis=2)          # (Q, M)
+
+    kk = min(int(k), m)
+    nearest = np.argpartition(dist, kk - 1, axis=1)[:, :kk]
+    rows = np.arange(q)[:, None]
+    d_near = dist[rows, nearest]
+    a_near = attract_static[nearest]
+
+    exact = d_near <= 0.0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        w = np.where(exact, 0.0, d_near ** (-float(power)))
+    total = w.sum(axis=1)
+    out = np.full(q, float(attract_static.mean()))
+    ok = total > 0
+    if ok.any():
+        out[ok] = np.einsum("qk,qk->q", w[ok], a_near[ok]) / total[ok]
+    hit = exact.any(axis=1)
+    if hit.any():
+        # Sitting on a known point: take its value rather than dividing by 0.
+        out[hit] = a_near[hit, np.argmax(exact[hit], axis=1)]
+    return out
+
+
+def _zscore(values: np.ndarray) -> np.ndarray:
+    """Standardise, returning zeros when every value is the same.
+
+    Used to put novelty and estimated attractiveness on one scale so the
+    weight between them means the same thing on any objective.
+    """
+    sd = values.std()
+    if sd <= 0.0:
+        return np.zeros_like(values)
+    return (values - values.mean()) / sd
+
+
 def _smart_init(
     index: ToroidalNN,
     n_new: int,
@@ -501,6 +591,11 @@ def _smart_init(
     rng: np.random.Generator,
     init_sampler: samplers.Sampler,
     pool: int = 15,
+    static: np.ndarray | None = None,
+    attract_static: np.ndarray | None = None,
+    attraction_weight: float = 0.0,
+    k_att: int = 8,
+    power: float = 2.0,
 ) -> np.ndarray:
     r"""Initializes new points by Best Candidate Sampling against the index.
 
@@ -515,6 +610,19 @@ def _smart_init(
     the result is reduced mod 1 (no clipping — the torus has no edge to
     clip against).
 
+    **The placement mirrors the mode.** Given `attract_static`, the winner is
+    chosen on a standardised blend of novelty and the attractiveness the
+    candidate is *expected* to have,
+
+    $$ s(c) = z\big(\text{novelty}(c)\big)
+              + w \, z\big(\hat a(c)\big) $$
+
+    so a repulsive ESS places repulsively and a composite ESS places
+    compositely. Measured on the OBLESA sweep, placing on novelty alone is
+    worth nothing: unguided dart tied uniform noise 233-243 over 480 paired
+    cells, while the same search with a fitness term in the *placement* beat
+    it 309-169. Where you probe matters more than how evenly you spread.
+
     Args:
         index (ToroidalNN): Fitted index holding all existing points.
         n_new (int): Number of points to initialize.
@@ -522,13 +630,45 @@ def _smart_init(
         rng (np.random.Generator): Random number generator.
         init_sampler (samplers.Sampler): Candidate-pool sampler (e.g. LHS).
         pool (int): Candidates drawn per slot.
+        static (np.ndarray | None): Points with known attractiveness, in
+            $[0, 1)$. Omit for repulsive placement.
+        attract_static (np.ndarray | None): Their attractiveness, normalised.
+            Omit for repulsive placement.
+        attraction_weight (float): Balance against novelty in the composite
+            score. Zero reproduces the repulsive placement exactly.
+        k_att (int): Neighbours the attractiveness estimate averages over.
+        power (float): Inverse-distance exponent of that estimate.
 
     Returns:
         np.ndarray: Initial positions, shape $(n_{new}, D)$, in $[0, 1)$.
     """
     candidates = init_sampler.sample(n_new * pool, dim, rng).astype(np.float64)
     _, dists = index.query(k=1, queries=candidates)
-    best = dists.reshape(n_new, pool).argmax(axis=1)
+    novelty = dists.reshape(n_new, pool)
+
+    if static is None or attract_static is None or attraction_weight == 0.0:
+        # Repulsive ESS: placement is repulsive too. Bit-identical to the
+        # behaviour before the composite mode existed, so a run without
+        # `attractiveness` is unchanged and the composite path is an ablation
+        # rather than a different algorithm.
+        best = novelty.argmax(axis=1)
+    else:
+        # Composite ESS: placement is composite too. Scoring on novelty alone
+        # puts every candidate as far from everything as possible -- including
+        # as far from the good regions -- and then asks the relaxation's
+        # attraction to drag it back. That is the attraction spending its
+        # budget undoing the placement instead of refining it.
+        a_hat = _estimate_attractiveness(
+            candidates, static, attract_static, k=k_att, power=power,
+        ).reshape(n_new, pool)
+        score = np.empty_like(novelty)
+        for i in range(n_new):
+            # Standardised per slot, so `attraction_weight` is scale-free:
+            # novelty shrinks as the space fills, and without this the balance
+            # would drift over the batch.
+            score[i] = _zscore(novelty[i]) + attraction_weight * _zscore(a_hat[i])
+        best = score.argmax(axis=1)
+
     picked = candidates.reshape(n_new, pool, dim)[np.arange(n_new), best]
     jitter = rng.uniform(-1e-3, 1e-3, size=picked.shape)
     return np.mod(picked + jitter, 1.0)
@@ -785,6 +925,8 @@ def _esa(
     attraction_weight: float = 1.0,
     attraction_fn: collections.abc.Callable | None = None,
     attraction_kwargs: dict | None = None,
+    k_att: int = 8,
+    att_power: float = 2.0,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -844,6 +986,8 @@ def _esa(
         attraction_weight (float): Balance against repulsion.
         attraction_fn (Callable | None): Attraction law, log-space.
         attraction_kwargs (dict | None): Its parameters.
+        k_att (int): Neighbours the attractiveness estimate averages over.
+        att_power (float): Inverse-distance exponent of that estimate.
         stats (dict | None): Optional run-statistics sink; see `esa`.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
@@ -875,8 +1019,14 @@ def _esa(
 
         started = time.perf_counter()
         if fitted:
-            init = _smart_init(index, current_n, dim, rng,
-                               init_sampler, pool=init_pool)
+            init = _smart_init(
+                index, current_n, dim, rng, init_sampler, pool=init_pool,
+                static=all_data[:n_static] if attract is not None else None,
+                attract_static=attract[:n_static] if attract is not None
+                else None,
+                attraction_weight=attraction_weight,
+                k_att=k_att, power=att_power,
+            )
             index.promote(init)
         else:
             # From scratch: nothing to anchor against — the first batch
@@ -890,6 +1040,20 @@ def _esa(
 
         all_data[cursor : cursor + current_n] = init
         active = all_data[cursor : cursor + current_n]  # view into the buffer
+
+        if attract is not None and n_static > 0:
+            # Give the new points an attractiveness of their own. Left at the
+            # zero this buffer was created with, they would sit at the bottom
+            # of the normalised scale -- modelled as the least attractive
+            # things in the space -- so they would repel each other with no
+            # attraction between them, and the only pull in the system would
+            # be toward the static points. The estimate is what makes the
+            # relaxation a balance among *all* the points rather than a
+            # one-way drag toward the anchors.
+            attract[cursor : cursor + current_n] = _estimate_attractiveness(
+                init, all_data[:n_static], attract[:n_static],
+                k=k_att, power=att_power,
+            )
 
         current_lr = lr
         ema = None
@@ -997,6 +1161,8 @@ def esa(
     attraction_weight: float = 0.5,
     attraction_metric: str | collections.abc.Callable | None = None,
     attraction_kwargs: dict | None = None,
+    k_att: int = 8,
+    att_power: float = 2.0,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -1215,10 +1381,14 @@ def esa(
             # same law, same parameters: proportional, so it can never cross
             attraction_kw = dict(metric_kwargs)
         _check_metric_kwargs(attraction_fn, attraction_kw, isinstance(chosen, str))
-        _check_attraction_balance(
-            metric_fn, metric_kwargs, attraction_fn, attraction_kw,
-            float(attraction_weight),
-        )
+        if attraction_weight != 0.0:
+            # At weight zero there is no attraction to balance, and the
+            # "never overcomes repulsion" warning is both true and useless --
+            # that is the point of the setting. It is the ablation arm.
+            _check_attraction_balance(
+                metric_fn, metric_kwargs, attraction_fn, attraction_kw,
+                float(attraction_weight),
+            )
 
     if isinstance(seed, np.random.Generator):
         rng = seed
@@ -1263,6 +1433,8 @@ def esa(
         attraction_weight=float(attraction_weight),
         attraction_fn=attraction_fn,
         attraction_kwargs=attraction_kw,
+        k_att=int(k_att),
+        att_power=float(att_power),
         stats=stats,
         **metric_kwargs,
     )
