@@ -546,29 +546,42 @@ def _estimate_attractiveness(
     if m == 0 or q == 0:
         return np.zeros(q, dtype=np.float64)
 
-    # Toroidal L1: per axis the wrap-around distance is min(|d|, 1-|d|),
-    # because the space is the unit torus -- the same metric the index uses.
-    delta = np.abs(queries[:, None, :] - static[None, :, :])
-    dist = np.minimum(delta, 1.0 - delta).sum(axis=2)          # (Q, M)
-
     kk = min(int(k), m)
-    nearest = np.argpartition(dist, kk - 1, axis=1)[:, :kk]
-    rows = np.arange(q)[:, None]
-    d_near = dist[rows, nearest]
-    a_near = attract_static[nearest]
+    out = np.empty(q, dtype=np.float64)
+    fallback = float(attract_static.mean())
 
-    exact = d_near <= 0.0
-    with np.errstate(divide="ignore", invalid="ignore"):
-        w = np.where(exact, 0.0, d_near ** (-float(power)))
-    total = w.sum(axis=1)
-    out = np.full(q, float(attract_static.mean()))
-    ok = total > 0
-    if ok.any():
-        out[ok] = np.einsum("qk,qk->q", w[ok], a_near[ok]) / total[ok]
-    hit = exact.any(axis=1)
-    if hit.any():
-        # Sitting on a known point: take its value rather than dividing by 0.
-        out[hit] = a_near[hit, np.argmax(exact[hit], axis=1)]
+    # Chunked over queries. The obvious `queries[:, None, :] - static[None]`
+    # builds a (Q, M, D) temporary, which at the sizes this is actually called
+    # with -- 3840 candidates against 90 static points in 100 dimensions -- is
+    # 276 MB per call, and the run spent 71% of its initialization time
+    # allocating and touching it. Chunking caps that at a few MB and leaves
+    # the arithmetic identical.
+    step = max(1, int(2_000_000 // max(m * max(queries.shape[1], 1), 1)))
+    for lo in range(0, q, step):
+        hi = min(lo + step, q)
+        # Toroidal L1: per axis the wrap-around distance is min(|d|, 1-|d|),
+        # because the space is the unit torus -- the metric the index uses.
+        delta = np.abs(queries[lo:hi, None, :] - static[None, :, :])
+        dist = np.minimum(delta, 1.0 - delta).sum(axis=2)      # (chunk, M)
+
+        nearest = np.argpartition(dist, kk - 1, axis=1)[:, :kk]
+        rows = np.arange(hi - lo)[:, None]
+        d_near = dist[rows, nearest]
+        a_near = attract_static[nearest]
+
+        exact = d_near <= 0.0
+        with np.errstate(divide="ignore", invalid="ignore"):
+            w = np.where(exact, 0.0, d_near ** (-float(power)))
+        total = w.sum(axis=1)
+        chunk = np.full(hi - lo, fallback)
+        ok = total > 0
+        if ok.any():
+            chunk[ok] = np.einsum("qk,qk->q", w[ok], a_near[ok]) / total[ok]
+        hit = exact.any(axis=1)
+        if hit.any():
+            # On a known point: take its value rather than dividing by zero.
+            chunk[hit] = a_near[hit, np.argmax(exact[hit], axis=1)]
+        out[lo:hi] = chunk
     return out
 
 
