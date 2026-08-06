@@ -18,6 +18,7 @@ It simulates electrostatic repulsive forces to "relax" new points into the empty
 * **Robust Early Stopping**: Convergence is detected on the force field itself (plateau of the largest net force, learning-rate-decoupled), typically stopping in tens of epochs instead of hundreds.
 * **High-Dimensional Metrics**: Includes robust coverage metrics (Maximin, Clark-Evans Index, Sparse Grid Coverage) optimized for dimensions > 32D.
 * **Smart Initialization**: Uses a vectorized "Best Candidate" sampling strategy to seed new batches in the most promising void regions.
+* **Guided Attraction (New in v0.5.0)**: Given the attractiveness of the measured points, placement and relaxation both balance repulsion against a pull toward promising regions, with the collapse condition checked rather than discovered.
 
 > **Note:** The library is designed to be compliant with modern Python 3.12+ standards.
 
@@ -97,6 +98,52 @@ new_points = esa(
     epochs=256
 )
 ```
+
+### Guided ESS: attraction toward what is worth exploring (New in v0.5.0)
+
+Pure repulsion treats every empty region as equally worth probing. Given a
+measurement of how *attractive* the existing points are, the search becomes a
+force balance instead: points repel by distance and are attracted by quality.
+
+```python
+new_points = esa(
+    samples, bounds, n=60,
+    attractiveness=-objective_values,   # higher is more attractive
+    attraction_weight=0.5,              # pull against the repulsion
+    attraction_metric='cauchy',         # must decay slower than the repulsion
+    attraction_kwargs={'power': 1.0},
+    att_model='fourier',                # how unmeasured positions are estimated
+)
+```
+
+`attractiveness` is only ever known for the points whose objective has been
+paid for, so a candidate's is estimated. `att_model` picks how:
+
+| model | estimate | holds up when |
+|---|---|---|
+| `idw` | inverse-distance over the `k_att` nearest measured points | distances still separate |
+| `fourier` | `2d+1` ridge coefficients fitted over *all* measured points | the measured set is smaller than the dimension |
+| `detrended` | the Fourier fit plus IDW on its residual | both signals are present |
+
+Two guards are checked rather than left to a run. An attraction that
+out-pulls repulsion at contact collapses every free point onto its most
+attractive neighbour, and the plateau detector would report that as
+convergence — so `attraction_weight * F_att(0) < F_rep(0)` is enforced, which
+refuses weights at or above 2.5 for the default pair. And attraction only
+overcomes repulsion *somewhere* if it decays more slowly, so using one law for
+both sides warns: two proportional forces can never cross, and the attraction
+merely scales the repulsion down instead of pulling.
+
+`placement_weight` separates the two stages. Placement picks where a point
+starts; the relaxation decides where it settles. Passing `None` pairs them,
+which is the sensible default; setting it apart from `attraction_weight` lets
+guided placement and guided relaxation be measured separately.
+
+The estimate is a fitted function, so it improves with the number of *measured*
+points and nothing else. At `d=100` the model carries 201 coefficients and
+needs roughly 640 points to reach the error `d=8` reaches with 160 — a budget
+of 60 is what a weak high-dimensional attraction actually measures, and no work
+on the estimator changes that.
 
 ## Algorithms
 
