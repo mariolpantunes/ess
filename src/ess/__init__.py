@@ -50,6 +50,23 @@ Modules
 * `legacy`: Reference implementations of earlier sequential strategies.
 """
 
+import importlib.metadata
+
+__author__ = "Mário Antunes"
+__license__ = "MIT"
+__email__ = "mario.antunes@ua.pt"
+__url__ = "https://github.com/mariolpantunes/ess"
+__status__ = "Development"
+
+# Read from the installed distribution rather than a literal here: a hand-kept
+# copy drifts from pyproject.toml without failing anything, which is how
+# pyBlindOpt shipped 0.3.0 reporting 0.2.0. Source checkouts that were never
+# installed have no metadata, hence the fallback.
+try:
+    __version__ = importlib.metadata.version("EmptySpaceSearch")
+except importlib.metadata.PackageNotFoundError:  # pragma: no cover
+    __version__ = "0.0.0.dev0"
+
 # 1. Internal Module Imports
 # 3. Neighbour-search engine (re-exported for custom configuration)
 from torann import ToroidalNN

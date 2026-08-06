@@ -61,11 +61,6 @@ import inspect
 
 import numpy as np
 
-__author__ = "Mário Antunes"
-__license__ = "MIT"
-__email__ = "mario.antunes@ua.pt"
-__status__ = "Development"
-
 
 class AttractionModel(abc.ABC):
     """Estimates attractiveness at positions on the unit torus.
