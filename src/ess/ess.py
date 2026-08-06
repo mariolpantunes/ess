@@ -32,7 +32,7 @@ import time
 import numpy as np
 from torann import ToroidalNN
 
-from . import samplers
+from . import attraction, samplers
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -619,149 +619,36 @@ class _AttractionField:
     from, so a chain of inference fades toward the mean instead of laundering
     itself into ground truth.
 
+    *How* a position is estimated is `attraction.AttractionModel`, which this
+    holds one of. This class owns the sources and their confidence; the model
+    owns the estimate.
+
     Args:
         positions (np.ndarray): Measured points, shape $(M, D)$, in $[0, 1)$.
         values (np.ndarray): Their attractiveness, shape $(M,)$, normalised.
-        k (int): Neighbours an estimate averages over.
-        power (float): Inverse-distance exponent.
+        k (int): Neighbours an inverse-distance estimate averages over.
+        power (float): Its inverse-distance exponent.
         decay (float): Confidence multiplier applied to inferred sources.
+        model: Name, class or instance; see `attraction.get_model`.
     """
 
-    __slots__ = ("_bias", "_conf", "_pos", "_table", "_val", "_w", "bins",
-                 "decay", "k", "model", "n_measured", "power", "ridge")
+    __slots__ = ("_conf", "_pos", "_val", "decay", "model", "n_measured")
 
     def __init__(self, positions, values, k=8, power=2.0, decay=0.5,
-                 model="idw", ridge=1e-2, bins=4096):
+                 model: "str | type | attraction.AttractionModel" = "idw",
+                 ridge=1e-2, bins=4096):
         self._pos = np.asarray(positions, dtype=np.float64)
         self._val = np.asarray(values, dtype=np.float64)
         self._conf = np.ones(self._val.shape[0], dtype=np.float64)
         self.n_measured = int(self._val.shape[0])
-        self.k = int(k)
-        self.power = float(power)
         self.decay = float(decay)
-        self.model = str(model)
-        self.ridge = float(ridge)
-        self._w = None
-        self._table = None
-        self.bins = int(bins)
-        self._bias = float(self._val.mean()) if self._val.size else 0.0
-        if self.model != "idw":
-            self._fit()
-
-    @staticmethod
-    def _features(positions: np.ndarray) -> np.ndarray:
-        r"""Fourier features on the torus: $[\sin 2\pi x, \cos 2\pi x]$.
-
-        A linear or polynomial basis is the wrong choice here -- neither is
-        periodic, so both are discontinuous at the wrap, and the model would
-        disagree with itself across a seam the space does not have. The first
-        Fourier harmonic per axis is the lowest-order basis that respects the
-        geometry, and it costs $2d$ parameters.
-        """
-        ang = 2.0 * np.pi * positions
-        return np.concatenate((np.sin(ang), np.cos(ang)), axis=1)
-
-    def _fit(self) -> None:
-        """Solve for the model once, at construction.
-
-        Ridge-regularised because the measured set is routinely smaller than
-        the dimension -- at the OBLESA operating point it is 60 points in 100
-        dimensions, where the unregularised normal equations are singular.
-        The penalty is what makes the fit well-posed rather than merely
-        lucky; with too few points the coefficients shrink toward zero and the
-        model degrades to the mean, which is the correct answer when the data
-        cannot support anything else.
-        """
-        if self._val.size == 0:
-            return
-        phi = self._features(self._pos)
-        y = self._val - self._bias
-        wts = self._conf
-        a = (phi * wts[:, None]).T @ phi
-        a[np.diag_indices_from(a)] += self.ridge * max(1.0, float(wts.sum()))
-        self._w = np.linalg.solve(a, (phi * wts[:, None]).T @ y)
-        self._build_table()
-
-    def _build_table(self) -> None:
-        r"""Tabulate the fitted model, once, as `d` one-dimensional curves.
-
-        A general function of position cannot be tabulated in these dimensions
-        -- a grid is $g^d$ cells, which at $d=100$ is beyond counting. This one
-        can, because it is *additive over the axes*:
-
-        $$ \hat a(x) = b + \sum_j f_j(x_j), \qquad
-           f_j(t) = \alpha_j \sin 2\pi t + \beta_j \cos 2\pi t $$
-
-        so what gets tabulated is $d$ separate one-dimensional curves rather
-        than one $d$-dimensional surface: $d \times B$ floats, 3.3 MB at
-        $d=100$ with 4096 bins. Prediction is then integer indexing and a sum
-        with no transcendental calls at all.
-
-        The curves are periodic, so the table wraps rather than clamps at the
-        ends -- the same reason the basis is trigonometric.
-        """
-        if self._w is None:
-            return
-        d = self._pos.shape[1]
-        grid = (np.arange(self.bins) + 0.5) / self.bins
-        ang = 2.0 * np.pi * grid
-        # (d, bins): each row is one axis's contribution across the circle
-        self._table = (np.sin(ang)[None, :] * self._w[:d, None]
-                       + np.cos(ang)[None, :] * self._w[d:, None])
+        self.model = attraction.get_model(
+            model, k=k, power=power, ridge=ridge, bins=bins)
+        self.model.fit(self._pos, self._val, self._conf)
 
     def at(self, positions: np.ndarray) -> np.ndarray:
-        """Estimated attractiveness at `positions`, shape $(Q,)$.
-
-        `model='idw'` weights the nearest measured points, which costs
-        $O(Q M d)$ -- every query re-measures its distance to every source.
-        `model='fourier'` evaluates the fitted function instead, $O(Q d)$,
-        which at the sizes the placement search runs at is the difference
-        between 737M operations and 12M. `model='detrended'` evaluates the
-        function and corrects it with the interpolated residual, so it keeps
-        IDW's local detail and costs what IDW costs.
-        """
-        pos = np.asarray(positions, dtype=np.float64)
-        if self.model == "idw" or self._w is None:
-            return _estimate_attractiveness(
-                pos, self._pos, self._val, k=self.k, power=self.power,
-                confidence=self._conf,
-            )
-        trend = self._evaluate(pos)
-        if self.model == "fourier":
-            return trend
-        # detrended: the trend can leave the range of the measured values,
-        # which is the point -- a convex combination of neighbours never can,
-        # so plain IDW cannot call anywhere more promising than the best
-        # point already evaluated.
-        resid = self._val - self._evaluate(self._pos)
-        return trend + _estimate_attractiveness(
-            pos, self._pos, resid, k=self.k, power=self.power,
-            confidence=self._conf,
-        )
-
-    def _evaluate(self, positions: np.ndarray) -> np.ndarray:
-        """The fitted model at `positions`, via the table when it exists."""
-        if self._table is None:
-            assert self._w is not None
-            return self._features(positions) @ self._w + self._bias
-        # Linear interpolation between adjacent bins, wrapping at the end.
-        # Nearest-bin would be marginally cheaper but quantises the curve, and
-        # a point drifting across a bin boundary would see the field step --
-        # an artefact of the table rather than of the space. Interpolating
-        # keeps the evaluation continuous and still calls no transcendental.
-        # -0.5 because the table stores each curve at bin *centres*,
-        # (i + 0.5) / B. Indexing as though the values sat at the left edges
-        # offsets every lookup by half a bin, which costs more accuracy than
-        # the interpolation recovers.
-        t = (positions % 1.0) * self.bins - 0.5
-        lo = np.floor(t)
-        frac = t - lo
-        i0 = lo.astype(np.intp, copy=False) % self.bins
-        i1 = (i0 + 1) % self.bins
-        axes = np.arange(positions.shape[1])
-        v0 = self._table[axes, i0]
-        v1 = self._table[axes, i1]
-        return (v0 + (v1 - v0) * frac).sum(axis=1) + self._bias
+        """Estimated attractiveness at `positions`, shape $(Q,)$."""
+        return self.model.at(np.asarray(positions, dtype=np.float64))
 
     def add_inferred(self, positions: np.ndarray, values: np.ndarray) -> None:
         """Fold settled-but-unmeasured points in as reduced-confidence sources.
@@ -778,9 +665,7 @@ class _AttractionField:
         self._val = np.concatenate((self._val, np.asarray(values, np.float64)))
         self._conf = np.concatenate(
             (self._conf, np.full(len(values), conf, dtype=np.float64)))
-        self._bias = float(self._val.mean())
-        if self.model != "idw":
-            self._fit()
+        self.model.fit(self._pos, self._val, self._conf)
 
 
 def _zscore(values: np.ndarray) -> np.ndarray:
@@ -1131,7 +1016,7 @@ def _esa(
     att_power: float = 2.0,
     placement_weight: float | None = None,
     att_every: int = 5,
-    att_model: str = "fourier",
+    att_model: "str | type | attraction.AttractionModel" = "fourier",
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -1197,7 +1082,7 @@ def _esa(
             only; ``None`` uses `attraction_weight`.
         att_every (int): Refresh the attractiveness field every this many
             epochs. 1 refreshes every epoch.
-        att_model (str): ``'fourier'``, ``'idw'`` or ``'detrended'``.
+        att_model: Name, class or instance; see `attraction.get_model`.
         stats (dict | None): Optional run-statistics sink; see `esa`.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
@@ -1391,7 +1276,7 @@ def esa(
     att_power: float = 2.0,
     placement_weight: float | None = None,
     att_every: int = 5,
-    att_model: str = "fourier",
+    att_model: "str | type | attraction.AttractionModel" = "fourier",
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -1563,8 +1448,10 @@ def esa(
             drift off the good regions they were put on and push the rest of
             the design around -- but it is the arm that shows why the
             relaxation term is needed rather than assuming it.
-        att_model (str): How the attractiveness of an unmeasured position is
-            estimated.
+        att_model: How the attractiveness of an unmeasured position is
+            estimated. A registered name, an `attraction.AttractionModel`
+            subclass, or an instance of one -- so a caller can tune a built-in
+            (``HarmonicRidge(harmonics=3)``) or supply their own.
 
             ``'fourier'`` (default) fits one periodic function of position at
             construction and evaluates it thereafter -- $O(d)$ a query rather
@@ -1573,6 +1460,12 @@ def esa(
             points instead, with no fitting. ``'detrended'`` is the function
             plus the interpolated residual: the most accurate at low
             dimension, and the cost of ``'idw'``.
+
+            ``'projection'`` fits the same basis by correlation rather than by
+            solving, which stays defined when there are fewer measured points
+            than coefficients -- the regime ``'fourier'`` cannot serve.
+            ``'auto'`` reads the ratio off the data at every refresh and picks
+            between them.
 
             Leave-one-out error over 60 measured points: at $d=8$, 0.47 for
             idw against 0.12 fourier and 0.05 detrended; at $d=32$, 0.60
@@ -1703,7 +1596,7 @@ def esa(
         placement_weight=(None if placement_weight is None
                           else float(placement_weight)),
         att_every=max(1, int(att_every)),
-        att_model=str(att_model),
+        att_model=att_model,
         stats=stats,
         **metric_kwargs,
     )

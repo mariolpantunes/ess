@@ -412,7 +412,10 @@ class TestAttractionModels(unittest.TestCase):
         f = ess_core._AttractionField(pos, val, model="fourier")
         rng = np.random.default_rng(4)
         q = rng.random((2000, 32))
-        closed = f._features(q) @ f._w + f._bias
+        # `_AttractionField` owns the sources; the model owns the estimate,
+        # so the closed form is read off the model rather than the field.
+        m = f.model
+        closed = m._features(q) @ m._w + m._bias
         np.testing.assert_allclose(f.at(q), closed, atol=1e-5)
 
     def test_the_table_costs_less_than_the_distance_weighting(self):

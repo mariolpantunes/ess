@@ -119,11 +119,55 @@ new_points = esa(
 `attractiveness` is only ever known for the points whose objective has been
 paid for, so a candidate's is estimated. `att_model` picks how:
 
-| model | estimate | holds up when |
+| model | coefficients | how they are obtained |
 |---|---|---|
-| `idw` | inverse-distance over the `k_att` nearest measured points | distances still separate |
-| `fourier` | `2d+1` ridge coefficients fitted over *all* measured points | the measured set is smaller than the dimension |
-| `detrended` | the Fourier fit plus IDW on its residual | both signals are present |
+| `idw` | none | inverse-distance over the `k_att` nearest measured points |
+| `fourier` | `2d+1` | least squares, ridge-regularised |
+| `projection` | `2d` | correlation against the basis, James-Stein shrunk |
+| `detrended` | `2d+1` | the Fourier fit plus IDW on its residual |
+| `auto` | — | picks by whether the solve is identifiable |
+
+**Why a trigonometric basis.** The space is a torus, so a model of it has to be
+periodic — a polynomial is discontinuous at the seam and would assert a
+gradient across a boundary the space does not have. The periodic analogue of a
+quadratic well is the von Mises density, whose logarithm is
+`κ cos(θ − μ) = (κ cos μ) cos θ + (κ sin μ) sin θ` — one first-harmonic term per
+axis. A first-harmonic model *is* an additive log-von-Mises field. Higher
+harmonics buy narrower and multimodal wells, at `2·harmonics·d` coefficients.
+
+**Which to use.** `fourier` solves for its coefficients, so it needs more
+measured points than unknowns; `projection` correlates instead, which stays
+defined at any count. Held-out error, normalised so 1.0 is what predicting the
+mean scores:
+
+| truth | ridge | projection | idw |
+|---|---|---|---|
+| additive, `d=8`, `M=300` | **0.31** | 0.36 | 0.48 |
+| additive, `d=100`, `M=30` | **0.78** | 0.80 | 0.80 |
+| non-additive, `d=32`, `M=120` | 1.08 | **0.81** | 0.82 |
+| non-additive, `d=100`, `M=300` | 1.27 | **0.81** | 0.84 |
+
+Above 1.0 means worse than abstaining. Least squares commits hard, which pays
+when the basis matches the truth and costs when it does not; the shrunk
+projection and the interpolation both hedge. Four of the eight objectives in
+the downstream benchmark are non-separable, which is where that matters.
+
+**Custom models.** Subclass `AttractionModel`, implement `fit` and `at`, and
+pass the instance:
+
+```python
+class MyModel(ess.AttractionModel):
+    def fit(self, positions, values, confidence):
+        ...
+        return self
+
+    def at(self, positions):
+        return ...
+
+ess.esa(samples, bounds, n=60, attractiveness=-scores, att_model=MyModel())
+```
+
+`att_model` also takes a tuned built-in, e.g. `ess.HarmonicRidge(harmonics=3)`.
 
 Two guards are checked rather than left to a run. An attraction that
 out-pulls repulsion at contact collapses every free point onto its most
