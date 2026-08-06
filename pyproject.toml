@@ -19,7 +19,7 @@ classifiers = [
 ]
 dependencies = [
     "numpy>=2.0.0",
-    "torann>=0.2.0",
+    "torann>=0.2.1",
 ]
 
 [project.urls]
