@@ -142,15 +142,39 @@ class TestRegimes(unittest.TestCase):
         err = held_out(attraction.HarmonicProjection(), additive_truth, 100, 30)
         self.assertLess(err, 1.0)
 
-    def test_auto_switches_on_the_ratio(self):
+    def test_auto_refuses_the_model_that_would_overclaim(self):
+        """The case a ratio cannot see: enough data, wrong basis.
+
+        `M = 300` against `2d = 64` says the solve is well determined, and it
+        is -- of structure the truth does not have. Auto scores it instead.
+        """
         rng = np.random.default_rng(0)
-        auto = attraction.Auto()
-        auto.fit(rng.uniform(0, 1, (30, 100)), rng.normal(size=30),
-                 np.ones(30))
-        self.assertIsInstance(auto.chosen, attraction.HarmonicProjection)
-        auto.fit(rng.uniform(0, 1, (300, 8)), rng.normal(size=300),
-                 np.ones(300))
-        self.assertIsInstance(auto.chosen, attraction.HarmonicRidge)
+        xs = rng.uniform(0, 1, size=(300, 32))
+        auto = attraction.Auto().fit(xs, coupled_truth(xs), np.ones(300))
+        self.assertNotIsInstance(auto.chosen, attraction.HarmonicRidge)
+        self.assertLess(auto.scores[type(auto.chosen).__name__],
+                        auto.scores["HarmonicRidge"])
+
+    def test_auto_takes_the_parametric_fit_when_it_earns_it(self):
+        rng = np.random.default_rng(0)
+        xs = rng.uniform(0, 1, size=(300, 8))
+        auto = attraction.Auto().fit(xs, additive_truth(xs), np.ones(300))
+        self.assertIsInstance(
+            auto.chosen, attraction.HarmonicRidge | attraction.Detrended)
+
+    def test_auto_interpolates_when_there_is_nothing_to_hold_out(self):
+        """Too few sources to cross-validate is not too few to be useful.
+
+        A parametric model correctly shrinks to the mean at four points and so
+        reports nothing; interpolation still separates a good corner from a
+        bad one, which is what the placement search needs.
+        """
+        pos = np.array([[0.1, 0.1], [0.9, 0.9], [0.1, 0.9], [0.9, 0.1]])
+        auto = attraction.Auto().fit(
+            pos, np.array([1.0, 0.0, 0.5, 0.5]), np.ones(4))
+        self.assertIsInstance(auto.chosen, attraction.InverseDistance)
+        self.assertGreater(auto.at(np.array([[0.12, 0.12]]))[0],
+                           auto.at(np.array([[0.88, 0.88]]))[0])
 
 
 class TestHarmonicInternals(unittest.TestCase):

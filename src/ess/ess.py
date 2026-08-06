@@ -635,7 +635,7 @@ class _AttractionField:
     __slots__ = ("_conf", "_pos", "_val", "decay", "model", "n_measured")
 
     def __init__(self, positions, values, k=8, power=2.0, decay=0.5,
-                 model: "str | type | attraction.AttractionModel" = "idw",
+                 model: "str | type | attraction.AttractionModel" = "auto",
                  ridge=1e-2, bins=4096):
         self._pos = np.asarray(positions, dtype=np.float64)
         self._val = np.asarray(values, dtype=np.float64)
@@ -1016,7 +1016,7 @@ def _esa(
     att_power: float = 2.0,
     placement_weight: float | None = None,
     att_every: int = 5,
-    att_model: "str | type | attraction.AttractionModel" = "fourier",
+    att_model: "str | type | attraction.AttractionModel" = "auto",
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -1276,7 +1276,7 @@ def esa(
     att_power: float = 2.0,
     placement_weight: float | None = None,
     att_every: int = 5,
-    att_model: "str | type | attraction.AttractionModel" = "fourier",
+    att_model: "str | type | attraction.AttractionModel" = "auto",
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -1453,7 +1453,12 @@ def esa(
             subclass, or an instance of one -- so a caller can tune a built-in
             (``HarmonicRidge(harmonics=3)``) or supply their own.
 
-            ``'fourier'`` (default) fits one periodic function of position at
+            ``'auto'`` (default) cross-validates the others on the measured
+            points and keeps whichever scores best -- the sources are already
+            paid for, so holding some out costs no objective evaluations, and
+            no fixed choice wins in every regime.
+
+            ``'fourier'`` fits one periodic function of position at
             construction and evaluates it thereafter -- $O(d)$ a query rather
             than $O(Md)$, and measured more accurate than the alternative at
             every dimension tried. ``'idw'`` weights the nearest measured

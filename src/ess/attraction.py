@@ -345,35 +345,75 @@ class Detrended(AttractionModel):
 
 
 class Auto(AttractionModel):
-    """Picks by whether the parametric fit is identifiable at all.
+    """Cross-validates the candidates on the measured points and keeps the best.
 
-    `HarmonicRidge` needs more measured points than it has coefficients;
-    below that it is a constant with extra steps. The switch is on
-    `M > threshold * 2 * d`, checked at every `fit`, because the measured set
-    grows during a batched run and a model that was hopeless at the first
-    batch may be well-posed by the last.
+    There is no model that wins everywhere, and the two things that decide it
+    are both properties of the run rather than of the library. Whether the
+    parametric fit is *identifiable* depends on `M` against `2d`. Whether the
+    additive basis *matches the objective* depends on the objective, and that
+    one cannot be read off a ratio at all -- on a truth with no additive
+    decomposition, least squares scores worse than abstaining while the same
+    ratio says it should be trusted.
+
+    So this measures instead of guessing. The sources are already paid for, so
+    holding some out costs no objective evaluations: each candidate is fitted
+    on `folds - 1` parts and scored on the one left out, and the winner is
+    refitted on everything. What that buys is the failure mode -- a model
+    confidently fitting structure that is not there loses to one that abstains,
+    which is the ordering the fixed choice got backwards.
 
     Args:
-        threshold (float): Multiple of the coefficient count required before
-            the solve is trusted.
-        rich (AttractionModel | None): Used when there is enough data.
-        sparse (AttractionModel | None): Used when there is not.
+        candidates (list | None): Models to choose between. Defaults to the
+            ridge fit, the shrunk projection, the interpolation, and the
+            detrended combination.
+        folds (int): Cross-validation folds. Below `2 * folds` sources there is
+            nothing to hold out and the sparse-data model is used directly.
     """
 
-    def __init__(self, threshold: float = 1.0,
-                 rich: AttractionModel | None = None,
-                 sparse: AttractionModel | None = None):
-        self.threshold = float(threshold)
-        self.rich = rich if rich is not None else HarmonicRidge()
-        self.sparse = sparse if sparse is not None else HarmonicProjection()
-        self._chosen: AttractionModel = self.sparse
+    def __init__(self, candidates: "list[AttractionModel] | None" = None,
+                 folds: int = 3):
+        self.candidates = list(candidates) if candidates else [
+            HarmonicRidge(), HarmonicProjection(), InverseDistance(),
+            Detrended(),
+        ]
+        self.folds = max(2, int(folds))
+        self._chosen: AttractionModel = self.candidates[0]
+        self._scores: dict[str, float] = {}
 
     def fit(self, positions, values, confidence):
         pos = np.asarray(positions, dtype=np.float64)
-        m, dim = (pos.shape if pos.ndim == 2 else (0, 0))
-        self._chosen = (self.rich if m > self.threshold * 2 * dim
-                        else self.sparse)
-        self._chosen.fit(pos, values, confidence)
+        val = np.asarray(values, dtype=np.float64)
+        conf = np.asarray(confidence, dtype=np.float64)
+        m = val.size
+
+        if m < 2 * self.folds:
+            # Nothing to hold out, so nothing to choose on. Interpolation is
+            # the right answer here rather than a shrunk fit: it has no
+            # coefficients to estimate, reproduces the sources exactly, and
+            # stays informative at a handful of points, where a parametric
+            # model correctly shrinks to the mean and so says nothing at all.
+            self._chosen = next(
+                (c for c in self.candidates
+                 if isinstance(c, InverseDistance)), self.candidates[0])
+            self._chosen.fit(pos, val, conf)
+            return self
+
+        spread = float(np.std(val)) or 1.0
+        part = np.arange(m) % self.folds
+        self._scores = {}
+        for cand in self.candidates:
+            total = 0.0
+            for f in range(self.folds):
+                train, test = part != f, part == f
+                cand.fit(pos[train], val[train], conf[train])
+                total += float(np.mean(np.abs(cand.at(pos[test])
+                                              - val[test])))
+            self._scores[type(cand).__name__] = total / self.folds / spread
+
+        best = min(self._scores, key=lambda k: self._scores[k])
+        self._chosen = next(c for c in self.candidates
+                            if type(c).__name__ == best)
+        self._chosen.fit(pos, val, conf)
         return self
 
     def at(self, positions):
@@ -383,6 +423,11 @@ class Auto(AttractionModel):
     def chosen(self) -> AttractionModel:
         """Whichever model the last `fit` selected."""
         return self._chosen
+
+    @property
+    def scores(self) -> "dict[str, float]":
+        """Held-out error per candidate, normalised so 1.0 is the mean."""
+        return dict(self._scores)
 
 
 #: Built-in models, by the name `att_model` accepts. `'fourier'` is the

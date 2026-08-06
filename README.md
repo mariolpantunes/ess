@@ -112,7 +112,7 @@ new_points = esa(
     attraction_weight=0.5,              # pull against the repulsion
     attraction_metric='cauchy',         # must decay slower than the repulsion
     attraction_kwargs={'power': 1.0},
-    att_model='fourier',                # how unmeasured positions are estimated
+    att_model='auto',                   # how unmeasured positions are estimated
 )
 ```
 
@@ -125,7 +125,7 @@ paid for, so a candidate's is estimated. `att_model` picks how:
 | `fourier` | `2d+1` | least squares, ridge-regularised |
 | `projection` | `2d` | correlation against the basis, James-Stein shrunk |
 | `detrended` | `2d+1` | the Fourier fit plus IDW on its residual |
-| `auto` | — | picks by whether the solve is identifiable |
+| `auto` | — | **default**: cross-validates the others and keeps the best |
 
 **Why a trigonometric basis.** The space is a torus, so a model of it has to be
 periodic — a polynomial is discontinuous at the seam and would assert a
@@ -151,6 +151,13 @@ Above 1.0 means worse than abstaining. Least squares commits hard, which pays
 when the basis matches the truth and costs when it does not; the shrunk
 projection and the interpolation both hedge. Four of the eight objectives in
 the downstream benchmark are non-separable, which is where that matters.
+
+No fixed choice wins in both regimes, and the one that decides it — whether the
+additive basis matches the objective — cannot be read off `M` and `d`. So
+`auto` measures instead: each candidate is fitted on part of the measured
+points and scored on the rest. The sources are already paid for, so this costs
+no objective evaluations. Below `2 * folds` sources there is nothing to hold
+out and it interpolates, which needs no coefficients to estimate.
 
 **Custom models.** Subclass `AttractionModel`, implement `fit` and `at`, and
 pass the instance:
