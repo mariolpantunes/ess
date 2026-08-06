@@ -38,7 +38,7 @@ pip install git+[https://github.com/mariolpantunes/ess.git](https://github.com/m
 
 **Requirements:**
 
-* Python >= 3.10
+* Python >= 3.12
 * numpy
 * torann
 
