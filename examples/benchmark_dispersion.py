@@ -108,7 +108,12 @@ def baseline(dim, seed, n=None):
             "n": n, **score(pts, dim), "time_s": 0.0, "epochs": 0}
 
 
-COLS = ("torus_ce", "proj1", "proj2", "epochs", "time_s")
+# `torus_ce` was dropped from the metric panel (Clark-Evans stopped being
+# trustworthy above d~16). `wrap_disc` replaces it as the headline scalar --
+# and it runs the other way: CE was higher-better, a normalised discrepancy
+# is LOWER-better, with 1.0 = random. Every selection below is flipped to
+# match; getting that wrong picks the worst design rather than the best.
+COLS = ("wrap_disc", "proj1", "proj2", "epochs", "time_s")
 
 
 def summarize(rows, keys):
@@ -129,12 +134,12 @@ def summarize(rows, keys):
 
 
 def table(rows, keys):
-    head = list(keys) + ["torus-CE", "proj1", "proj2", "epochs", "time[s]"]
+    head = list(keys) + ["wrap disc", "proj1", "proj2", "epochs", "time[s]"]
     print("| " + " | ".join(head) + " |")
     print("|" + "---|" * len(head))
     for r in rows:
         cells = [str(r[k]) for k in keys]
-        cells += [f"{r['torus_ce']:.3f}", f"{r['proj1']:.3f}", f"{r['proj2']:.3f}",
+        cells += [f"{r['wrap_disc']:.3f}", f"{r['proj1']:.3f}", f"{r['proj2']:.3f}",
                   f"{r['epochs']:.0f}", f"{r['time_s']:.2f}"]
         print("| " + " | ".join(cells) + " |")
 
@@ -158,8 +163,9 @@ def phase_force(seeds):
     ]
     save("bench_force.json", rows)
     table(summarize(rows, ("metric", "mode", "dim")), ("metric", "mode", "dim"))
-    best = max(summarize(rows, ("metric",)), key=lambda r: r["torus_ce"])
-    print(f"\n>>> best force law: {best['metric']} (torus-CE {best['torus_ce']:.3f})")
+    best = min(summarize(rows, ("metric",)), key=lambda r: r["wrap_disc"])
+    print(f"\n>>> best force law: {best['metric']} "
+          f"(wrap disc {best['wrap_disc']:.3f}, lower is better)")
     return best["metric"]
 
 
@@ -178,8 +184,8 @@ def phase_tune(metric, seeds):
     save("bench_tune_stop.json", rows)
     agg = summarize(rows, ("batch_size", "patience"))
     table(agg, ("batch_size", "patience"))
-    top = max(r["torus_ce"] for r in agg)
-    ok = [r for r in agg if r["torus_ce"] >= top * 0.99]
+    top = min(r["wrap_disc"] for r in agg)
+    ok = [r for r in agg if r["wrap_disc"] <= top * 1.01]
     best = min(ok, key=lambda r: r["epochs"])
     print(f"\n>>> batch_size={best['batch_size']}, patience={best['patience']}")
 
@@ -195,7 +201,7 @@ def phase_tune(metric, seeds):
     table(agg_k, ("k",))
     # keep every projection better than random, then maximise regularity
     safe = [r for r in agg_k if r["proj1"] < 1.0] or agg_k
-    best_k = max(safe, key=lambda r: r["torus_ce"])
+    best_k = min(safe, key=lambda r: r["wrap_disc"])
     print(f"\n>>> k={best_k['k']} (proj1 {best_k['proj1']:.3f} < 1 = better than random)")
     return {"batch_size": best["batch_size"], "patience": best["patience"],
             "k": best_k["k"]}
@@ -234,7 +240,7 @@ def phase_plot():
     })
     fig, axes = plt.subplots(1, 4, figsize=(14.5, 3.5))
     panels = (
-        ("torus_ce", "toroidal Clark-Evans\n(higher better; trust to d~16)", False),
+        ("wrap_disc", "wrap-around discrepancy\n(lower better, 1 = random)", True),
         ("proj1", "1-D projection discrepancy\n(lower better, 1 = random)", True),
         ("epochs", "epochs used (early stop)", False),
         ("time_s", "wall time per run [s]", True),
@@ -256,7 +262,7 @@ def phase_plot():
         ax.set_title(title, fontsize=9)
         if logy:
             ax.set_yscale("log")
-        if col == "torus_ce":
+        if col == "wrap_disc":
             ax.axhline(1.0, color=slate, lw=0.8, ls="--")
         if col == "proj1":
             ax.axhline(1.0, color=slate, lw=0.8, ls="--")

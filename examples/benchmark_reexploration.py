@@ -29,7 +29,8 @@ Metrics (see `report` for the printed names):
                           nearest ANCHOR, mean and worst. This is the
                           objective: larger means the batch really did go
                           where nothing had been evaluated.
-    combined_ce           toroidal Clark-Evans of anchors + new points:
+    combined_wrap_disc    wrap-around L2 discrepancy of anchors + new
+                          points, normalised so 1.0 = random:
                           is the union a well-spread design?
     marginal_disc         1-D wrap-around discrepancy of the **union**,
                           normalised so 1.0 = a random sample. Guards
@@ -143,10 +144,10 @@ def run(dims, n_anchors, n_new, seeds):
     return rows
 
 
-COLS = ("void_mean", "void_min", "combined_ce", "marginal_disc", "time_s")
+COLS = ("void_mean", "void_min", "combined_wrap_disc", "marginal_disc", "time_s")
 LABEL = {
     "void_mean": "void dist (mean)", "void_min": "void dist (worst)",
-    "combined_ce": "combined CE", "marginal_disc": "marginal disc",
+    "combined_wrap_disc": "combined disc", "marginal_disc": "marginal disc",
     "time_s": "time[s]",
 }
 
