@@ -6,25 +6,47 @@ actually used, over several independent seeds driving the initial
 candidates (LHS init, smart-init pools, tie-breaking noise and the
 torann hash functions).
 
-Metrics are chosen per dimension, because none is valid everywhere:
+The headline metric is **toroidal separation** -- the shortest distance
+from any point of the design to any other, wrap included. It is defined once,
+in ``torann.metrics``, and shared with torann, because two copies of a metric
+is exactly how this file ended up asking for a key that no longer existed.
+Higher is better, and it keeps discriminating at every dimension here:
+against an LHS batch it reads 13.7x at d=2 and still 1.3x at d=64, where the
+alternatives have collapsed to a fraction of a percent.
 
-  toroidal Clark-Evans   nearest-neighbour regularity in the geometry
-                         that is actually optimized. Calibrated (random
-                         = 1) and bounded by 2/Gamma(1+1/d). Reported
-                         for every d but only *trusted* up to ~16: above
-                         that, concentration of measure flattens the
-                         distance distribution and every design looks
-                         alike. The Euclidean box version is not used at
-                         all -- it is biased upward (random scores 1.42
-                         at d=64) and rewards piling points on the walls.
+``torann.metrics`` records the four metrics that were measured and rejected,
+with numbers. The short version: toroidal Clark-Evans and coverage radius
+both stop resolving above d~16 (coverage radius reads 13.183 against 13.180
+at d=64, with the better design fractionally behind); wrap-around discrepancy
+manages a 0.9% gap at d=64.
 
-  projection discrepancy wrap-around L2 discrepancy averaged over 1-D
-                         and 2-D projections, normalized so 1.0 = random.
-                         Fixed scale regardless of ambient dimension, no
-                         distance contrasts involved: this is the
-                         high-dimensional criterion, and it also encodes
-                         the DoE effect-sparsity principle (what matters
-                         is that every factor and every pair be covered).
+  projection discrepancy wrap-around L2 discrepancy averaged over 1-D and
+                         2-D projections, normalized so 1.0 = random. Held
+                         here as a *reported* column and deliberately never
+                         selected on. It has a fixed scale at every
+                         dimension, which is why it looks like the
+                         high-dimensional criterion, but it scores marginal
+                         coverage -- which is what a Latin hypercube is
+                         constructed to optimize, so an unrelaxed LHS wins
+                         it at every d by construction. It is a real
+                         criterion for the DoE effect-sparsity question;
+                         it is not a ranking of how well the voids got
+                         filled, and selecting on it inverts the conclusion.
+
+  wrap_disc              full-dimensional wrap-around discrepancy, likewise
+                         reported and not selected on: a discrepancy falls
+                         monotonically with more relaxation, so any tuning
+                         phase that maximises it just asks for more epochs.
+
+**Do not read the epoch counts as a comparison between two builds.** ESS
+stops on a plateau detector -- a 1% relative-improvement threshold with
+``patience`` -- so a single near-threshold comparison flipping resets the
+streak and costs a full ``patience`` worth of epochs. An ulp-level difference
+in a distance is enough to move the total by tens: measured across a torann
+kernel change, the seed-to-seed spread within one build at d=8 was 95-185
+epochs, wider than any difference between builds. For attributing a speed
+change, use a fixed-epoch harness (torann ships ``bench_ess_loop.py``); for
+reporting epochs here, read the spread over seeds and not one number.
 
 The number of points scales with the dimension -- 256 points in 64D is
 far too sparse for any packing question to be meaningful.
@@ -45,18 +67,22 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import ess  # noqa: E402
-from ess.samplers import LHCSampler  # noqa: E402
-from ess.utils import (  # noqa: E402
+from torann.metrics import toroidal_separation
+
+import ess
+from ess.samplers import LHCSampler
+from ess.utils import (
     expected_discrepancy,
     projection_discrepancy,
     wrap_around_discrepancy,
-    expected_discrepancy,
 )
 
 OUT = os.path.join(os.path.dirname(__file__), "out")
 
 DIMS = [2, 4, 8, 16, 32, 64]
+# The force and tuning phases sweep a cheaper subset; both follow
+# `--dims` so the whole run can be shrunk to a smoke test.
+TUNE_DIMS = [2, 8, 32]
 MODES = ["k_nn", "radius"]
 FORCES = ["gaussian", "softened_inverse", "linear", "cauchy"]
 
@@ -65,10 +91,11 @@ FORCES = ["gaussian", "softened_inverse", "linear", "cauchy"]
 N_BY_DIM = {2: 256, 4: 256, 8: 512, 16: 512, 32: 1024, 64: 1024}
 
 
-def score(pts, dim):
+def score(pts, dim, anchors=None):
     """The metric panel for one design (see the module docstring)."""
     n = len(pts)
     return {
+        "separation": toroidal_separation(pts, anchors),
         "wrap_disc": wrap_around_discrepancy(pts) / expected_discrepancy(len(pts), pts.shape[1]),
         "proj1": projection_discrepancy(pts, 1) / expected_discrepancy(n, 1),
         "proj2": (
@@ -80,7 +107,7 @@ def score(pts, dim):
 
 def run_once(dim, mode, seed, metric, n=None, **params):
     """One ESS run from scratch; returns the measured record."""
-    n = n or N_BY_DIM[dim]
+    n = n or N_BY_DIM.get(dim, 512)
     bounds = np.array([[0.0, 1.0]] * dim)
     stats = {}
     t0 = time.perf_counter()
@@ -102,18 +129,21 @@ def run_once(dim, mode, seed, metric, n=None, **params):
 
 def baseline(dim, seed, n=None):
     """LHS initialization, i.e. the quality of not relaxing at all."""
-    n = n or N_BY_DIM[dim]
+    n = n or N_BY_DIM.get(dim, 512)
     pts = LHCSampler(random_state=seed).sample(n, dim)
     return {"dim": dim, "mode": "LHS (no relaxation)", "seed": seed,
             "n": n, **score(pts, dim), "time_s": 0.0, "epochs": 0}
 
 
-# `torus_ce` was dropped from the metric panel (Clark-Evans stopped being
-# trustworthy above d~16). `wrap_disc` replaces it as the headline scalar --
-# and it runs the other way: CE was higher-better, a normalised discrepancy
-# is LOWER-better, with 1.0 = random. Every selection below is flipped to
-# match; getting that wrong picks the worst design rather than the best.
-COLS = ("wrap_disc", "proj1", "proj2", "epochs", "time_s")
+# The headline is `separation` -- the shared metric, defined once in
+# `torann.metrics` so this project and torann cannot drift apart again. It is
+# HIGHER-better, like the `torus_ce` it replaces, so the selections below read
+# as maxima. `wrap_disc` and the projection discrepancies stay as reported
+# columns and are deliberately NOT selected on: a discrepancy falls
+# monotonically with more relaxation, and projection discrepancy scores
+# marginal coverage, which is what an LHS is built to optimize. See
+# `torann.metrics` for the four metrics that were measured and rejected.
+COLS = ("separation", "wrap_disc", "proj1", "proj2", "epochs", "time_s")
 
 
 def summarize(rows, keys):
@@ -134,12 +164,14 @@ def summarize(rows, keys):
 
 
 def table(rows, keys):
-    head = list(keys) + ["wrap disc", "proj1", "proj2", "epochs", "time[s]"]
+    head = list(keys) + ["separation", "wrap disc", "proj1", "proj2",
+                         "epochs", "time[s]"]
     print("| " + " | ".join(head) + " |")
     print("|" + "---|" * len(head))
     for r in rows:
         cells = [str(r[k]) for k in keys]
-        cells += [f"{r['wrap_disc']:.3f}", f"{r['proj1']:.3f}", f"{r['proj2']:.3f}",
+        cells += [f"{r['separation']:.4f}", f"{r['wrap_disc']:.3f}",
+                  f"{r['proj1']:.3f}", f"{r['proj2']:.3f}",
                   f"{r['epochs']:.0f}", f"{r['time_s']:.2f}"]
         print("| " + " | ".join(cells) + " |")
 
@@ -156,23 +188,23 @@ def phase_force(seeds):
     """Which force law disperses best? Subset of dims, both modes."""
     rows = [
         run_once(dim, mode, seed, metric)
-        for dim in (2, 8, 32)
+        for dim in TUNE_DIMS
         for mode in MODES
         for metric in FORCES
         for seed in range(seeds)
     ]
     save("bench_force.json", rows)
     table(summarize(rows, ("metric", "mode", "dim")), ("metric", "mode", "dim"))
-    best = min(summarize(rows, ("metric",)), key=lambda r: r["wrap_disc"])
+    best = max(summarize(rows, ("metric",)), key=lambda r: r["separation"])
     print(f"\n>>> best force law: {best['metric']} "
-          f"(wrap disc {best['wrap_disc']:.3f}, lower is better)")
+          f"(separation {best['separation']:.4f}, higher is better)")
     return best["metric"]
 
 
 def phase_tune(metric, seeds):
     """The two knobs that dominate quality (batch_size, patience) and
     the one that dominates high-dimensional behaviour (k)."""
-    dims = (2, 8, 32)
+    dims = TUNE_DIMS
 
     rows = [
         run_once(dim, "k_nn", seed, metric, batch_size=bs, patience=pat)
@@ -184,8 +216,8 @@ def phase_tune(metric, seeds):
     save("bench_tune_stop.json", rows)
     agg = summarize(rows, ("batch_size", "patience"))
     table(agg, ("batch_size", "patience"))
-    top = min(r["wrap_disc"] for r in agg)
-    ok = [r for r in agg if r["wrap_disc"] <= top * 1.01]
+    top = max(r["separation"] for r in agg)
+    ok = [r for r in agg if r["separation"] >= top * 0.99]
     best = min(ok, key=lambda r: r["epochs"])
     print(f"\n>>> batch_size={best['batch_size']}, patience={best['patience']}")
 
@@ -201,8 +233,15 @@ def phase_tune(metric, seeds):
     table(agg_k, ("k",))
     # keep every projection better than random, then maximise regularity
     safe = [r for r in agg_k if r["proj1"] < 1.0] or agg_k
-    best_k = min(safe, key=lambda r: r["wrap_disc"])
-    print(f"\n>>> k={best_k['k']} (proj1 {best_k['proj1']:.3f} < 1 = better than random)")
+    # Same guard `patience` gets, and for the same reason: quality saturates
+    # in k while cost does not, so an unguarded `max` just picks the largest
+    # k on the grid and calls it tuning. Cheapest k within 1% of the best.
+    top_k = max(r["separation"] for r in safe)
+    best_k = min((r for r in safe if r["separation"] >= top_k * 0.99),
+                 key=lambda r: r["time_s"])
+    print(f"\n>>> k={best_k['k']} (separation {best_k['separation']:.4f}, "
+          f"within 1% of the best at the lowest cost; "
+          f"proj1 {best_k['proj1']:.3f} < 1 = better than random)")
     return {"batch_size": best["batch_size"], "patience": best["patience"],
             "k": best_k["k"]}
 
@@ -240,7 +279,7 @@ def phase_plot():
     })
     fig, axes = plt.subplots(1, 4, figsize=(14.5, 3.5))
     panels = (
-        ("wrap_disc", "wrap-around discrepancy\n(lower better, 1 = random)", True),
+        ("separation", "toroidal separation\n(higher better)", False),
         ("proj1", "1-D projection discrepancy\n(lower better, 1 = random)", True),
         ("epochs", "epochs used (early stop)", False),
         ("time_s", "wall time per run [s]", True),
@@ -262,8 +301,7 @@ def phase_plot():
         ax.set_title(title, fontsize=9)
         if logy:
             ax.set_yscale("log")
-        if col == "wrap_disc":
-            ax.axhline(1.0, color=slate, lw=0.8, ls="--")
+
         if col == "proj1":
             ax.axhline(1.0, color=slate, lw=0.8, ls="--")
         ax.legend(fontsize=8)
@@ -277,6 +315,9 @@ def phase_plot():
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--dims", type=int, nargs="+", default=None,
+                    help="override the dimension sweep (default: 2..64); "
+                         "a short list makes this runnable as a smoke test")
     ap.add_argument("--phase", default="all",
                     choices=["force", "tune", "main", "plot", "all"])
     ap.add_argument("--seeds", type=int, default=10,
@@ -286,6 +327,9 @@ if __name__ == "__main__":
     ap.add_argument("--metric", default=None,
                     help="skip the force phase and use this law")
     args = ap.parse_args()
+    if args.dims:
+        DIMS[:] = args.dims
+        TUNE_DIMS[:] = args.dims
 
     metric = args.metric
     params = {}

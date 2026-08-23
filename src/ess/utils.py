@@ -3,6 +3,10 @@ import warnings
 
 import numpy as np
 
+from torann.metrics import (
+    toroidal_separation as _torann_separation,
+)
+
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 """logging.Logger: Module-level logger for debugging ESA optimization steps."""
@@ -322,36 +326,43 @@ def projection_discrepancy(
     )
 
 
-def toroidal_separation(points: np.ndarray) -> float:
+def toroidal_separation(
+    points: np.ndarray, anchors: np.ndarray | None = None
+) -> float:
     r"""Separation of a design in the metric ESS optimizes.
 
-    $$ d_{\min} = \min_{i \ne j} d_{L_1}^{tor}(x_i, x_j) $$
+    Re-exported from `torann.metrics.toroidal_separation`, which is the
+    single definition shared by both projects. It used to be computed here
+    as well, and having two copies is how this module and torann's
+    benchmarks ended up disagreeing about what "better" means — with the
+    metric panel of one project silently outliving the other's rename. The
+    module docstring there records the four alternatives that were measured
+    and rejected, with the numbers.
 
-    the shortest distance between any two points, wrap-around included —
-    the maximin criterion, and the metric that keeps discriminating when
-    nearest-neighbour *means* flatten out in high dimension (at $d = 32$,
-    $n = 4000$: ESS 5.52 against 3.94 for uniform and 3.92 for LHS,
-    where the coverage radius differs by under 1%).
-
-    Note:
-        Not the same quantity as `euclidean_separation`, which
-        is Euclidean and ignores the wrap: on four points with one pair
-        straddling the seam it reports 0.633 where this returns 0.020.
-        Prefer this one for anything on the torus.
+    With `anchors`, this is the **refinement** objective, which is the task
+    ESS exists for: given static points already placed, how far did the new
+    batch stay from everything already there, and from itself. Pairs between
+    two anchors are excluded — they are given, and counting them would floor
+    the score at the anchors' own spacing so a perfect batch could not
+    improve it. Without `anchors`, the plain maximin separation.
 
     Args:
-        points (np.ndarray): Design of shape $(N, D)$, reduced modulo 1.
+        points (np.ndarray): Design, or the newly placed batch, shape
+            $(N, D)$.
+        anchors (np.ndarray | None): Optional $(M, D)$ points already
+            placed.
 
     Returns:
-        float: The minimum pairwise distance, or 0.0 if $N < 2$.
-    """
-    from torann.brute import exact_knn
+        float: The minimum distance in toroidal L1; higher is better, and
+        0.0 when no qualifying pair exists.
 
-    pts = np.mod(np.asarray(points, dtype=np.float64), 1.0)
-    if pts.shape[0] < 2:
-        return 0.0
-    _, dists = exact_knn(pts, pts, 2)
-    return float(np.min(dists[:, 1]))
+    Note:
+        Not the same quantity as `euclidean_separation`, which is Euclidean
+        and ignores the wrap: on four points with one pair straddling the
+        seam it reports 0.633 where this returns 0.020. Prefer this one for
+        anything on the torus.
+    """
+    return _torann_separation(points, anchors)
 
 
 # --- Deprecated aliases ------------------------------------------------------

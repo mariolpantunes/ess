@@ -63,11 +63,11 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-import ess  # noqa: E402
-from ess.samplers import LHCSampler, UniformSampler  # noqa: E402
-from ess.utils import (  # noqa: E402
-    expected_discrepancy,
-    wrap_around_discrepancy,
+from torann.metrics import toroidal_separation
+
+import ess
+from ess.samplers import LHCSampler, UniformSampler
+from ess.utils import (
     expected_discrepancy,
     wrap_around_discrepancy,
 )
@@ -91,6 +91,11 @@ def score(anchors, new, marginal_dims=8):
     disc = np.mean([wrap_around_discrepancy(union[:, [j]]) for j in dims])
     batch_disc = np.mean([wrap_around_discrepancy(new[:, [j]]) for j in dims])
     return {
+        # The shared headline (`torann.metrics`): the maximin restricted to
+        # pairs touching the new batch. `void_*` below measure only the
+        # distance to the anchors, so a batch that piles into one void
+        # scores well on them and badly on this.
+        "separation": float(toroidal_separation(new, anchors)),
         "void_mean": float(void.mean()),
         "void_min": float(void.min()),
         "combined_wrap_disc": wrap_around_discrepancy(union) / expected_discrepancy(len(union), union.shape[1]),
@@ -144,10 +149,12 @@ def run(dims, n_anchors, n_new, seeds):
     return rows
 
 
-COLS = ("void_mean", "void_min", "combined_wrap_disc", "marginal_disc", "time_s")
+COLS = ("separation", "void_mean", "void_min", "combined_wrap_disc",
+        "marginal_disc", "time_s")
 LABEL = {
     "void_mean": "void dist (mean)", "void_min": "void dist (worst)",
-    "combined_wrap_disc": "combined disc", "marginal_disc": "marginal disc",
+    "separation": "separation", "combined_wrap_disc": "combined disc",
+    "marginal_disc": "marginal disc",
     "time_s": "time[s]",
 }
 
