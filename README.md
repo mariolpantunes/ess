@@ -16,7 +16,7 @@ It simulates electrostatic repulsive forces to "relax" new points into the empty
 * **Radius-Based Interactions**: Supports physical range searches (interacting with *all* neighbors within a radius) alongside standard k-NN, with automatic L1-ball radius estimation for high-dimensional spaces.
 * **Single Scalable Engine**: Neighbour search is [torann](https://github.com/mariolpantunes/torann) — exact brute force at small N, toroidal LSH above its threshold, chosen internally; per-epoch coordinate updates are native (no index rebuilds).
 * **Robust Early Stopping**: Convergence is detected on the force field itself (plateau of the largest net force, learning-rate-decoupled), typically stopping in tens of epochs instead of hundreds.
-* **High-Dimensional Metrics**: Includes robust coverage metrics (Maximin, Clark-Evans Index, Sparse Grid Coverage) optimized for dimensions > 32D.
+* **High-Dimensional Metrics**: Ranks designs on wrap-around and projection discrepancy — normalised so 1.0 = random, and valid at any ambient dimension. Toroidal separation (shared with [torann](https://github.com/mariolpantunes/torann)) is reported as a diagnostic. Clark-Evans has been removed; see *Metrics* below for why.
 * **Smart Initialization**: Uses a vectorized "Best Candidate" sampling strategy to seed new batches in the most promising void regions.
 * **Guided Attraction (New in v0.5.0)**: Given the attractiveness of the measured points, placement and relaxation both balance repulsion against a pull toward promising regions, with the collapse condition checked rather than discovered.
 
