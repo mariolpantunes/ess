@@ -36,6 +36,10 @@ dev = [
     "vulture==2.16",
     "coverage==7.14.2",
     "pre-commit",
+    # Only the plot examples need it. It is here so `test_examples.py`
+    # actually runs them in CI instead of skipping them, which is the whole
+    # point of that test.
+    "matplotlib",
 ]
 
 [project.urls]

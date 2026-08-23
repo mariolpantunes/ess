@@ -65,7 +65,7 @@ repos:
         # to make a commit pass. `legacy.py` is reference material for tests
         # rather than shipped behaviour, hence the modest floor.
         entry: >-
-          bash -c 'PYTHONPATH=src python -m coverage run --source=src/ess -m
+          bash -c 'PYTHONPATH=src python -m coverage run --source=ess -m
           unittest discover -s test -q && python -m coverage report
           --fail-under=85'
         language: system

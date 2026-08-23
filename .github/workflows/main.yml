@@ -48,5 +48,5 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          python -m coverage run --source=src/ess -m unittest discover -s test
+          python -m coverage run --source=ess -m unittest discover -s test
           python -m coverage report -m --fail-under=85

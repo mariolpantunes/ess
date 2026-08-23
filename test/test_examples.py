@@ -19,6 +19,7 @@ benchmark nothing can check.
 Plot scripts that block on `plt.show()` run under a headless backend.
 """
 
+import importlib
 import os
 import pathlib
 import subprocess
@@ -47,7 +48,28 @@ SMALLEST = {
     "sample_3d_01": [],
 }
 
+# Import-time optional dependencies. A script whose dependency is missing
+# skips rather than fails: this suite must stay green on a bare checkout, and
+# CI installs the `dev` extra precisely so these actually run there.
+OPTIONAL = {
+    "sample_2d_00": ("matplotlib",),
+    "sample_2d_01": ("matplotlib",),
+    "sample_3d_00": ("matplotlib",),
+    "sample_3d_01": ("matplotlib",),
+}
+
 TIMEOUT = 600
+
+
+def _missing(name):
+    """Optional dependencies of `name` that this environment lacks."""
+    out = []
+    for dep in OPTIONAL.get(name, ()):
+        try:
+            importlib.import_module(dep)
+        except ImportError:
+            out.append(dep)
+    return out
 
 
 class TestExamplesRun(unittest.TestCase):
@@ -69,6 +91,9 @@ class TestExamplesRun(unittest.TestCase):
 
         for name in scripts:
             with self.subTest(script=name):
+                missing = _missing(name)
+                if missing:
+                    self.skipTest(f"needs {', '.join(missing)}")
                 with tempfile.TemporaryDirectory() as tmp:
                     # --out lands here rather than in the working tree; the
                     # scripts that write into examples/out are left alone,
