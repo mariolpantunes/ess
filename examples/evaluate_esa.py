@@ -1,17 +1,21 @@
 """Current `esa` against the legacy `_esa_01`, on speed and on quality.
 
-Quality is toroidal separation of the produced batch against the seed points
--- the shared metric, defined once in `torann.metrics`. It used to be a
-normalised wrap-around discrepancy *labelled* "Clark-Evans", which inverted
-the reading: a discrepancy is lower-better and a Clark-Evans index is
-higher-better, so the summary reported 25.39 for legacy against 2.39 for
-current and looked like a 10x regression when it was a 10x improvement. The
-script ran clean the whole time, which is why nobody noticed.
+Quality is the normalised wrap-around discrepancy, which is what this
+project ranks designs on -- see `benchmark_dispersion.py` for why it is a
+discrepancy and not a point metric. **Lower is better, and 1.0 = random.**
+
+That polarity is the whole reason this file needed fixing. The number was
+right all along; it was printed under a "Clark-Evans" heading, which is
+higher-better, so the summary read 25.39 for legacy against 2.39 for current
+and looked like a 10x regression when it is a 10x improvement. The script
+never crashed, which is why it went unnoticed -- a mislabelled metric is
+worse than a missing one.
 
 Run from the repository root::
 
     python examples/evaluate_esa.py
 """
+
 
 import time
 
@@ -19,7 +23,7 @@ import numpy as np
 
 from ess import esa as current_esa
 from ess.legacy import _esa_01 as legacy_esa
-from ess.utils import toroidal_separation
+from ess.utils import expected_discrepancy, wrap_around_discrepancy
 
 
 def run_benchmark():
@@ -29,7 +33,7 @@ def run_benchmark():
 
     print(
         f"{'Dim':>4} | {'N':>4} | {'Legacy(s)':>10} | {'Current(s)':>10} | "
-        f"{'Speedup':>8} | {'L-Sep':>10} | {'C-Sep':>10}"
+        f"{'Speedup':>8} | {'L-Disc':>10} | {'C-Disc':>10}"
     )
     print("-" * 75)
 
@@ -45,14 +49,18 @@ def run_benchmark():
             start_legacy = time.perf_counter()
             points_legacy = legacy_esa(samples, bounds, n=n, seed=42)
             time_legacy = time.perf_counter() - start_legacy
-            quality_legacy = toroidal_separation(points_legacy, samples)
+            quality_legacy = wrap_around_discrepancy(
+                points_legacy) / expected_discrepancy(
+                len(points_legacy), points_legacy.shape[1])
 
             # --- Benchmark Current Version ---
             # esa optimizes points as a batch, repelling each other and 'samples'
             start_current = time.perf_counter()
             points_current = current_esa(samples, bounds, n=n, seed=42)
             time_current = time.perf_counter() - start_current
-            quality_current = toroidal_separation(points_current, samples)
+            quality_current = wrap_around_discrepancy(
+                points_current) / expected_discrepancy(
+                len(points_current), points_current.shape[1])
 
             speedup = time_legacy / time_current
 
@@ -84,8 +92,8 @@ def print_markdown(data):
         "Legacy Time (s)",
         "Current Time (s)",
         "Speedup",
-        "Legacy separation",
-        "Current separation",
+        "Legacy wrap disc",
+        "Current wrap disc",
     ]
     header_line = "| " + " | ".join(headers) + " |"
     sep_line = "| " + " | ".join(["---"] * len(headers)) + " |"
@@ -114,8 +122,8 @@ def print_markdown(data):
     print("| --- | --- |")
     print(f"| Average Speedup | {avg_speedup:.2f}x |")
     print(f"| Median Speedup | {med_speedup:.2f}x |")
-    print(f"| Avg Legacy separation (higher better) | {avg_l_q:.4f} |")
-    print(f"| Avg Current separation (higher better) | {avg_c_q:.4f} |")
+    print(f"| Avg Legacy wrap disc (LOWER better, 1 = random) | {avg_l_q:.4f} |")
+    print(f"| Avg Current wrap disc (LOWER better, 1 = random) | {avg_c_q:.4f} |")
 
 
 if __name__ == "__main__":

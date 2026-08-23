@@ -91,10 +91,11 @@ def score(anchors, new, marginal_dims=8):
     disc = np.mean([wrap_around_discrepancy(union[:, [j]]) for j in dims])
     batch_disc = np.mean([wrap_around_discrepancy(new[:, [j]]) for j in dims])
     return {
-        # The shared headline (`torann.metrics`): the maximin restricted to
-        # pairs touching the new batch. `void_*` below measure only the
-        # distance to the anchors, so a batch that piles into one void
-        # scores well on them and badly on this.
+        # Diagnostic, not a ranking (see `benchmark_dispersion.py`): a
+        # toroidal-L1 gap is very nearly what ESS optimizes. It earns its
+        # place because `void_*` measure only the distance to the anchors,
+        # so a batch that piles into a single void scores well on them and
+        # badly here -- the shared definition lives in `torann.metrics`.
         "separation": float(toroidal_separation(new, anchors)),
         "void_mean": float(void.mean()),
         "void_min": float(void.min()),
@@ -149,8 +150,8 @@ def run(dims, n_anchors, n_new, seeds):
     return rows
 
 
-COLS = ("separation", "void_mean", "void_min", "combined_wrap_disc",
-        "marginal_disc", "time_s")
+COLS = ("void_mean", "void_min", "combined_wrap_disc",
+        "marginal_disc", "separation", "time_s")
 LABEL = {
     "void_mean": "void dist (mean)", "void_min": "void dist (worst)",
     "separation": "separation", "combined_wrap_disc": "combined disc",

@@ -32,8 +32,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from torann import ToroidalNN  # noqa: E402
-from torann.brute import exact_knn  # noqa: E402
+from torann import ToroidalNN
+from torann.brute import exact_knn
 
 OUT = os.path.join(os.path.dirname(__file__), "out")
 

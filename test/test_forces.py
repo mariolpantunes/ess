@@ -1,4 +1,3 @@
-# coding: utf-8
 
 """Unit tests for the toroidal force kernel, force laws and heuristics.
 
@@ -9,20 +8,21 @@ heuristic.
 """
 
 import inspect
+import itertools
 import math
 import unittest
 
 import numpy as np
 
 from ess.ess import (
-    NEIGHBOUR_TARGET,
-    _rank_normalise,
-    esa,
     METRIC_REGISTRY,
+    NEIGHBOUR_TARGET,
     _compute_forces,
     _l1_radius_heuristic,
     _pad_ragged,
+    _rank_normalise,
     _row_blocks,
+    esa,
     softened_inverse_force,
 )
 
@@ -123,7 +123,7 @@ class TestRowBlocking(unittest.TestCase):
             blocks = list(_row_blocks(rows, width, dim))
             self.assertEqual(blocks[0][0], 0)
             self.assertEqual(blocks[-1][1], rows)
-            for (_, prev_stop), (start, _) in zip(blocks, blocks[1:]):
+            for (_, prev_stop), (start, _) in itertools.pairwise(blocks):
                 self.assertEqual(prev_stop, start)
 
     def test_working_set_is_bounded(self):
@@ -194,7 +194,7 @@ class TestRadiusHeuristic(unittest.TestCase):
 
     def test_decreases_with_density(self):
         radii = [_l1_radius_heuristic(5, n) for n in (10, 100, 1000, 10000)]
-        self.assertTrue(all(a > b for a, b in zip(radii, radii[1:])))
+        self.assertTrue(all(a > b for a, b in itertools.pairwise(radii)))
 
     def test_never_spans_the_space(self):
         """The toroidal L1 diameter is d/2; a radius near it would make

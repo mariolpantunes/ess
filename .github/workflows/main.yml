@@ -32,11 +32,13 @@ jobs:
           # Pinned, and matching requirements.txt. Unpinned, a linter
           # release that enables new rules by default fails a PR that changed
           # none of the code it flags -- which is what happened at ruff 0.16.
-          pip install ruff==0.16.1 basedpyright==1.39.8 vulture==2.16
-          pip install .
+          # Pinned in pyproject's `dev` extra, the single source of truth
+          # this job and `pre-commit` both install from -- they used to name
+          # versions separately and drifted.
+          pip install ".[dev]"
 
       - name: Lint with Ruff
-        run: ruff check src
+        run: ruff check src test examples
 
       - name: Type-check with basedpyright
         run: basedpyright
@@ -44,5 +46,7 @@ jobs:
       - name: Dead code with Vulture
         run: vulture
 
-      - name: Run tests
-        run: python -m unittest discover -s test
+      - name: Run tests with coverage
+        run: |
+          python -m coverage run --source=src/ess -m unittest discover -s test
+          python -m coverage report -m --fail-under=85

@@ -37,8 +37,8 @@ repos:
   - repo: local
     hooks:
       - id: ruff
-        name: ruff (src)
-        entry: ruff check src
+        name: ruff (src, test, examples)
+        entry: ruff check src test examples
         language: system
         files: '(\.py$|^pyproject\.toml$)'
         pass_filenames: false
@@ -53,6 +53,21 @@ repos:
       - id: vulture
         name: vulture
         entry: vulture
+        language: system
+        files: '(\.py$|^pyproject\.toml$)'
+        pass_filenames: false
+
+      - id: coverage
+        name: coverage (unittest, --fail-under)
+        # The same run as `unittest`, measured, and kept separate so a
+        # coverage drop reads as a coverage failure rather than a test one.
+        # The floor ratchets: raise it when the number rises, never lower it
+        # to make a commit pass. `legacy.py` is reference material for tests
+        # rather than shipped behaviour, hence the modest floor.
+        entry: >-
+          bash -c 'PYTHONPATH=src python -m coverage run --source=src/ess -m
+          unittest discover -s test -q && python -m coverage report
+          --fail-under=85'
         language: system
         files: '(\.py$|^pyproject\.toml$)'
         pass_filenames: false

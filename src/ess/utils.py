@@ -2,7 +2,6 @@ import logging
 import warnings
 
 import numpy as np
-
 from torann.metrics import (
     toroidal_separation as _torann_separation,
 )

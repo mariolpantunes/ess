@@ -1,4 +1,3 @@
-# coding: utf-8
 
 """Tests for the attractiveness models."""
 
@@ -7,7 +6,7 @@ import unittest
 import numpy as np
 
 import ess
-import ess.attraction as attraction
+from ess import attraction
 
 
 def additive_truth(x):

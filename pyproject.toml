@@ -22,6 +22,22 @@ dependencies = [
     "torann>=0.4.0",
 ]
 
+[project.optional-dependencies]
+# The gate's toolchain, pinned in one place so `pre-commit` and
+# `.github/workflows` cannot run different versions of it. They used to name
+# versions separately and drifted -- CI pinned basedpyright 1.39.8 while this
+# repository's venv had 1.39.9 -- and `language: system` hooks, which is what
+# these are deliberately, run whatever is installed.
+#
+# Install with: pip install -e ".[dev]"
+dev = [
+    "ruff==0.16.1",
+    "basedpyright==1.39.8",
+    "vulture==2.16",
+    "coverage==7.14.2",
+    "pre-commit",
+]
+
 [project.urls]
 Homepage = "https://github.com/mariolpantunes/ess"
 Documentation = "https://mariolpantunes.github.io/ess/"
@@ -33,6 +49,15 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 120
+
+[tool.ruff.lint.per-file-ignores]
+# `test/` and `examples/` are linted now -- they are where the rot happens --
+# but two rules are noise outside the package: B023 (a closure over a loop
+# variable, always consumed in the same iteration by a benchmark harness
+# here) and RUF059 (an unused half of `idx, dst = ...` in a test that only
+# asserts on one). Everything else applies, correctness rules included.
+"test/**" = ["B023", "RUF059"]
+"examples/**" = ["B023", "RUF059"]
 
 [tool.basedpyright]
 typeCheckingMode = "standard"

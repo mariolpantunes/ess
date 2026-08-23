@@ -1,4 +1,3 @@
-# coding: utf-8
 
 """End-to-end tests of the toroidal ESA/ESS pipeline."""
 
@@ -6,11 +5,12 @@ import importlib
 import itertools
 import logging
 import unittest
+from typing import ClassVar
 
 import numpy as np
 
 import ess
-import ess.utils as utils
+from ess import utils
 
 # `ess.ess` is the exported *function*, which shadows the submodule of
 # the same name, so the private helpers need an explicit module import.
@@ -357,8 +357,8 @@ class TestAttractionField(unittest.TestCase):
         d, bounds = 16, np.array([[-5.0, 5.0]] * 16)
         static = rng.uniform(-5, 5, (60, d))
         attract = -np.linalg.norm(static, axis=1)
-        kw = dict(attractiveness=attract, attraction_weight=0.5,
-                  attraction_metric="cauchy", attraction_kwargs={"power": 1.0})
+        kw = {"attractiveness": attract, "attraction_weight": 0.5,
+                  "attraction_metric": "cauchy", "attraction_kwargs": {"power": 1.0}}
 
         def radius(every):
             return float(np.median([
@@ -504,7 +504,7 @@ class TestEstimateImprovesWithData(unittest.TestCase):
             ladder = [(m, self._error(d, m)) for m in (20, 40, 80, 160, 320)]
             errs = [e for _, e in ladder]
             # non-increasing, with a little slack for sampling noise
-            for (m0, e0), (m1, e1) in zip(ladder, ladder[1:]):
+            for (m0, e0), (m1, e1) in itertools.pairwise(ladder):
                 self.assertLessEqual(
                     e1, e0 * 1.10,
                     f"d={d}: error rose from {e0:.4f} at M={m0} to "
@@ -540,7 +540,10 @@ class TestPlacementVsRelaxation(unittest.TestCase):
 
     D = 16
     BOUNDS = np.array([[-5.0, 5.0]] * D)
-    KW = dict(attraction_metric="cauchy", attraction_kwargs={"power": 1.0})
+    KW: ClassVar[dict] = {
+        "attraction_metric": "cauchy",
+        "attraction_kwargs": {"power": 1.0},
+    }
 
     def _setup(self, seed=0, m=60):
         rng = np.random.default_rng(seed)

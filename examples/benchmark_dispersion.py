@@ -6,37 +6,45 @@ actually used, over several independent seeds driving the initial
 candidates (LHS init, smart-init pools, tie-breaking noise and the
 torann hash functions).
 
-The headline metric is **toroidal separation** -- the shortest distance
-from any point of the design to any other, wrap included. It is defined once,
-in ``torann.metrics``, and shared with torann, because two copies of a metric
-is exactly how this file ended up asking for a key that no longer existed.
-Higher is better, and it keeps discriminating at every dimension here:
-against an LHS batch it reads 13.7x at d=2 and still 1.3x at d=64, where the
-alternatives have collapsed to a fraction of a percent.
+Designs are **ranked on the discrepancies**, and that choice is the whole
+methodology of this file. They measure deviation from uniformity and
+reference no point metric at all, so no choice of geometry can flatter an
+arm that optimised it. ESS's force laws are repulsion over toroidal-L1
+neighbour distances, so a toroidal-L1 point metric is very nearly its
+objective function: ranking on one would be grading the optimiser with its
+own loss, and it would report a large margin for exactly that reason.
 
-``torann.metrics`` records the four metrics that were measured and rejected,
-with numbers. The short version: toroidal Clark-Evans and coverage radius
-both stop resolving above d~16 (coverage radius reads 13.183 against 13.180
-at d=64, with the better design fractionally behind); wrap-around discrepancy
-manages a 0.9% gap at d=64.
+  wrap_disc              full-dimensional wrap-around L2 discrepancy,
+                         normalized so 1.0 = random. The selection metric
+                         for every phase below. Lower is better.
 
-  projection discrepancy wrap-around L2 discrepancy averaged over 1-D and
-                         2-D projections, normalized so 1.0 = random. Held
-                         here as a *reported* column and deliberately never
-                         selected on. It has a fixed scale at every
-                         dimension, which is why it looks like the
-                         high-dimensional criterion, but it scores marginal
-                         coverage -- which is what a Latin hypercube is
-                         constructed to optimize, so an unrelaxed LHS wins
-                         it at every d by construction. It is a real
-                         criterion for the DoE effect-sparsity question;
-                         it is not a ranking of how well the voids got
-                         filled, and selecting on it inverts the conclusion.
+  proj1 / proj2          the same discrepancy averaged over 1-D and 2-D
+                         projections. Reported, not selected on: it holds a
+                         fixed scale at every ambient dimension, which is
+                         why it looks like the high-dimensional criterion,
+                         but it scores *marginal* coverage -- which is what
+                         a Latin hypercube is constructed to optimize, so an
+                         unrelaxed LHS wins it at every d by construction.
+                         It is the right question for DoE effect-sparsity
+                         and the wrong one for ranking void filling.
 
-  wrap_disc              full-dimensional wrap-around discrepancy, likewise
-                         reported and not selected on: a discrepancy falls
-                         monotonically with more relaxation, so any tuning
-                         phase that maximises it just asks for more epochs.
+  separation             toroidal-L1 gap to the nearest other point, from
+                         the shared definition in ``torann.metrics``.
+                         **Diagnostic only**, for the reason above. It is
+                         here because it is the one metric that keeps its
+                         resolution to d=64 while the others flatten, so it
+                         is worth *seeing*; it is not what decides.
+
+A discrepancy is lower-better and separation is higher-better. Every
+selection below is written against ``wrap_disc`` and reads as a minimum;
+mixing the polarities up picks the worst arm in every phase and reports it
+as the best, which has happened here once already.
+
+Because a discrepancy falls monotonically with more relaxation, an
+unguarded selection just asks for the largest ``k`` and the longest
+``patience`` on the grid and calls it tuning. Both are chosen as *the
+cheapest setting within 1% of the best*, which is the only reason those
+phases return anything but the corner of the grid.
 
 **Do not read the epoch counts as a comparison between two builds.** ESS
 stops on a plateau detector -- a 1% relative-improvement threshold with
@@ -135,15 +143,20 @@ def baseline(dim, seed, n=None):
             "n": n, **score(pts, dim), "time_s": 0.0, "epochs": 0}
 
 
-# The headline is `separation` -- the shared metric, defined once in
-# `torann.metrics` so this project and torann cannot drift apart again. It is
-# HIGHER-better, like the `torus_ce` it replaces, so the selections below read
-# as maxima. `wrap_disc` and the projection discrepancies stay as reported
-# columns and are deliberately NOT selected on: a discrepancy falls
-# monotonically with more relaxation, and projection discrepancy scores
-# marginal coverage, which is what an LHS is built to optimize. See
-# `torann.metrics` for the four metrics that were measured and rejected.
-COLS = ("separation", "wrap_disc", "proj1", "proj2", "epochs", "time_s")
+# **Rank on `wrap_disc`, not on `separation`.** The discrepancies measure
+# deviation from uniformity and reference no point metric at all, so no
+# choice of geometry can flatter an arm that optimised it (`ess/__init__`
+# says the same, and means it). `separation` is a toroidal-L1 gap and ESS's
+# force laws are repulsion over toroidal-L1 neighbour distances -- it is
+# very close to the objective, so ranking on it would be grading the
+# optimiser with its own loss. It is reported here as a diagnostic and is
+# never selected on.
+#
+# A discrepancy is LOWER-better, with 1.0 = random; separation is
+# higher-better. Mixing those up silently picks the worst arm in every
+# phase, so every selection below is written against `wrap_disc` and reads
+# as a minimum.
+COLS = ("wrap_disc", "proj1", "proj2", "separation", "epochs", "time_s")
 
 
 def summarize(rows, keys):
@@ -164,14 +177,14 @@ def summarize(rows, keys):
 
 
 def table(rows, keys):
-    head = list(keys) + ["separation", "wrap disc", "proj1", "proj2",
+    head = list(keys) + ["wrap disc", "proj1", "proj2", "separation",
                          "epochs", "time[s]"]
     print("| " + " | ".join(head) + " |")
     print("|" + "---|" * len(head))
     for r in rows:
         cells = [str(r[k]) for k in keys]
-        cells += [f"{r['separation']:.4f}", f"{r['wrap_disc']:.3f}",
-                  f"{r['proj1']:.3f}", f"{r['proj2']:.3f}",
+        cells += [f"{r['wrap_disc']:.3f}", f"{r['proj1']:.3f}",
+                  f"{r['proj2']:.3f}", f"{r['separation']:.4f}",
                   f"{r['epochs']:.0f}", f"{r['time_s']:.2f}"]
         print("| " + " | ".join(cells) + " |")
 
@@ -195,9 +208,9 @@ def phase_force(seeds):
     ]
     save("bench_force.json", rows)
     table(summarize(rows, ("metric", "mode", "dim")), ("metric", "mode", "dim"))
-    best = max(summarize(rows, ("metric",)), key=lambda r: r["separation"])
+    best = min(summarize(rows, ("metric",)), key=lambda r: r["wrap_disc"])
     print(f"\n>>> best force law: {best['metric']} "
-          f"(separation {best['separation']:.4f}, higher is better)")
+          f"(wrap disc {best['wrap_disc']:.3f}, lower is better)")
     return best["metric"]
 
 
@@ -216,8 +229,8 @@ def phase_tune(metric, seeds):
     save("bench_tune_stop.json", rows)
     agg = summarize(rows, ("batch_size", "patience"))
     table(agg, ("batch_size", "patience"))
-    top = max(r["separation"] for r in agg)
-    ok = [r for r in agg if r["separation"] >= top * 0.99]
+    top = min(r["wrap_disc"] for r in agg)
+    ok = [r for r in agg if r["wrap_disc"] <= top * 1.01]
     best = min(ok, key=lambda r: r["epochs"])
     print(f"\n>>> batch_size={best['batch_size']}, patience={best['patience']}")
 
@@ -236,10 +249,10 @@ def phase_tune(metric, seeds):
     # Same guard `patience` gets, and for the same reason: quality saturates
     # in k while cost does not, so an unguarded `max` just picks the largest
     # k on the grid and calls it tuning. Cheapest k within 1% of the best.
-    top_k = max(r["separation"] for r in safe)
-    best_k = min((r for r in safe if r["separation"] >= top_k * 0.99),
+    top_k = min(r["wrap_disc"] for r in safe)
+    best_k = min((r for r in safe if r["wrap_disc"] <= top_k * 1.01),
                  key=lambda r: r["time_s"])
-    print(f"\n>>> k={best_k['k']} (separation {best_k['separation']:.4f}, "
+    print(f"\n>>> k={best_k['k']} (wrap disc {best_k['wrap_disc']:.3f}, "
           f"within 1% of the best at the lowest cost; "
           f"proj1 {best_k['proj1']:.3f} < 1 = better than random)")
     return {"batch_size": best["batch_size"], "patience": best["patience"],
@@ -279,7 +292,7 @@ def phase_plot():
     })
     fig, axes = plt.subplots(1, 4, figsize=(14.5, 3.5))
     panels = (
-        ("separation", "toroidal separation\n(higher better)", False),
+        ("wrap_disc", "wrap-around discrepancy\n(lower better, 1 = random)", True),
         ("proj1", "1-D projection discrepancy\n(lower better, 1 = random)", True),
         ("epochs", "epochs used (early stop)", False),
         ("time_s", "wall time per run [s]", True),
@@ -302,8 +315,8 @@ def phase_plot():
         if logy:
             ax.set_yscale("log")
 
-        if col == "proj1":
-            ax.axhline(1.0, color=slate, lw=0.8, ls="--")
+        if col in ("wrap_disc", "proj1"):
+            ax.axhline(1.0, color=slate, lw=0.8, ls="--")   # 1.0 = random
         ax.legend(fontsize=8)
     fig.suptitle("toroidal ESS: n scaled with d (256 to 1024), 10 seeds, tuned defaults",
                  color=slate)

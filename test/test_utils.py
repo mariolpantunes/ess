@@ -1,12 +1,12 @@
-# coding: utf-8
 
 
-import math
 import unittest
 import warnings
+
 import numpy as np
+
 from ess import utils
-from ess.ess import _scale, _inv_scale, METRIC_REGISTRY
+from ess.ess import METRIC_REGISTRY, _inv_scale, _scale
 from ess.utils import (
     expected_discrepancy,
     projection_discrepancy,
@@ -56,18 +56,33 @@ class TestUtils(unittest.TestCase):
         cov_hd = utils.calculate_grid_coverage(pts_hd, bounds_hd, grid=3)
         self.assertGreater(cov_hd, 0.0)
 
-    def test_metrics_maximin_clarkevans(self):
-        """Test distribution metrics."""
-        # Triangle (Regular)
-        points = np.array([[0, 0], [1, 0], [0.5, 0.866]])
-        d = utils.euclidean_separation(points)
-        self.assertAlmostEqual(d, 1.0, places=3)
+    def test_separation_in_both_geometries(self):
+        """Both separations, and the gap between them.
 
-        # Clark Evans
-        # Clustered
-        clust = np.zeros((10, 2))
-        # Random/Uniform check (Statistical, loose bounds)
-        uni = np.random.rand(100, 2) * 10
+        This replaces a test that had been gutted: when Clark-Evans left the
+        metric panel its half of the body went with it, leaving two assigned
+        variables, no assertion and no blank line before the next method. It
+        passed for weeks while checking one third of what its name claimed.
+        """
+        # Equilateral triangle, side 1: no wrap involved, so both agree.
+        points = np.array([[0.0, 0.0], [1.0, 0.0], [0.5, 0.866]])
+        self.assertAlmostEqual(utils.euclidean_separation(points), 1.0,
+                               places=3)
+
+        # Across the seam the two must disagree, and that is the whole
+        # reason the toroidal one exists.
+        seam = np.array([[0.99, 0.5], [0.01, 0.5]])
+        self.assertAlmostEqual(utils.toroidal_separation(seam), 0.02,
+                               places=9)
+        self.assertAlmostEqual(utils.euclidean_separation(seam), 0.98,
+                               places=9)
+
+        # Clustered points are separated by ~0; spread ones are not.
+        clustered = np.zeros((10, 2))
+        self.assertAlmostEqual(utils.toroidal_separation(clustered), 0.0)
+        spread = np.array([[0.0, 0.0], [0.5, 0.0], [0.0, 0.5], [0.5, 0.5]])
+        self.assertGreater(utils.toroidal_separation(spread), 0.4)
+
     def test_force_functions(self):
         """Verify force function behaviors."""
         d = np.array([0.0, 1.0, 100.0])

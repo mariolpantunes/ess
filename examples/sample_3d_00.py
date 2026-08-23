@@ -6,8 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 import ess
-import ess.legacy as legacy
-import ess.utils as utils
+from ess import legacy, utils
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)

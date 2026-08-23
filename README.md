@@ -229,8 +229,26 @@ Uniformity metrics do not survive high dimension equally well, so
 | `wrap_around_discrepancy` | deviation from uniform over every wrap-around box, full dimension | **yes** |
 | `projection_discrepancy` | the same, averaged over 1-D / 2-D coordinate projections; fixed scale in any ambient $d$ | **yes** |
 | `expected_discrepancy` | the null both are divided by, so 1.0 = as uniform as random | — |
-| `toroidal_separation` | the smallest toroidal $L_1$ gap in the set | diagnostic only |
+| `toroidal_separation` | the smallest toroidal $L_1$ gap to another point (defined in `torann.metrics`) | diagnostic only |
 | `euclidean_separation`, `calculate_grid_coverage` | non-wrapping separation, and grid occupancy | provenance only |
+
+### Division of labour with torann
+
+`torann` answers **geometric** questions — which points are near which, and how
+far apart. It owns the neighbour index and the *definitions* of toroidal point
+metrics, each being one exact k-NN scan. ESS owns everything about **purpose**:
+how designs are generated, and which metric decides that one is better. That
+second question depends on what the points are for, so it is answered here and
+not there.
+
+The line was drawn after the alternative failed. With a metric defined in one
+project and chosen in another, a rename in one silently outlived the other: two
+benchmark scripts kept asking for a removed key and died in their reporting
+*after completing every run*, and a third printed a lower-is-better discrepancy
+under a higher-is-better heading — reporting a 10x improvement as a 10x
+regression — for weeks, without ever failing. `test/test_examples.py` now runs
+every example end to end, because importing them does not catch a bad key
+inside a report function.
 
 **Rank designs with the two discrepancies.** They measure deviation from
 uniformity and reference no point metric at all, so no choice of geometry
