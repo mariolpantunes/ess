@@ -3,6 +3,53 @@
 Attractiveness is only ever known where the objective was actually paid for.
 Everything else is an estimate, and this module is where estimates come from.
 
+**What these models are for, and what they are not.** Every force in ESS acts
+between *points*: repulsion pushes a node away from a point, attraction pulls
+it toward one. Both therefore need the attractiveness of *both* endpoints, and
+the two endpoints are not alike:
+
+* **Anchors are static and measured.** Their positions do not move and their
+  attractiveness is the objective value that was paid for. Nothing here is
+  used for them.
+* **Candidates move, and are never measured.** Their repulsion is still exact
+  -- it depends only on distance -- but their attractiveness cannot be
+  computed, and leaving it out is not neutral. `_rank_normalise` puts the
+  scale on `[0, 1]`, so an unset value reads as the *bottom* of it: every
+  candidate would be modelled as the least attractive object in the space,
+  candidates that should pull on one another would repel instead, and the only
+  attraction in the system would be toward the anchors.
+
+So a model here exists to **keep the pairwise force balance well posed for
+points that have no measurement**. It is not a search for the optimum, and it
+is not asked to name a position better than anything measured. Do not reason
+about it as a surrogate that has to *extrapolate*: what it has to do is supply
+a plausible, correctly-ranked value at a moving position.
+
+Three consequences that are easy to get backwards:
+
+1. **Being bounded by the measured range is not a handicap.**
+   `InverseDistance` returns a convex combination and so can never leave that
+   range. For this job that is a *guarantee*, not a limitation -- the value
+   only has to be plausible and correctly ordered, and a bounded estimate
+   cannot inject a force from a number that was never observed.
+2. **Degrading to the mean is the correct failure.** When a model has nothing
+   to say it should say nothing, so the force balance falls back to
+   repulsion. A model that instead fits confidently to noise is *worse than
+   useless*: it pulls the block somewhere unjustified. This is why `Auto`
+   scores abstention fairly and why `HarmonicRidge` is dangerous below
+   `M > 2 * d` -- see the table below.
+3. **The field is fitted once, from the anchors, before the relaxation
+   loop.** The anchors are static, so nothing about the fit changes as the
+   run proceeds; `_AttractionField` builds it in its constructor. What repeats
+   every `att_every` epochs is *evaluation* at the candidates' new positions,
+   which cannot be hoisted out: attractiveness belongs to a position, not to a
+   point, and a point that has relaxed into a good region must become an
+   attractor rather than carry its placement-time value. The harmonic models
+   make that cheap by tabulating the whole torus as `d` one-dimensional curves
+   at fit time (`_build_table`), after which a query is integer indexing and a
+   sum; `InverseDistance` has no closed form to tabulate and pays `O(M d)` per
+   query instead.
+
 **What fits a torus.** The space is $[0, 1)^d$ with opposite faces identified,
 so a model of it must be periodic: a polynomial is discontinuous at the seam
 and would assert a gradient across a boundary the space does not have. The
@@ -105,9 +152,23 @@ class InverseDistance(AttractionModel):
     """Shepard interpolation over the `k` nearest measured points.
 
     No coefficients, so nothing to under-determine: the estimate is a convex
-    combination of measured values and can never leave their range. That bound
-    is also the limitation -- it cannot call anywhere more promising than the
-    best point already evaluated, only rank the places between them.
+    combination of measured values and can never leave their range.
+
+    **That bound is a guarantee, not a handicap** -- see the module docstring.
+    The estimate is not asked to name a position better than anything measured;
+    it is asked to give a moving candidate a plausible, correctly-ordered value
+    so the force balance is well posed. Being unable to leave the measured
+    range means it can never inject a force from a number nobody observed.
+
+    The textbook objection is that distances concentrate in high dimension, so
+    the weights flatten and the estimate tends to the mean. That is true of the
+    *values* and is the right failure mode -- "no information", not something
+    wrong. It is **not** true that the guidance stops working: measured inside
+    OBLESA at `attraction_weight=2`, the share of the selected population that
+    the relaxed block wins is 74.9 / 73.1 / 72.1 / 71.0 percent at
+    `d = 8 / 16 / 32 / 64`, essentially flat, while `Detrended` over the same
+    range falls 70.4 -> 41.9 -> 18.0 -> 13.8 as its fit stops being
+    identifiable. Do not drop this model on the concentration argument alone.
 
     Args:
         k (int): Neighbours averaged over.
