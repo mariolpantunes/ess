@@ -112,7 +112,7 @@ new_points = esa(
     attraction_weight=0.5,              # pull against the repulsion
     attraction_metric='cauchy',         # must decay slower than the repulsion
     attraction_kwargs={'power': 1.0},
-    att_model='auto',                   # how unmeasured positions are estimated
+    att_model='idw',                    # how unmeasured positions are estimated
 )
 ```
 
@@ -121,11 +121,17 @@ paid for, so a candidate's is estimated. `att_model` picks how:
 
 | model | coefficients | how they are obtained |
 |---|---|---|
-| `idw` | none | inverse-distance over the `k_att` nearest measured points |
-| `fourier` | `2d+1` | least squares, ridge-regularised |
+| `idw` | none | **default**: inverse-distance over the `k_att` nearest measured points |
 | `projection` | `2d` | correlation against the basis, James-Stein shrunk |
-| `detrended` | `2d+1` | the Fourier fit plus IDW on its residual |
-| `auto` | — | **default**: cross-validates the others and keeps the best |
+
+`fourier`, `detrended` and `auto` were removed in v1.0.0. All three fit `2d`
+coefficients, and a caller supplies anchors by population size rather than by
+dimension, so staying identifiable needed a population growing linearly in `d`
+— where every anchor is a paid objective call. Measured inside OBLESA as the
+share of the selected population the relaxed block won, against 33% parity,
+`detrended` fell 70.4 → 13.8 across `d = 8..64` while `idw` held 74.9 → 71.0.
+`auto` additionally cross-validated four candidates on every fit: 23 ms at 60
+sources, 86 seconds at 15360.
 
 **Why a trigonometric basis.** The space is a torus, so a model of it has to be
 periodic — a polynomial is discontinuous at the seam and would assert a
@@ -135,12 +141,12 @@ quadratic well is the von Mises density, whose logarithm is
 axis. A first-harmonic model *is* an additive log-von-Mises field. Higher
 harmonics buy narrower and multimodal wells, at `2·harmonics·d` coefficients.
 
-**Which to use.** `fourier` solves for its coefficients, so it needs more
-measured points than unknowns; `projection` correlates instead, which stays
-defined at any count. Held-out error, normalised so 1.0 is what predicting the
-mean scores:
+**Which to use.** `idw`, unless you know the objective is additive and you
+have far more measured points than `2d`. Held-out error, normalised so 1.0 is
+what predicting the mean scores — the removed ridge is kept in the table
+because it is *why* the others are hedged:
 
-| truth | ridge | projection | idw |
+| truth | ridge (removed) | projection | idw |
 |---|---|---|---|
 | additive, `d=8`, `M=300` | **0.31** | 0.36 | 0.48 |
 | additive, `d=100`, `M=30` | **0.78** | 0.80 | 0.80 |
@@ -150,7 +156,16 @@ mean scores:
 Above 1.0 means worse than abstaining. Least squares commits hard, which pays
 when the basis matches the truth and costs when it does not; the shrunk
 projection and the interpolation both hedge. Four of the eight objectives in
-the downstream benchmark are non-separable, which is where that matters.
+the downstream benchmark are non-separable, which is where that matters — and
+it is why the model that wins the first row was still the wrong default.
+
+**Two costs `idw` does carry**, both measured rather than argued. Its query is
+`O(M·d)` with no closed form to tabulate, so 512 queries against 15360 sources
+at `d=100` take 2.35 s against 2.4 ms for a tabulated harmonic model. And in
+high dimension distances concentrate, so more sources stop helping:
+leave-one-out error at `d=100` moves only 0.624 → 0.614 as `M` goes 60 → 300.
+Neither bites at the anchor counts a population-sized caller supplies (60–400),
+which is the regime this default is chosen for.
 
 No fixed choice wins in both regimes, and the one that decides it — whether the
 additive basis matches the objective — cannot be read off `M` and `d`. So
@@ -174,7 +189,7 @@ class MyModel(ess.AttractionModel):
 ess.esa(samples, bounds, n=60, attractiveness=-scores, att_model=MyModel())
 ```
 
-`att_model` also takes a tuned built-in, e.g. `ess.HarmonicRidge(harmonics=3)`.
+`att_model` also takes a tuned built-in, e.g. `ess.HarmonicProjection(harmonics=3)`.
 
 Two guards are checked rather than left to a run. An attraction that
 out-pulls repulsion at contact collapses every free point onto its most

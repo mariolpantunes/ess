@@ -102,10 +102,7 @@ from . import attraction, baseline, legacy, samplers, utils
 # 2. Main API Exports
 from .attraction import (
     AttractionModel,
-    Auto,
-    Detrended,
     HarmonicProjection,
-    HarmonicRidge,
     InverseDistance,
 )
 from .ess import esa, ess
@@ -116,10 +113,7 @@ from .samplers import LHCSampler, Sampler, UniformSampler, check_sampler
 # Define __all__ to control what 'from ess import *' exports
 __all__ = [
     "AttractionModel",
-    "Auto",
-    "Detrended",
     "HarmonicProjection",
-    "HarmonicRidge",
     "InverseDistance",
     "LHCSampler",
     "Sampler",

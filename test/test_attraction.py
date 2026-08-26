@@ -49,7 +49,7 @@ class TestInterface(unittest.TestCase):
                 self.assertTrue(np.all(np.isfinite(out)))
 
     def test_get_model_accepts_name_class_and_instance(self):
-        built = attraction.HarmonicRidge(harmonics=3)
+        built = attraction.HarmonicProjection(harmonics=3)
         self.assertIs(attraction.get_model(built), built)
         self.assertIsInstance(attraction.get_model("projection"),
                               attraction.HarmonicProjection)
@@ -59,10 +59,10 @@ class TestInterface(unittest.TestCase):
 
     def test_get_model_forwards_only_what_the_class_takes(self):
         """`_AttractionField` passes every knob; each model takes its own."""
-        idw = attraction.get_model("idw", k=3, power=1.5, ridge=9.9, bins=8)
+        idw = attraction.get_model("idw", k=3, power=1.5, bins=8)
         self.assertEqual((idw.k, idw.power), (3, 1.5))
-        ridge = attraction.get_model("fourier", k=3, power=1.5, ridge=9.9)
-        self.assertEqual(ridge.ridge, 9.9)
+        proj = attraction.get_model("projection", k=3, power=1.5, bins=8)
+        self.assertEqual(proj.bins, 8)
 
     def test_get_model_rejects_nonsense(self):
         with self.assertRaises(ValueError):
@@ -71,7 +71,7 @@ class TestInterface(unittest.TestCase):
             attraction.get_model(42)
 
     def test_empty_source_set_is_not_an_error(self):
-        for name in ("fourier", "projection"):
+        for name in ("idw", "projection"):
             with self.subTest(model=name):
                 model = attraction.get_model(name)
                 model.fit(np.empty((0, 4)), np.empty(0), np.empty(0))
@@ -108,22 +108,6 @@ class TestCustomModel(unittest.TestCase):
 class TestRegimes(unittest.TestCase):
     """Which model to trust is a question about the data, not a preference."""
 
-    def test_ridge_wins_when_the_basis_matches_and_there_is_data(self):
-        d, m = 8, 300
-        ridge = held_out(attraction.HarmonicRidge(), additive_truth, d, m)
-        idw = held_out(attraction.InverseDistance(), additive_truth, d, m)
-        self.assertLess(ridge, idw)
-
-    def test_ridge_overclaims_when_the_basis_does_not_match(self):
-        """Fitting hard to structure that is absent is worse than abstaining.
-
-        This is the failure that matters in practice: four of the eight
-        benchmark objectives are non-separable, and a confident additive fit
-        of them scores below the constant predictor.
-        """
-        err = held_out(attraction.HarmonicRidge(), coupled_truth, 32, 120)
-        self.assertGreater(err, 1.0)
-
     def test_the_hedging_models_never_do(self):
         for name in ("projection", "idw"):
             for d, m in ((32, 120), (100, 300)):
@@ -141,47 +125,12 @@ class TestRegimes(unittest.TestCase):
         err = held_out(attraction.HarmonicProjection(), additive_truth, 100, 30)
         self.assertLess(err, 1.0)
 
-    def test_auto_refuses_the_model_that_would_overclaim(self):
-        """The case a ratio cannot see: enough data, wrong basis.
-
-        `M = 300` against `2d = 64` says the solve is well determined, and it
-        is -- of structure the truth does not have. Auto scores it instead.
-        """
-        rng = np.random.default_rng(0)
-        xs = rng.uniform(0, 1, size=(300, 32))
-        auto = attraction.Auto().fit(xs, coupled_truth(xs), np.ones(300))
-        self.assertNotIsInstance(auto.chosen, attraction.HarmonicRidge)
-        self.assertLess(auto.scores[type(auto.chosen).__name__],
-                        auto.scores["HarmonicRidge"])
-
-    def test_auto_takes_the_parametric_fit_when_it_earns_it(self):
-        rng = np.random.default_rng(0)
-        xs = rng.uniform(0, 1, size=(300, 8))
-        auto = attraction.Auto().fit(xs, additive_truth(xs), np.ones(300))
-        self.assertIsInstance(
-            auto.chosen, attraction.HarmonicRidge | attraction.Detrended)
-
-    def test_auto_interpolates_when_there_is_nothing_to_hold_out(self):
-        """Too few sources to cross-validate is not too few to be useful.
-
-        A parametric model correctly shrinks to the mean at four points and so
-        reports nothing; interpolation still separates a good corner from a
-        bad one, which is what the placement search needs.
-        """
-        pos = np.array([[0.1, 0.1], [0.9, 0.9], [0.1, 0.9], [0.9, 0.1]])
-        auto = attraction.Auto().fit(
-            pos, np.array([1.0, 0.0, 0.5, 0.5]), np.ones(4))
-        self.assertIsInstance(auto.chosen, attraction.InverseDistance)
-        self.assertGreater(auto.at(np.array([[0.12, 0.12]]))[0],
-                           auto.at(np.array([[0.88, 0.88]]))[0])
-
-
 class TestHarmonicInternals(unittest.TestCase):
     def test_table_agrees_with_the_closed_form(self):
         """The table is the same model, not a cheaper one that disagrees."""
         rng = np.random.default_rng(0)
         pos = rng.uniform(0, 1, size=(200, 5))
-        model = attraction.HarmonicRidge(harmonics=2)
+        model = attraction.HarmonicProjection(harmonics=2)
         model.fit(pos, additive_truth(pos), np.ones(200))
         query = rng.uniform(0, 1, size=(50, 5))
         tabulated = model.at(query)
@@ -192,17 +141,17 @@ class TestHarmonicInternals(unittest.TestCase):
         def second_only(x):
             return np.cos(4.0 * np.pi * x).sum(1)
 
-        one = held_out(attraction.HarmonicRidge(harmonics=1), second_only,
-                       6, 400)
-        two = held_out(attraction.HarmonicRidge(harmonics=2), second_only,
-                       6, 400)
+        one = held_out(attraction.HarmonicProjection(harmonics=1),
+                       second_only, 6, 400)
+        two = held_out(attraction.HarmonicProjection(harmonics=2),
+                       second_only, 6, 400)
         self.assertLess(two, one)
 
     def test_estimate_is_periodic_across_the_seam(self):
         """No seam: the space wraps, so the model must too."""
         rng = np.random.default_rng(0)
         pos = rng.uniform(0, 1, size=(120, 4))
-        model = attraction.HarmonicRidge().fit(
+        model = attraction.HarmonicProjection().fit(
             pos, additive_truth(pos), np.ones(120))
         left = np.full((1, 4), 1e-9)
         right = np.full((1, 4), 1.0 - 1e-9)

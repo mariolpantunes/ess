@@ -390,26 +390,46 @@ class TestAttractionModels(unittest.TestCase):
             err.append(abs(f.at(pos[i:i + 1])[0] - val[i]))
         return float(np.mean(err))
 
-    def test_the_fit_beats_inverse_distance_where_data_allows(self):
-        """Leave-one-out, 60 points: 0.47 idw against 0.12 fourier at d=8."""
-        for d in (8, 16):
-            self.assertLess(self._loo("fourier", d, 60),
-                            self._loo("idw", d, 60))
+    def test_more_points_helps_less_as_dimension_rises(self):
+        """More measured points is not a general escape from high dimension.
 
-    def test_more_points_is_what_fixes_high_dimension(self):
-        """60 points in 100 dimensions is underdetermined, and every model
-        correctly reports that it knows little. Raising the measured count at
-        the *same* dimension is what recovers the signal -- the limit is the
-        data, not the estimator."""
-        few = self._loo("fourier", 100, 60)
-        many = self._loo("fourier", 100, 300)
-        self.assertLess(many, few * 0.5)
+        This asserted a halving of the error, which held only for the
+        least-squares ridge: `M = 300` crosses its `M > 2d` threshold at
+        `d = 100` exactly, so the improvement it measured was the fit becoming
+        identifiable rather than the estimate getting more data. Neither
+        surviving model has a threshold to cross, and what they show instead
+        is the concentration of distances -- measured leave-one-out error,
+        `M = 60` against `M = 300`:
+
+        =============  ==========  ===========
+        model          d=8 ratio   d=100 ratio
+        =============  ==========  ===========
+        idw            0.69        0.98
+        projection     0.61        0.74
+        =============  ==========  ===========
+
+        At `d = 100` inverse-distance weighting gains essentially nothing from
+        five times the sources. That is the documented failure mode -- the
+        weights flatten and the estimate tends to the mean -- and it matters
+        for a caller who assumed more anchors would sharpen the field. It does
+        not; what extra anchors buy is on the placement side, where a probe is
+        scored against points whose objective was actually paid for.
+        """
+        for model in ("idw", "projection"):
+            for d in (8, 100):
+                with self.subTest(model=model, d=d):
+                    few = self._loo(model, d, 60)
+                    many = self._loo(model, d, 300)
+                    self.assertLessEqual(many, few)
+            # The gain is real where distances still separate.
+            self.assertLess(self._loo(model, 8, 300),
+                            self._loo(model, 8, 60) * 0.8)
 
     def test_the_table_matches_the_closed_form(self):
         """The fitted model is tabulated as `d` one-dimensional curves and
         looked up, so the table must not be a second, different model."""
         pos, val = self._sample(32, 60)
-        f = ess_core._AttractionField(pos, val, model="fourier")
+        f = ess_core._AttractionField(pos, val, model="projection")
         rng = np.random.default_rng(4)
         q = rng.random((2000, 32))
         # `_AttractionField` owns the sources; the model owns the estimate,
@@ -424,19 +444,19 @@ class TestAttractionModels(unittest.TestCase):
         q = rng.random((20000, 32))
         import time
         out = {}
-        for model in ("idw", "fourier"):
+        for model in ("idw", "projection"):
             f = ess_core._AttractionField(pos, val, model=model)
             f.at(q[:50])
             t = time.perf_counter()
             f.at(q)
             out[model] = time.perf_counter() - t
-        self.assertLess(out["fourier"], out["idw"])
+        self.assertLess(out["projection"], out["idw"])
 
     def test_the_basis_is_periodic(self):
         """A linear or polynomial basis is discontinuous at the wrap, and the
         model would disagree with itself across a seam the torus lacks."""
         pos, val = self._sample(6, 40)
-        f = ess_core._AttractionField(pos, val, model="fourier")
+        f = ess_core._AttractionField(pos, val, model="projection")
         near_zero = f.at(np.array([[1e-9] + [0.5] * 5]))
         near_one = f.at(np.array([[1.0 - 1e-9] + [0.5] * 5]))
         self.assertAlmostEqual(float(near_zero[0]), float(near_one[0]), places=6)
@@ -445,7 +465,7 @@ class TestAttractionModels(unittest.TestCase):
         """A convex combination of neighbours never can, so plain IDW cannot
         call anywhere more promising than the best point already evaluated."""
         pos, val = self._sample(4, 50)
-        f = ess_core._AttractionField(pos, val, model="fourier")
+        f = ess_core._AttractionField(pos, val, model="projection")
         rng = np.random.default_rng(2)
         got = f.at(rng.random((400, 4)))
         self.assertTrue(got.max() > val.max() or got.min() < val.min())
@@ -455,7 +475,7 @@ class TestAttractionModels(unittest.TestCase):
         static = rng.uniform(-5, 5, (40, 6))
         bounds = np.array([[-5.0, 5.0]] * 6)
         att = -np.linalg.norm(static, axis=1)
-        for model in ("idw", "fourier", "detrended"):
+        for model in ("idw", "projection"):
             out = ess.esa(static, bounds, n=20, seed=1, attractiveness=att,
                           attraction_weight=0.5, att_model=model,
                           attraction_metric="cauchy",
@@ -488,7 +508,7 @@ class TestEstimateImprovesWithData(unittest.TestCase):
                 + 0.5 * np.cos(2 * np.pi * x[:, 1])
                 + 0.25 * np.sin(4 * np.pi * x[:, 2]))
 
-    def _error(self, d, m, model="fourier", seeds=5):
+    def _error(self, d, m, model="projection", seeds=5):
         """Mean absolute error on a held-out set, averaged over seeds."""
         errs = []
         for seed in range(seeds):
@@ -521,7 +541,7 @@ class TestEstimateImprovesWithData(unittest.TestCase):
     def test_it_holds_for_every_model(self):
         """Whatever the estimator, paying for more points must not make it
         worse -- otherwise the caller cannot reason about the trade at all."""
-        for model in ("idw", "fourier", "detrended"):
+        for model in ("idw", "projection"):
             lo = self._error(16, 40, model=model)
             hi = self._error(16, 320, model=model)
             self.assertLess(hi, lo, f"{model}: {lo:.4f} -> {hi:.4f}")

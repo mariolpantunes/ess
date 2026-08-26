@@ -271,46 +271,6 @@ class _Harmonic(AttractionModel):
         return (v0 + (v1 - v0) * frac).sum(axis=1) + self._bias
 
 
-class HarmonicRidge(_Harmonic):
-    """Least squares for the coefficients, ridge-regularised. **`M > 2d`.**
-
-    Solves $(\\Phi^\\top W \\Phi + \\lambda I)w = \\Phi^\\top W y$ once per fit.
-    The penalty is what makes the system well-posed when the measured set is
-    smaller than the number of unknowns -- but well-posed is not informative:
-    the coefficients then shrink toward zero and the model degrades to the
-    global mean, which is constant in position and so carries nothing a
-    placement search can use. Prefer :class:`HarmonicProjection` there.
-
-    Args:
-        harmonics (int): Terms per axis. One is the log-von-Mises well; more
-            buy narrower and multimodal structure, at `2 * harmonics * d`
-            coefficients.
-        ridge (float): Penalty, relative to the total source weight.
-        bins (int): Resolution of the tabulated curves.
-    """
-
-    def __init__(self, harmonics: int = 1, ridge: float = 1e-2,
-                 bins: int = 4096):
-        super().__init__(harmonics=harmonics, bins=bins)
-        self.ridge = float(ridge)
-
-    def fit(self, positions, values, confidence):
-        pos = np.asarray(positions, dtype=np.float64)
-        val = np.asarray(values, dtype=np.float64)
-        wts = np.asarray(confidence, dtype=np.float64)
-        self._bias = _wmean(val, wts) if val.size else 0.0
-        if val.size == 0:
-            self._w, self._table = None, None
-            return self
-        phi = self._features(pos)
-        y = val - self._bias
-        a = (phi * wts[:, None]).T @ phi
-        a[np.diag_indices_from(a)] += self.ridge * max(1.0, float(wts.sum()))
-        self._w = np.linalg.solve(a, (phi * wts[:, None]).T @ y)
-        self._build_table(pos.shape[1])
-        return self
-
-
 class HarmonicProjection(_Harmonic):
     """Coefficients by correlation instead of by solving. **Any `M`.**
 
@@ -368,133 +328,21 @@ class HarmonicProjection(_Harmonic):
         return self
 
 
-class Detrended(AttractionModel):
-    """A trend model, corrected by inverse-distance weighting on its residual.
-
-    The trend can leave the range of the measured values, which is the point:
-    a convex combination never can, so interpolation alone cannot call
-    anywhere more promising than the best point already evaluated. The
-    residual correction puts back the local detail the trend smooths away.
-
-    Costs what the interpolation costs, so it is worth it only when the trend
-    is carrying signal -- adding a shrunk, uninformative trend to a working
-    interpolation makes it worse, not better.
-
-    Args:
-        trend (AttractionModel | None): Defaults to `HarmonicRidge()`.
-        local (AttractionModel | None): Defaults to `InverseDistance()`.
-    """
-
-    def __init__(self, trend: AttractionModel | None = None,
-                 local: AttractionModel | None = None):
-        self.trend = trend if trend is not None else HarmonicRidge()
-        self.local = local if local is not None else InverseDistance()
-
-    def fit(self, positions, values, confidence):
-        self.trend.fit(positions, values, confidence)
-        resid = np.asarray(values, dtype=np.float64) - self.trend.at(positions)
-        self.local.fit(positions, resid, confidence)
-        return self
-
-    def at(self, positions):
-        return self.trend.at(positions) + self.local.at(positions)
-
-
-class Auto(AttractionModel):
-    """Cross-validates the candidates on the measured points and keeps the best.
-
-    There is no model that wins everywhere, and the two things that decide it
-    are both properties of the run rather than of the library. Whether the
-    parametric fit is *identifiable* depends on `M` against `2d`. Whether the
-    additive basis *matches the objective* depends on the objective, and that
-    one cannot be read off a ratio at all -- on a truth with no additive
-    decomposition, least squares scores worse than abstaining while the same
-    ratio says it should be trusted.
-
-    So this measures instead of guessing. The sources are already paid for, so
-    holding some out costs no objective evaluations: each candidate is fitted
-    on `folds - 1` parts and scored on the one left out, and the winner is
-    refitted on everything. What that buys is the failure mode -- a model
-    confidently fitting structure that is not there loses to one that abstains,
-    which is the ordering the fixed choice got backwards.
-
-    Args:
-        candidates (list | None): Models to choose between. Defaults to the
-            ridge fit, the shrunk projection, the interpolation, and the
-            detrended combination.
-        folds (int): Cross-validation folds. Below `2 * folds` sources there is
-            nothing to hold out and the sparse-data model is used directly.
-    """
-
-    def __init__(self, candidates: "list[AttractionModel] | None" = None,
-                 folds: int = 3):
-        self.candidates = list(candidates) if candidates else [
-            HarmonicRidge(), HarmonicProjection(), InverseDistance(),
-            Detrended(),
-        ]
-        self.folds = max(2, int(folds))
-        self._chosen: AttractionModel = self.candidates[0]
-        self._scores: dict[str, float] = {}
-
-    def fit(self, positions, values, confidence):
-        pos = np.asarray(positions, dtype=np.float64)
-        val = np.asarray(values, dtype=np.float64)
-        conf = np.asarray(confidence, dtype=np.float64)
-        m = val.size
-
-        if m < 2 * self.folds:
-            # Nothing to hold out, so nothing to choose on. Interpolation is
-            # the right answer here rather than a shrunk fit: it has no
-            # coefficients to estimate, reproduces the sources exactly, and
-            # stays informative at a handful of points, where a parametric
-            # model correctly shrinks to the mean and so says nothing at all.
-            self._chosen = next(
-                (c for c in self.candidates
-                 if isinstance(c, InverseDistance)), self.candidates[0])
-            self._chosen.fit(pos, val, conf)
-            return self
-
-        spread = float(np.std(val)) or 1.0
-        part = np.arange(m) % self.folds
-        self._scores = {}
-        for cand in self.candidates:
-            total = 0.0
-            for f in range(self.folds):
-                train, test = part != f, part == f
-                cand.fit(pos[train], val[train], conf[train])
-                total += float(np.mean(np.abs(cand.at(pos[test])
-                                              - val[test])))
-            self._scores[type(cand).__name__] = total / self.folds / spread
-
-        best = min(self._scores, key=lambda k: self._scores[k])
-        self._chosen = next(c for c in self.candidates
-                            if type(c).__name__ == best)
-        self._chosen.fit(pos, val, conf)
-        return self
-
-    def at(self, positions):
-        return self._chosen.at(positions)
-
-    @property
-    def chosen(self) -> AttractionModel:
-        """Whichever model the last `fit` selected."""
-        return self._chosen
-
-    @property
-    def scores(self) -> "dict[str, float]":
-        """Held-out error per candidate, normalised so 1.0 is the mean."""
-        return dict(self._scores)
-
-
-#: Built-in models, by the name `att_model` accepts. `'fourier'` is the
-#: first-harmonic ridge this library shipped before the interface existed, so
-#: the name keeps meaning what it meant.
+#: Built-in models, by the name `att_model` accepts.
+#:
+#: `'fourier'`, `'detrended'` and `'auto'` were removed after a 468-arm
+#: factorial measured them against `'idw'` inside OBLESA. All three fit `2d`
+#: coefficients (`'detrended'` through its trend, `'auto'` through whichever
+#: candidate it picks), and a caller supplies anchors by population rather
+#: than by dimension, so identifiability needed a population growing linearly
+#: in `d` -- where every anchor is a paid objective call. Measured as the
+#: share of the selected population the relaxed block won, against 33% parity:
+#: `'detrended'` fell 70.4 -> 13.8 across d = 8..64 while `'idw'` held
+#: 74.9 -> 71.0. `'auto'` additionally cross-validated four candidates on
+#: every fit, which cost 22.8 ms at 60 sources and 86 seconds at 15360.
 MODELS = {
     "idw": InverseDistance,
-    "fourier": HarmonicRidge,
     "projection": HarmonicProjection,
-    "detrended": Detrended,
-    "auto": Auto,
 }
 
 

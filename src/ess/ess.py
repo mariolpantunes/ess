@@ -494,6 +494,43 @@ def _l1_radius_heuristic(
     return min(max(dim / 4.0 + z * math.sqrt(dim / 48.0), 1e-6), dim / 2.0)
 
 
+def _toroidal_l1(queries: np.ndarray, static: np.ndarray) -> np.ndarray:
+    r"""Toroidal $L_1$ distance from each query to each anchor, shape $(Q, M)$.
+
+    Per axis the wrap-around distance is $\min(|d|, 1 - |d|)$, because the
+    space is the unit torus -- the metric the index uses.
+
+    Two rewrites were measured and rejected, both faster and neither exact:
+
+    * $0.5 - \big||d| - 0.5\big|$ is the same function and needs no second
+      array, which removes an allocation. It agrees bitwise on uniform draws
+      but not on the values this actually sees: the kernel produces per-axis
+      differences arbitrarily close to zero, and there the two roundings stop
+      cancelling. 38 of 72 OBLESA populations moved.
+    * Accumulating one axis at a time drops the working set from $(Q, M, D)$
+      to $(Q, M)$ and runs 2.2-3.8x faster, but sums $D$ terms sequentially
+      where `sum(axis=2)` sums them pairwise. 46 of 72 populations moved, one
+      by 1.27 where a near-tie in the placement resolved the other way.
+
+    Both are worth taking with a sweep to re-establish quality behind them.
+    Neither is worth taking in the middle of one. What is left is exact: the
+    absolute value and the minimum both write into the buffer already
+    allocated, so the naive form's four $(Q, M, D)$ temporaries become two.
+
+    Args:
+        queries (np.ndarray): Positions, shape $(Q, D)$, in $[0, 1)$.
+        static (np.ndarray): Anchors, shape $(M, D)$, in $[0, 1)$.
+
+    Returns:
+        np.ndarray: Distances, shape $(Q, M)$.
+    """
+    delta = queries[:, None, :] - static[None, :, :]
+    np.abs(delta, out=delta)
+    wrapped = np.subtract(1.0, delta)
+    np.minimum(delta, wrapped, out=delta)
+    return delta.sum(axis=2)
+
+
 def _estimate_attractiveness(
     queries: np.ndarray,
     static: np.ndarray,
@@ -560,15 +597,13 @@ def _estimate_attractiveness(
     # builds a (Q, M, D) temporary, which at the sizes this is actually called
     # with -- 3840 candidates against 90 static points in 100 dimensions -- is
     # 276 MB per call, and the run spent 71% of its initialization time
-    # allocating and touching it. Chunking caps that at a few MB and leaves
-    # the arithmetic identical.
-    step = max(1, int(2_000_000 // max(m * max(queries.shape[1], 1), 1)))
+    # allocating and touching it. The budget is in elements of that temporary;
+    # 500k keeps a chunk inside L2 and measured fastest at every size tried,
+    # 2M and 8M both being slower.
+    step = max(1, int(500_000 // max(m * max(queries.shape[1], 1), 1)))
     for lo in range(0, q, step):
         hi = min(lo + step, q)
-        # Toroidal L1: per axis the wrap-around distance is min(|d|, 1-|d|),
-        # because the space is the unit torus -- the metric the index uses.
-        delta = np.abs(queries[lo:hi, None, :] - static[None, :, :])
-        dist = np.minimum(delta, 1.0 - delta).sum(axis=2)      # (chunk, M)
+        dist = _toroidal_l1(queries[lo:hi], static)
 
         nearest = np.argpartition(dist, kk - 1, axis=1)[:, :kk]
         rows = np.arange(hi - lo)[:, None]
@@ -635,15 +670,15 @@ class _AttractionField:
     __slots__ = ("_conf", "_pos", "_val", "decay", "model", "n_measured")
 
     def __init__(self, positions, values, k=8, power=2.0, decay=0.5,
-                 model: "str | type | attraction.AttractionModel" = "auto",
-                 ridge=1e-2, bins=4096):
+                 model: "str | type | attraction.AttractionModel" = "idw",
+                 bins=4096):
         self._pos = np.asarray(positions, dtype=np.float64)
         self._val = np.asarray(values, dtype=np.float64)
         self._conf = np.ones(self._val.shape[0], dtype=np.float64)
         self.n_measured = int(self._val.shape[0])
         self.decay = float(decay)
         self.model = attraction.get_model(
-            model, k=k, power=power, ridge=ridge, bins=bins)
+            model, k=k, power=power, bins=bins)
         self.model.fit(self._pos, self._val, self._conf)
 
     def at(self, positions: np.ndarray) -> np.ndarray:
@@ -1016,7 +1051,7 @@ def _esa(
     att_power: float = 2.0,
     placement_weight: float | None = None,
     att_every: int = 5,
-    att_model: "str | type | attraction.AttractionModel" = "auto",
+    att_model: "str | type | attraction.AttractionModel" = "idw",
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -1276,7 +1311,7 @@ def esa(
     att_power: float = 2.0,
     placement_weight: float | None = None,
     att_every: int = 5,
-    att_model: "str | type | attraction.AttractionModel" = "auto",
+    att_model: "str | type | attraction.AttractionModel" = "idw",
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
