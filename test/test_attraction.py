@@ -49,20 +49,18 @@ class TestInterface(unittest.TestCase):
                 self.assertTrue(np.all(np.isfinite(out)))
 
     def test_get_model_accepts_name_class_and_instance(self):
-        built = attraction.HarmonicProjection(harmonics=3)
+        built = attraction.InverseDistance(k=3)
         self.assertIs(attraction.get_model(built), built)
-        self.assertIsInstance(attraction.get_model("projection"),
-                              attraction.HarmonicProjection)
+        self.assertIsInstance(attraction.get_model("idw"),
+                              attraction.InverseDistance)
         self.assertIsInstance(
             attraction.get_model(attraction.InverseDistance),
             attraction.InverseDistance)
 
     def test_get_model_forwards_only_what_the_class_takes(self):
         """`_AttractionField` passes every knob; each model takes its own."""
-        idw = attraction.get_model("idw", k=3, power=1.5, bins=8)
+        idw = attraction.get_model("idw", k=3, power=1.5, nonsense=8)
         self.assertEqual((idw.k, idw.power), (3, 1.5))
-        proj = attraction.get_model("projection", k=3, power=1.5, bins=8)
-        self.assertEqual(proj.bins, 8)
 
     def test_get_model_rejects_nonsense(self):
         with self.assertRaises(ValueError):
@@ -71,7 +69,7 @@ class TestInterface(unittest.TestCase):
             attraction.get_model(42)
 
     def test_empty_source_set_is_not_an_error(self):
-        for name in ("idw", "projection"):
+        for name in ("idw",):
             with self.subTest(model=name):
                 model = attraction.get_model(name)
                 model.fit(np.empty((0, 4)), np.empty(0), np.empty(0))
@@ -109,49 +107,34 @@ class TestRegimes(unittest.TestCase):
     """Which model to trust is a question about the data, not a preference."""
 
     def test_the_hedging_models_never_do(self):
-        for name in ("projection", "idw"):
+        for name in ("idw",):
             for d, m in ((32, 120), (100, 300)):
                 with self.subTest(model=name, d=d, m=m):
                     err = held_out(attraction.get_model(name),
                                    coupled_truth, d, m)
                     self.assertLess(err, 1.0)
 
-    def test_projection_survives_where_the_solve_is_underdetermined(self):
-        """`M` well under `2d`: the regime `HarmonicRidge` cannot serve.
+    def test_the_estimate_cannot_leave_the_range_of_its_sources(self):
+        """The guarantee the whole default rests on.
 
-        Unshrunk, this scored 1.93 -- twice as bad as predicting the mean --
-        because 2d coefficients each carry noise and they accumulate.
+        A convex combination of measured values cannot exceed them, so the
+        field can never pull a probe toward a number nobody observed. The
+        removed parametric fits could and did -- that was the argument *for*
+        them, and it is why they were dangerous when the basis was wrong.
         """
-        err = held_out(attraction.HarmonicProjection(), additive_truth, 100, 30)
-        self.assertLess(err, 1.0)
+        rng = np.random.default_rng(2)
+        pos = rng.uniform(0, 1, size=(50, 4))
+        val = additive_truth(pos)
+        model = attraction.InverseDistance().fit(pos, val, np.ones(50))
+        got = model.at(rng.uniform(0, 1, size=(400, 4)))
+        self.assertGreaterEqual(got.min(), val.min())
+        self.assertLessEqual(got.max(), val.max())
 
-class TestHarmonicInternals(unittest.TestCase):
-    def test_table_agrees_with_the_closed_form(self):
-        """The table is the same model, not a cheaper one that disagrees."""
-        rng = np.random.default_rng(0)
-        pos = rng.uniform(0, 1, size=(200, 5))
-        model = attraction.HarmonicProjection(harmonics=2)
-        model.fit(pos, additive_truth(pos), np.ones(200))
-        query = rng.uniform(0, 1, size=(50, 5))
-        tabulated = model.at(query)
-        closed = model._features(query) @ model._w + model._bias
-        np.testing.assert_allclose(tabulated, closed, atol=1e-5)
-
-    def test_more_harmonics_fit_a_second_harmonic_better(self):
-        def second_only(x):
-            return np.cos(4.0 * np.pi * x).sum(1)
-
-        one = held_out(attraction.HarmonicProjection(harmonics=1),
-                       second_only, 6, 400)
-        two = held_out(attraction.HarmonicProjection(harmonics=2),
-                       second_only, 6, 400)
-        self.assertLess(two, one)
-
-    def test_estimate_is_periodic_across_the_seam(self):
-        """No seam: the space wraps, so the model must too."""
+    def test_the_estimate_is_periodic_across_the_seam(self):
+        """No seam: the space wraps, so the metric behind the estimate must."""
         rng = np.random.default_rng(0)
         pos = rng.uniform(0, 1, size=(120, 4))
-        model = attraction.HarmonicProjection().fit(
+        model = attraction.InverseDistance().fit(
             pos, additive_truth(pos), np.ones(120))
         left = np.full((1, 4), 1e-9)
         right = np.full((1, 4), 1.0 - 1e-9)

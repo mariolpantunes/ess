@@ -494,140 +494,6 @@ def _l1_radius_heuristic(
     return min(max(dim / 4.0 + z * math.sqrt(dim / 48.0), 1e-6), dim / 2.0)
 
 
-def _toroidal_l1(queries: np.ndarray, static: np.ndarray) -> np.ndarray:
-    r"""Toroidal $L_1$ distance from each query to each anchor, shape $(Q, M)$.
-
-    Per axis the wrap-around distance is $\min(|d|, 1 - |d|)$, because the
-    space is the unit torus -- the metric the index uses.
-
-    Two rewrites were measured and rejected, both faster and neither exact:
-
-    * $0.5 - \big||d| - 0.5\big|$ is the same function and needs no second
-      array, which removes an allocation. It agrees bitwise on uniform draws
-      but not on the values this actually sees: the kernel produces per-axis
-      differences arbitrarily close to zero, and there the two roundings stop
-      cancelling. 38 of 72 OBLESA populations moved.
-    * Accumulating one axis at a time drops the working set from $(Q, M, D)$
-      to $(Q, M)$ and runs 2.2-3.8x faster, but sums $D$ terms sequentially
-      where `sum(axis=2)` sums them pairwise. 46 of 72 populations moved, one
-      by 1.27 where a near-tie in the placement resolved the other way.
-
-    Both are worth taking with a sweep to re-establish quality behind them.
-    Neither is worth taking in the middle of one. What is left is exact: the
-    absolute value and the minimum both write into the buffer already
-    allocated, so the naive form's four $(Q, M, D)$ temporaries become two.
-
-    Args:
-        queries (np.ndarray): Positions, shape $(Q, D)$, in $[0, 1)$.
-        static (np.ndarray): Anchors, shape $(M, D)$, in $[0, 1)$.
-
-    Returns:
-        np.ndarray: Distances, shape $(Q, M)$.
-    """
-    delta = queries[:, None, :] - static[None, :, :]
-    np.abs(delta, out=delta)
-    wrapped = np.subtract(1.0, delta)
-    np.minimum(delta, wrapped, out=delta)
-    return delta.sum(axis=2)
-
-
-def _estimate_attractiveness(
-    queries: np.ndarray,
-    static: np.ndarray,
-    attract_static: np.ndarray,
-    k: int = 8,
-    power: float = 2.0,
-    confidence: np.ndarray | None = None,
-) -> np.ndarray:
-    r"""Attractiveness a candidate position is *expected* to have.
-
-    Attractiveness is only ever known for the static points -- they are the
-    ones whose objective has been paid for. A candidate has none, and treating
-    that as zero is not neutral: `_rank_normalise` puts the scale on $[0, 1]$,
-    so zero is the *bottom* of it, and every candidate is modelled as the least
-    attractive thing in the space. Candidates that should pull on each other
-    repel instead, and the only attraction in the system is toward the static
-    points.
-
-    The estimate is Shepard's method -- inverse-distance weighting over the `k`
-    nearest static points, under the same toroidal $L_1$ metric everything else
-    here uses:
-
-    $$ \hat a(c) = \frac{\sum_i w_i\, a_i}{\sum_i w_i},
-       \qquad w_i = d_{L1}^{tor}(c, x_i)^{-p} $$
-
-    A candidate sitting exactly on a static point takes that point's value
-    rather than dividing by zero.
-
-    The known limitation is the one every distance-weighted surrogate carries:
-    in high dimension distances concentrate, the weights flatten and $\hat a$
-    tends to the mean of `attract_static`. It degrades to "no information"
-    rather than to something wrong, which is the right failure mode, but the
-    guidance does fade as `dim` grows.
-
-    Args:
-        queries (np.ndarray): Positions to estimate, shape $(Q, D)$, in
-            $[0, 1)$.
-        static (np.ndarray): Points with known attractiveness, shape $(M, D)$,
-            in $[0, 1)$.
-        attract_static (np.ndarray): Their attractiveness, shape $(M,)$,
-            already normalised to $[0, 1]$.
-        k (int): Neighbours averaged over. Clamped to $M$.
-        power (float): Inverse-distance exponent $p$.
-        confidence (np.ndarray | None): Per-source weight in $(0, 1]$, folded
-            into $w_i$. Measured points sit at 1; a value inferred earlier
-            enters at less than 1 so a chain of inference fades toward the
-            mean instead of asserting itself. ``None`` treats every source as
-            measured.
-
-    Returns:
-        np.ndarray: Estimated attractiveness, shape $(Q,)$, within the range of
-        `attract_static`.
-    """
-    m = static.shape[0]
-    q = queries.shape[0]
-    if m == 0 or q == 0:
-        return np.zeros(q, dtype=np.float64)
-
-    kk = min(int(k), m)
-    out = np.empty(q, dtype=np.float64)
-    fallback = float(attract_static.mean())
-
-    # Chunked over queries. The obvious `queries[:, None, :] - static[None]`
-    # builds a (Q, M, D) temporary, which at the sizes this is actually called
-    # with -- 3840 candidates against 90 static points in 100 dimensions -- is
-    # 276 MB per call, and the run spent 71% of its initialization time
-    # allocating and touching it. The budget is in elements of that temporary;
-    # 500k keeps a chunk inside L2 and measured fastest at every size tried,
-    # 2M and 8M both being slower.
-    step = max(1, int(500_000 // max(m * max(queries.shape[1], 1), 1)))
-    for lo in range(0, q, step):
-        hi = min(lo + step, q)
-        dist = _toroidal_l1(queries[lo:hi], static)
-
-        nearest = np.argpartition(dist, kk - 1, axis=1)[:, :kk]
-        rows = np.arange(hi - lo)[:, None]
-        d_near = dist[rows, nearest]
-        a_near = attract_static[nearest]
-
-        exact = d_near <= 0.0
-        with np.errstate(divide="ignore", invalid="ignore"):
-            w = np.where(exact, 0.0, d_near ** (-float(power)))
-        if confidence is not None:
-            w = w * confidence[nearest]
-        total = w.sum(axis=1)
-        chunk = np.full(hi - lo, fallback)
-        ok = total > 0
-        if ok.any():
-            chunk[ok] = np.einsum("qk,qk->q", w[ok], a_near[ok]) / total[ok]
-        hit = exact.any(axis=1)
-        if hit.any():
-            # On a known point: take its value rather than dividing by zero.
-            chunk[hit] = a_near[hit, np.argmax(exact[hit], axis=1)]
-        out[lo:hi] = chunk
-    return out
-
-
 class _AttractionField:
     r"""Attractiveness as a field over the torus, and the only source of
     estimates for it.
@@ -670,15 +536,13 @@ class _AttractionField:
     __slots__ = ("_conf", "_pos", "_val", "decay", "model", "n_measured")
 
     def __init__(self, positions, values, k=8, power=2.0, decay=0.5,
-                 model: "str | type | attraction.AttractionModel" = "idw",
-                 bins=4096):
+                 model: "str | type | attraction.AttractionModel" = "idw"):
         self._pos = np.asarray(positions, dtype=np.float64)
         self._val = np.asarray(values, dtype=np.float64)
         self._conf = np.ones(self._val.shape[0], dtype=np.float64)
         self.n_measured = int(self._val.shape[0])
         self.decay = float(decay)
-        self.model = attraction.get_model(
-            model, k=k, power=power, bins=bins)
+        self.model = attraction.get_model(model, k=k, power=power)
         self.model.fit(self._pos, self._val, self._conf)
 
     def at(self, positions: np.ndarray) -> np.ndarray:

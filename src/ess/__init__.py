@@ -100,11 +100,7 @@ from torann import ToroidalNN
 from . import attraction, baseline, legacy, samplers, utils
 
 # 2. Main API Exports
-from .attraction import (
-    AttractionModel,
-    HarmonicProjection,
-    InverseDistance,
-)
+from .attraction import AttractionModel, InverseDistance
 from .ess import esa, ess
 
 # 4. Sampler Exports
@@ -113,7 +109,6 @@ from .samplers import LHCSampler, Sampler, UniformSampler, check_sampler
 # Define __all__ to control what 'from ess import *' exports
 __all__ = [
     "AttractionModel",
-    "HarmonicProjection",
     "InverseDistance",
     "LHCSampler",
     "Sampler",
