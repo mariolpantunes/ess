@@ -63,6 +63,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from torann.brute import pairwise_l1
 from torann.metrics import toroidal_separation
 
 import ess
@@ -76,16 +77,10 @@ OUT = os.path.join(os.path.dirname(__file__), "out")
 VERSION = getattr(ess, "__version__", "dev")
 
 
-def _toroidal_l1(a, b):
-    """Pairwise toroidal L1 distances between rows of `a` and rows of `b`."""
-    delta = np.abs(a[:, None, :] - b[None, :, :])
-    return np.minimum(delta, 1.0 - delta).sum(axis=2)
-
-
 def score(anchors, new, marginal_dims=8):
     """The metric panel for one batch of new points."""
     n = len(new)
-    void = _toroidal_l1(new, anchors).min(axis=1)
+    void = pairwise_l1(new, anchors).min(axis=1)
     union = np.vstack([anchors, new])
     dims = range(min(marginal_dims, new.shape[1]))
     disc = np.mean([wrap_around_discrepancy(union[:, [j]]) for j in dims])

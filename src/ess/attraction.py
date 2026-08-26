@@ -154,6 +154,27 @@ class InverseDistance(AttractionModel):
     supplies far more anchors than a population gets the faster path without
     changing anything here.
 
+    **Let it take the LSH path.** The approximation looks alarming measured
+    against exact k-NN -- rank correlation between the two estimates falls to
+    0.638 at `M = 15360, d = 100` -- but that is the wrong reference. Both are
+    noisy readings of one field, and disagreeing with each other says nothing
+    about which is closer to it. Scored against the truth they are recovering:
+
+    ==========  =====  ==========  ========  =========
+    M           d      exact rho   LSH rho   speed-up
+    ==========  =====  ==========  ========  =========
+    960         100    0.4649      0.4648    25x
+    3840        100    0.5208      0.5281    45x
+    15360       100    0.5147      0.5429    111x
+    15360       8      0.9613      0.9613    73x
+    ==========  =====  ==========  ========  =========
+
+    LSH is as good or better everywhere, and at the largest cell it is
+    *better* than exact -- in high dimension the formally-nearest `k` are
+    barely nearer than any other `k`, so paying to identify them exactly buys
+    precision in a quantity that has stopped carrying information. Forcing
+    `brute_threshold` there spends two orders of magnitude for nothing.
+
     Args:
         k (int): Neighbours averaged over.
         power (float): Inverse-distance exponent.
