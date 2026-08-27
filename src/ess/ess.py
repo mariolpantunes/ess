@@ -1181,11 +1181,26 @@ def esa(
             $\min(2D + 1, \text{`K_LOCAL`})$.
         radius (float | None): Interaction radius as a **fraction of the
             torus diameter**, in $(0, 1]$. ``None`` or ``0`` derives it
-            from `geometry.l1_radius_for_count`. It is normalized rather than a
-            raw L1 cutoff so it can be forwarded by a caller that holds
-            points but not the geometry they were relaxed under; the cost
-            is that the useful band is narrow and moves with $d$, which is
-            what `radius_for_target` exists to answer.
+            from `geometry.l1_radius_for_count`.
+
+            Normalized rather than expressed in the units `bounds` is in,
+            because for this metric there is no such number: each axis is
+            min-maxed onto $[0, 1]$ *independently* and the distance is an
+            L1 sum over all $D$ of them, so the radius is a sum of $D$
+            dimensionless per-axis fractions. It equals a length in the
+            caller's units only if every axis happens to share a unit and a
+            width, which `bounds` need not.
+
+            Per axis it does read directly: ``radius / 2`` is the mean
+            fraction of *each axis's own range* the ball reaches. On bounds
+            of $[-5, 5]$, ``radius=0.2`` reaches 10% of the range, so 1.0 in
+            the caller's units, on a typical axis.
+
+            Setting it by hand gets harder as $D$ grows -- the value that
+            holds a fixed neighbour count converges on $1/2$, so at
+            $D = 1000$ the whole range from 1 to 64 neighbours spans
+            $0.474$ to $0.491$. Use `radius_for_target` rather than guessing
+            inside that band.
         tol (float): Absolute early-stop floor on the EMA of the largest
             force magnitude (fires only when forces genuinely vanish;
             the working criterion is the plateau — see `_esa`).
