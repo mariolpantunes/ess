@@ -84,6 +84,8 @@ import inspect
 import numpy as np
 from torann import ToroidalNN
 
+from . import geometry
+
 
 class AttractionModel(abc.ABC):
     """Estimates attractiveness at positions on the unit torus.
@@ -175,20 +177,44 @@ class InverseDistance(AttractionModel):
     precision in a quantity that has stopped carrying information. Forcing
     `brute_threshold` there spends two orders of magnitude for nothing.
 
+    **k-NN or radius.** The two differ in what they hold fixed. ``'k_nn'``
+    averages over a fixed *count*, so the neighbourhood grows and shrinks with
+    the local density and every candidate is estimated from the same number of
+    sources -- a candidate in a void reaches far away for its `k` and is
+    smoothed by distant, weakly-related values. ``'radius'`` fixes the
+    *volume* instead: a candidate in a dense region averages many sources, one
+    in a void averages few or none and falls back to the mean, which is the
+    honest answer for a position nothing nearby has measured. Which is better
+    is an empirical question and the reason this is a switch.
+
     Args:
-        k (int): Neighbours averaged over.
+        k (int): Neighbours averaged over in ``'k_nn'`` mode.
         power (float): Inverse-distance exponent.
         backend (str): Forwarded to `ToroidalNN`; `'auto'` picks the compiled
             kernel when it is installed.
+        search_mode (str): ``'k_nn'`` or ``'radius'``.
+        radius (float | None): Normalized radius in $(0, 1]$ for
+            ``'radius'`` mode -- a fraction of the torus diameter, see
+            `geometry.radius_from_normalized`. ``None`` or ``0`` derives one
+            from the fitted anchors that targets `k` neighbours, so the two
+            modes are calibrated to the same neighbourhood by default and
+            differ only in which of count and volume is held fixed.
     """
 
-    def __init__(self, k: int = 8, power: float = 2.0, backend: str = "auto"):
+    def __init__(self, k: int = 8, power: float = 2.0, backend: str = "auto",
+                 search_mode: str = "k_nn", radius: float | None = None):
+        if search_mode not in ("k_nn", "radius"):
+            raise ValueError(
+                f"search_mode must be 'k_nn' or 'radius', got {search_mode!r}")
         self.k = int(k)
         self.power = float(power)
         self.backend = str(backend)
+        self.search_mode = str(search_mode)
+        self.radius = radius
         self._val = np.empty(0)
         self._conf = np.empty(0)
         self._index: ToroidalNN | None = None
+        self._r: float = 0.0
 
     def fit(self, positions, values, confidence):
         pos = np.asarray(positions, dtype=np.float64)
@@ -196,8 +222,17 @@ class InverseDistance(AttractionModel):
         self._conf = np.asarray(confidence, dtype=np.float64)
         self._index = None
         if pos.shape[0]:
+            n, dim = pos.shape
+            # Resolved here, not in `at`: the radius is a property of the
+            # source set, which is fixed at fit time, and `at` runs on every
+            # refresh.
+            self._r = (
+                geometry.l1_radius_for_count(dim, n, min(self.k, n))
+                if not self.radius
+                else geometry.radius_from_normalized(float(self.radius), dim)
+            )
             self._index = ToroidalNN(backend=self.backend).fit(
-                np.mod(pos, 1.0), k=min(self.k, pos.shape[0]))
+                np.mod(pos, 1.0), k=min(self.k, n))
         return self
 
     def at(self, positions):
@@ -218,11 +253,21 @@ class InverseDistance(AttractionModel):
         if self._index is None or queries.shape[0] == 0:
             return np.zeros(queries.shape[0], dtype=np.float64)
 
-        kk = min(self.k, self._val.shape[0])
-        ids, dist = self._index.query(k=kk, queries=np.mod(queries, 1.0))
+        q = np.mod(queries, 1.0)
+        if self.search_mode == "radius":
+            # `pad=True` returns the same dense (m, width) shape `query` does,
+            # under the same -1 / inf convention -- which is the whole reason
+            # radius mode costs two lines here instead of a second weighting
+            # path. A query that found nothing is an all-padded row, and the
+            # fallback to the mean below is already what handles it.
+            ids, dist = self._index.query_radius(self._r, queries=q, pad=True)
+        else:
+            kk = min(self.k, self._val.shape[0])
+            ids, dist = self._index.query(k=kk, queries=q)
 
         # LSH mode guarantees `k` results, but a source set smaller than `k`
-        # pads with -1 / inf. Both are handled by zeroing the weight.
+        # pads with -1 / inf, and a radius that found nothing pads the whole
+        # row. All three are handled by zeroing the weight.
         missing = ids < 0
         safe = np.where(missing, 0, ids)
         a_near = self._val[safe]

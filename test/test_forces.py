@@ -16,14 +16,17 @@ import numpy as np
 
 from ess.ess import (
     METRIC_REGISTRY,
-    NEIGHBOUR_TARGET,
     _compute_forces,
-    _l1_radius_heuristic,
-    _pad_ragged,
     _rank_normalise,
     _row_blocks,
     esa,
     softened_inverse_force,
+)
+from ess.geometry import (
+    NEIGHBOUR_TARGET,
+    l1_radius_for_count,
+    radius_for_target,
+    radius_from_normalized,
 )
 
 
@@ -163,26 +166,6 @@ class TestRowBlocking(unittest.TestCase):
         np.testing.assert_allclose(whole, chunked, rtol=1e-12, atol=1e-12)
 
 
-class TestPadRagged(unittest.TestCase):
-    def test_pads_with_missing_convention(self):
-        res = [
-            (np.array([3, 1]), np.array([0.1, 0.2])),
-            (np.array([], dtype=np.int64), np.array([])),
-            (np.array([7]), np.array([0.05])),
-        ]
-        ids, dists = _pad_ragged(res)
-        self.assertEqual(ids.shape, (3, 2))
-        np.testing.assert_array_equal(ids[1], [-1, -1])
-        self.assertTrue(np.isinf(dists[1]).all())
-        self.assertEqual(ids[2, 0], 7)
-        self.assertEqual(ids[2, 1], -1)
-
-    def test_all_empty_keeps_valid_shape(self):
-        ids, dists = _pad_ragged([(np.array([], dtype=np.int64), np.array([]))])
-        self.assertEqual(ids.shape, (1, 1))
-        self.assertEqual(ids[0, 0], -1)
-
-
 class TestRadiusHeuristic(unittest.TestCase):
     """The contract is a *count*, not a distance: the ball should hold
     about `NEIGHBOUR_TARGET` neighbours at every dimension."""
@@ -190,10 +173,10 @@ class TestRadiusHeuristic(unittest.TestCase):
     def test_matches_the_exact_dense_formula(self):
         # dense regime (R <= 1/2): R = 0.5 * (target * d! / n)^(1/d)
         expected = 0.5 * math.sqrt(NEIGHBOUR_TARGET * 2.0 / 100.0)
-        self.assertAlmostEqual(_l1_radius_heuristic(2, 100), expected, places=9)
+        self.assertAlmostEqual(l1_radius_for_count(2, 100), expected, places=9)
 
     def test_decreases_with_density(self):
-        radii = [_l1_radius_heuristic(5, n) for n in (10, 100, 1000, 10000)]
+        radii = [l1_radius_for_count(5, n) for n in (10, 100, 1000, 10000)]
         self.assertTrue(all(a > b for a, b in itertools.pairwise(radii)))
 
     def test_never_spans_the_space(self):
@@ -201,7 +184,7 @@ class TestRadiusHeuristic(unittest.TestCase):
         every point a neighbour of every other."""
         for dim in (2, 8, 16, 32, 64, 128):
             for n in (256, 1024, 50000):
-                r = _l1_radius_heuristic(dim, n)
+                r = l1_radius_for_count(dim, n)
                 self.assertLess(r, dim / 2.0, (dim, n))
                 self.assertGreater(r, 0.0, (dim, n))
 
@@ -212,7 +195,7 @@ class TestRadiusHeuristic(unittest.TestCase):
         from torann.brute import exact_radius
 
         for dim, n in ((2, 512), (8, 512), (16, 1024), (32, 1024), (64, 1024)):
-            r = _l1_radius_heuristic(dim, n)
+            r = l1_radius_for_count(dim, n)
             pts = np.random.default_rng(0).random((n, dim))
             indptr, _, _ = exact_radius(pts, pts, r, np.arange(n))
             mean_count = float(np.diff(indptr).mean())
@@ -223,7 +206,7 @@ class TestRadiusHeuristic(unittest.TestCase):
         """Where the L1 ball would exceed the torus, the radius follows
         the CLT quantile around the mean pairwise distance d/4."""
         dim, n = 64, 1024
-        r = _l1_radius_heuristic(dim, n)
+        r = l1_radius_for_count(dim, n)
         self.assertLess(r, dim / 4.0)              # below the mean distance
         self.assertGreater(r, dim / 4.0 - 6.0 * math.sqrt(dim / 48.0))
 
@@ -473,3 +456,52 @@ class TestAttraction(unittest.TestCase):
                   attraction_weight=0.8, **self.slow)
         self.assertEqual(out.shape, (15, 4))
         self.assertTrue(np.isfinite(out).all())
+
+
+class TestNormalizedRadius(unittest.TestCase):
+    """The ``(0, 1]`` convention a radius crosses a layer boundary in.
+
+    It exists because OBLESA holds points that came out of `esa` and has no
+    way to know the geometry they were relaxed under, so the only radius it
+    can forward is one expressed as a fraction of something it does not have
+    to name.
+    """
+
+    def test_one_is_the_torus_diameter(self):
+        """Normalized 1 must reach every point, or the scale is wrong: the
+        largest toroidal-L1 distance is exactly ``dim / 2``."""
+        for dim in (1, 2, 10, 100, 1000):
+            with self.subTest(dim=dim):
+                self.assertAlmostEqual(
+                    radius_from_normalized(1.0, dim), dim / 2.0, places=12)
+
+    def test_zero_is_reserved_for_auto(self):
+        """Zero converts cleanly rather than raising: `esa` reads it as
+        'derive one', which is what lets the auto case survive a config file
+        or a CLI flag that cannot carry None."""
+        self.assertEqual(radius_from_normalized(0.0, 10), 0.0)
+
+    def test_out_of_range_is_refused(self):
+        for bad in (-0.1, 1.5):
+            with self.subTest(value=bad), self.assertRaises(ValueError):
+                radius_from_normalized(bad, 10)
+
+    def test_round_trips_the_heuristic(self):
+        for dim, n in ((2, 100), (10, 400), (100, 400), (1000, 400)):
+            with self.subTest(dim=dim, n=n):
+                norm = radius_for_target(dim, n)
+                self.assertGreater(norm, 0.0)
+                self.assertLessEqual(norm, 1.0)
+                self.assertAlmostEqual(
+                    radius_from_normalized(norm, dim),
+                    l1_radius_for_count(dim, n), places=12)
+
+    def test_the_useful_band_narrows_with_dimension(self):
+        """Not a nicety -- it is the whole reason `radius_for_target` is
+        public. The value that holds a fixed neighbour count converges on
+        1/2 as the distance distribution concentrates, so at high `dim` a
+        caller picking a normalized radius by hand is choosing inside a band
+        too narrow to guess."""
+        band = [radius_for_target(d, 400) for d in (2, 10, 100, 1000)]
+        self.assertTrue(all(x < y for x, y in itertools.pairwise(band)), band)
+        self.assertLess(abs(band[-1] - 0.5), abs(band[0] - 0.5))

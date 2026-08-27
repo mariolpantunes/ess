@@ -143,3 +143,87 @@ class TestRegimes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRadiusMode(unittest.TestCase):
+    """`InverseDistance(search_mode='radius')`.
+
+    The two modes differ in what they hold fixed -- k-NN the neighbour
+    *count*, radius the *volume* -- so these assert the consequences of that
+    difference rather than that the numbers match.
+    """
+
+    def setUp(self):
+        rng = np.random.default_rng(4)
+        self.pos = rng.random((200, 10))
+        self.val = rng.random(200)
+        self.conf = np.ones(200)
+        self.q = rng.random((50, 10))
+
+    def _fit(self, **kw):
+        return attraction.InverseDistance(k=8, **kw).fit(
+            self.pos, self.val, self.conf)
+
+    def test_the_default_radius_tracks_the_k_nn_estimate(self):
+        """Auto targets `k` neighbours, so the two modes start from the same
+        neighbourhood and should agree closely -- if they did not, the
+        default radius would be calibrated to something else."""
+        a = self._fit().at(self.q)
+        b = self._fit(search_mode="radius").at(self.q)
+        self.assertGreater(float(np.corrcoef(a, b)[0, 1]), 0.85)
+
+    def test_a_wide_radius_collapses_toward_the_mean(self):
+        """Averaging over nearly everything is averaging: the estimate must
+        lose its spread, which is the check that the radius is really
+        widening the neighbourhood and not being ignored."""
+        narrow = self._fit(search_mode="radius").at(self.q)
+        wide = self._fit(search_mode="radius", radius=0.95).at(self.q)
+        self.assertLess(float(wide.std()), float(narrow.std()))
+
+    def test_an_empty_neighbourhood_falls_back_to_the_mean(self):
+        """A radius small enough to find nothing is legal, not an error: the
+        honest estimate for a position nothing has measured near is the mean
+        of what has been measured."""
+        out = self._fit(search_mode="radius", radius=1e-9).at(self.q)
+        np.testing.assert_allclose(out, self.val.mean())
+
+    def test_a_query_on_a_source_takes_its_value(self):
+        """The exact-hit path is shared, so radius mode must not lose it."""
+        out = self._fit(search_mode="radius").at(self.pos[:5])
+        np.testing.assert_allclose(out, self.val[:5])
+
+    def test_bad_arguments_are_refused(self):
+        with self.assertRaises(ValueError):
+            attraction.InverseDistance(search_mode="bogus")
+        with self.assertRaises(ValueError):
+            attraction.InverseDistance(search_mode="radius", radius=1.5).fit(
+                self.pos, self.val, self.conf)
+
+
+class TestRadiusModeThroughEsa(unittest.TestCase):
+    """`att_search_mode` reaches the model, and is independent of the
+    repulsion's `search_mode`."""
+
+    def _run(self, **kw):
+        rng = np.random.default_rng(2)
+        bounds = np.tile([0.0, 1.0], (8, 1))
+        samples = rng.random((40, 8))
+        return ess.esa(samples, bounds, n=12, epochs=40, seed=1,
+                       attractiveness=rng.random(40), **kw)
+
+    def test_every_combination_of_the_two_modes_runs(self):
+        for repel in ("k_nn", "radius"):
+            for attract in ("k_nn", "radius"):
+                with self.subTest(search_mode=repel, att_search_mode=attract):
+                    out = self._run(search_mode=repel, att_search_mode=attract)
+                    self.assertEqual(out.shape, (12, 8))
+                    self.assertTrue(np.isfinite(out).all())
+
+    def test_the_two_modes_are_genuinely_independent(self):
+        """Changing one must move the result while the other is held: if the
+        arms coincided, the 2x2 would not be measuring two things."""
+        base = self._run(search_mode="k_nn", att_search_mode="k_nn")
+        att = self._run(search_mode="k_nn", att_search_mode="radius")
+        rep = self._run(search_mode="radius", att_search_mode="k_nn")
+        self.assertFalse(np.allclose(base, att))
+        self.assertFalse(np.allclose(base, rep))

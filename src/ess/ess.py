@@ -26,13 +26,12 @@ import collections.abc
 import inspect
 import logging
 import math
-import statistics
 import time
 
 import numpy as np
 from torann import ToroidalNN
 
-from . import attraction, samplers
+from . import attraction, geometry, samplers
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -55,17 +54,7 @@ $R/d$ (a quarter of the domain per epoch, toroidal Clark-Evans 1.28 ->
 settles (1.14 versus 1.30 here).
 """
 
-NEIGHBOUR_TARGET = 2
-r"""int: Neighbours the default interaction radius should contain.
 
-The smallest radius that costs nothing. k-NN mode is insensitive to it
-above 2 (it only normalises the force there — measured 1.469 vs 1.477
-at $d=8$, 1.299 vs 1.296 at $d=32$ for targets 2 and 3), while 1 is too
-tight in low dimension (2D toroidal Clark-Evans 1.86 versus 2.08).
-Radius mode, where it is the actual search cutoff, keeps improving with
-larger values at proportionally higher cost, so callers who want that
-should pass ``radius=`` (or ``k=``) explicitly.
-"""
 
 K_LOCAL = 5
 r"""int: Cap on the number of interacting neighbours per point.
@@ -438,60 +427,6 @@ def _inv_scale(
     return scl_arr * (max_val - min_val) + min_val
 
 
-def _l1_radius_heuristic(
-    dim: int, n_points: int, target: int = NEIGHBOUR_TARGET
-) -> float:
-    r"""Radius expected to contain `target` neighbours, from the exact
-    toroidal L1 distance law.
-
-    Per dimension the toroidal distance between two uniform points is
-    $u = \min(\delta,\, 1-\delta)$ with $\delta$ uniform, so
-    $u \sim \mathrm{U}(0, 1/2)$ *exactly*; the full distance is a sum of
-    $d$ such terms, with mean $d/4$ and variance $d/48$. Inverting
-
-    $$ N \cdot P(\mathrm{dist} \le R) = \text{target} $$
-
-    gives the radius in either regime:
-
-    * **Dense** — while $R \le 1/2$ the sum is still in its first
-      Irwin-Hall piece, where $P(\mathrm{dist} \le R) = (2R)^d/d!$ is
-      exactly the L1 ball volume, so
-      $R = \tfrac{1}{2}\,(\text{target} \cdot d!/N)^{1/d}$.
-    * **Sparse** — beyond that the ball volume exceeds the torus and the
-      formula is meaningless, but the central limit theorem applies:
-      $R = d/4 + z_{\text{target}/N}\,\sqrt{d/48}$.
-
-    Note:
-        The previous version multiplied the packing radius by a fixed
-        1.25 "safety margin". A margin on the *radius* is a margin of
-        $1.25^d$ on the *count* — 1.6 neighbours at $d=2$, but 1262 at
-        $d=32$ and $1.6\times10^{6}$ at $d=64$ — so the neighbourhood
-        grew without bound and had to be clamped at the mean pairwise
-        distance, which is why radius mode went global (and blew up
-        memory) in high dimension. Targeting the count directly is what
-        keeps it local at every $d$.
-
-    Args:
-        dim (int): Dimensionality $d$.
-        n_points (int): Total number of points $N$ (static + generated).
-        target (int): Desired neighbours inside the ball. Defaults to
-            `NEIGHBOUR_TARGET` — the smallest radius that does not cost
-            quality; callers wanting a wider interaction pass ``radius``
-            to `esa` directly.
-
-    Returns:
-        float: The interaction radius in toroidal L1 units.
-    """
-    n = max(n_points, 2)
-    count = max(min(target, n - 1), 1)
-
-    log_r = (math.lgamma(dim + 1) + math.log(count) - math.log(n)) / dim
-    dense = 0.5 * math.exp(log_r)
-    if dense <= 0.5:
-        return dense  # exact: still inside the first Irwin-Hall piece
-
-    z = statistics.NormalDist().inv_cdf(count / n)
-    return min(max(dim / 4.0 + z * math.sqrt(dim / 48.0), 1e-6), dim / 2.0)
 
 
 class _AttractionField:
@@ -536,13 +471,18 @@ class _AttractionField:
     __slots__ = ("_conf", "_pos", "_val", "decay", "model", "n_measured")
 
     def __init__(self, positions, values, k=8, power=2.0, decay=0.5,
-                 model: "str | type | attraction.AttractionModel" = "idw"):
+                 model: "str | type | attraction.AttractionModel" = "idw",
+                 search_mode: str = "k_nn", radius: float | None = None):
         self._pos = np.asarray(positions, dtype=np.float64)
         self._val = np.asarray(values, dtype=np.float64)
         self._conf = np.ones(self._val.shape[0], dtype=np.float64)
         self.n_measured = int(self._val.shape[0])
         self.decay = float(decay)
-        self.model = attraction.get_model(model, k=k, power=power)
+        # `get_model` filters by the constructor's signature, so a model
+        # that has no notion of a search mode simply does not receive one --
+        # the same capability protocol OBLESA forwards its keywords under.
+        self.model = attraction.get_model(
+            model, k=k, power=power, search_mode=search_mode, radius=radius)
         self.model.fit(self._pos, self._val, self._conf)
 
     def at(self, positions: np.ndarray) -> np.ndarray:
@@ -660,35 +600,6 @@ def _smart_init(
     return np.mod(picked + jitter, 1.0)
 
 
-def _pad_ragged(
-    results: list[tuple[np.ndarray, np.ndarray]],
-) -> tuple[np.ndarray, np.ndarray]:
-    """Packs per-query variable-length (ids, dists) lists into dense arrays.
-
-    Rows are padded with ``-1`` / ``inf`` — the same missing-neighbour
-    convention `ToroidalNN.query` uses — so radius-mode results feed the
-    exact same force kernel as k-NN results.
-
-    Args:
-        results (list[tuple[np.ndarray, np.ndarray]]): One (ids, distances)
-            pair per query, as returned by `ToroidalNN.query_radius`.
-
-    Returns:
-        tuple[np.ndarray, np.ndarray]: (ids, distances) of shape
-            $(M, m_{max})$; ``m_max`` is the largest neighbourhood found
-            (at least 1, so downstream shapes stay valid).
-    """
-    n = len(results)
-    width = max((ids.shape[0] for ids, _ in results), default=0)
-    width = max(width, 1)
-    ids = np.full((n, width), -1, dtype=np.int64)
-    dists = np.full((n, width), np.inf)
-    for i, (row_ids, row_dists) in enumerate(results):
-        ids[i, : row_ids.shape[0]] = row_ids
-        dists[i, : row_dists.shape[0]] = row_dists
-    return ids, dists
-
-
 #: Elements per intermediate array in the force kernel (~64 MB in
 #: float64). The kernel materialises several $(\text{rows}, m, D)$
 #: tensors at once, so this is what keeps radius mode — whose neighbour
@@ -749,8 +660,10 @@ def _compute_forces(
     r"""Net force on each active point from its neighbour list.
 
     This is the single force kernel for both search modes: k-NN passes the
-    dense `ToroidalNN.query` result, radius mode passes the padded output
-    of `_pad_ragged`. For active point $x_i$ with neighbours $y_j$:
+    dense `ToroidalNN.query` result, radius mode passes
+    `ToroidalNN.query_radius(pad=True)`, which is the same shape under the
+    same missing-neighbour convention. For active point $x_i$ with
+    neighbours $y_j$:
 
     $$ \vec{F}_i = \sum_{j} \frac{\vec{u}_{ij}}{\lVert\vec{u}_{ij}\rVert_2}
        \, f\!\left(\frac{d_{L1}(x_i, y_j)}{R}\right), \qquad
@@ -913,6 +826,8 @@ def _esa(
     attraction_kwargs: dict | None = None,
     k_att: int = 8,
     att_power: float = 2.0,
+    att_search_mode: str = "k_nn",
+    att_radius: float | None = None,
     placement_weight: float | None = None,
     att_every: int = 5,
     att_model: "str | type | attraction.AttractionModel" = "idw",
@@ -977,6 +892,13 @@ def _esa(
         attraction_kwargs (dict | None): Its parameters.
         k_att (int): Neighbours the attractiveness estimate averages over.
         att_power (float): Inverse-distance exponent of that estimate.
+        att_search_mode (str): ``'k_nn'`` or ``'radius'`` for the
+            attractiveness estimate. Independent of `search_mode`, which
+            governs the repulsion: the two are separate uses of the index
+            and there is no reason a run must make the same choice twice.
+        att_radius (float | None): Normalized radius in $(0, 1]$ for
+            ``att_search_mode='radius'``; ``None`` or ``0`` derives one
+            targeting `k_att` neighbours.
         placement_weight (float | None): Attraction weight for the placement
             only; ``None`` uses `attraction_weight`.
         att_every (int): Refresh the attractiveness field every this many
@@ -1002,7 +924,9 @@ def _esa(
     field = None
     if attract is not None and n_static > 0:
         field = _AttractionField(all_data[:n_static], attract[:n_static],
-                                 k=k_att, power=att_power, model=att_model)
+                                 k=k_att, power=att_power, model=att_model,
+                                 search_mode=att_search_mode,
+                                 radius=att_radius)
     if fitted:
         index.fit(all_data[:n_static], k=k, radius=radius_hint)
 
@@ -1059,7 +983,7 @@ def _esa(
         for epochs_used in range(1, epochs + 1):
             started = time.perf_counter()
             if search_mode == "radius":
-                ids, dists = _pad_ragged(index.query_radius(radius))
+                ids, dists = index.query_radius(radius, pad=True)
             else:
                 ids, dists = index.query(k=k)
             _accumulate(timers, "query_s", started)
@@ -1173,6 +1097,8 @@ def esa(
     attraction_kwargs: dict | None = None,
     k_att: int = 8,
     att_power: float = 2.0,
+    att_search_mode: str = "k_nn",
+    att_radius: float | None = None,
     placement_weight: float | None = None,
     att_every: int = 5,
     att_model: "str | type | attraction.AttractionModel" = "idw",
@@ -1186,7 +1112,7 @@ def esa(
     and maps the result back:
 
     $$ R = \min\!\left(\tfrac{5}{8}\,(d!/N)^{1/d},\; d/4\right)
-       \quad \text{(when not given; see `_l1_radius_heuristic`)} $$
+       \quad \text{(when not given; see `geometry.l1_radius_for_count`)} $$
 
     The same $R$ is the range cutoff in radius mode and the distance
     normalisation of every force law in both modes, which is what keeps
@@ -1253,7 +1179,13 @@ def esa(
             when memory, not time, is the constraint.
         k (int | None): Neighbours in k-NN mode; default
             $\min(2D + 1, \text{`K_LOCAL`})$.
-        radius (float | None): Interaction radius; default heuristic.
+        radius (float | None): Interaction radius as a **fraction of the
+            torus diameter**, in $(0, 1]$. ``None`` or ``0`` derives it
+            from `geometry.l1_radius_for_count`. It is normalized rather than a
+            raw L1 cutoff so it can be forwarded by a caller that holds
+            points but not the geometry they were relaxed under; the cost
+            is that the useful band is narrow and moves with $d$, which is
+            what `radius_for_target` exists to answer.
         tol (float): Absolute early-stop floor on the EMA of the largest
             force magnitude (fires only when forces genuinely vanish;
             the working criterion is the plateau — see `_esa`).
@@ -1378,6 +1310,18 @@ def esa(
             model correctly reports that it knows little. Raising the measured
             count to 300 at the same dimension drops fourier to 0.11, which is
             the evidence that the limit is the data rather than the estimator.
+        att_search_mode (str): ``'k_nn'`` or ``'radius'`` for the
+            attractiveness estimate. Deliberately independent of
+            `search_mode`, which governs the repulsion: they are two separate
+            uses of the index and nothing requires a run to make the same
+            choice twice. k-NN holds the neighbour *count* fixed, so a
+            candidate in a void reaches far out and is smoothed by distant
+            values; radius holds the *volume* fixed, so that candidate
+            averages few sources or none and falls back to the mean.
+        att_radius (float | None): Normalized radius in $(0, 1]$ for
+            ``att_search_mode='radius'``; ``None`` or ``0`` derives one
+            targeting `k_att` neighbours, so the two modes start from the
+            same neighbourhood and differ only in what they hold fixed.
         att_every (int): Epochs between refreshes of the attractiveness
             field. The estimate belongs to a position, so it is re-read as the
             points move; a stride of 5 is enough because a point travels at
@@ -1464,9 +1408,16 @@ def esa(
 
     k_value = k if k is not None else min(2 * dim + 1, K_LOCAL)
     batch = batch_size if batch_size is not None else max(n, 1)
+    # `radius` is a *fraction of the torus diameter*, not a distance: a
+    # caller one layer up holds points and no geometry, so a raw L1 cutoff is
+    # not a number it could form. Zero and None both mean "derive it", which
+    # keeps the auto case expressible from a config file or a CLI flag that
+    # cannot carry None. `radius_for_target` converts a neighbour count into
+    # a value for this argument.
     final_radius = (
-        radius if radius is not None
-        else _l1_radius_heuristic(dim, samples.shape[0] + n)
+        geometry.l1_radius_for_count(dim, samples.shape[0] + n)
+        if not radius
+        else geometry.radius_from_normalized(float(radius), dim)
     )
     logger.debug("Interaction radius (toroidal L1): %.4f", final_radius)
 
@@ -1497,6 +1448,8 @@ def esa(
         attraction_kwargs=attraction_kw,
         k_att=int(k_att),
         att_power=float(att_power),
+        att_search_mode=str(att_search_mode),
+        att_radius=att_radius,
         placement_weight=(None if placement_weight is None
                           else float(placement_weight)),
         att_every=max(1, int(att_every)),
