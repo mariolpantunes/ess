@@ -18,20 +18,47 @@ import statistics
 
 __all__ = [
     "NEIGHBOUR_TARGET",
+    "RADIUS_TARGET",
     "l1_radius_for_count",
     "radius_for_target",
 ]
 
 NEIGHBOUR_TARGET = 2
-r"""int: Neighbours the default interaction radius should contain.
+r"""int: Neighbours the interaction radius should contain in **k-NN mode**.
 
-The smallest radius that costs nothing. k-NN mode is insensitive to it
-above 2 (it only normalises the force there — measured 1.469 vs 1.477
-at $d=8$, 1.299 vs 1.296 at $d=32$ for targets 2 and 3), while 1 is too
-tight in low dimension (2D toroidal Clark-Evans 1.86 versus 2.08).
-Radius mode, where it is the actual search cutoff, keeps improving with
-larger values at proportionally higher cost, so callers who want that
-should pass ``radius=`` (or ``k=``) explicitly.
+Here the radius never selects anything -- `k` does that -- and this only
+sets the scale the force law is evaluated on, $\hat{d} = d_{L1}/R$. The
+target is inert above 2 for dispersion (1.469 vs 1.477 at $d=8$, 1.299 vs
+1.296 at $d=32$ for targets 2 and 3), so the cheapest safe value wins; 1 is
+too tight in low dimension (2D toroidal Clark-Evans 1.86 versus 2.08).
+
+It is *not* inert for the attraction balance, which is why this stayed at 2
+when `RADIUS_TARGET` moved: raising it enlarges $R$, shrinks every
+$\hat{d}$, and shifts where on the force curve a given
+`attraction_weight` lands. At 5 a weight of 0.2 stops clearing the margin
+a test pins it to. Two jobs, two constants.
+"""
+
+RADIUS_TARGET = 5
+r"""int: Neighbours the interaction radius should contain in **radius mode**.
+
+Matched to `ess.K_LOCAL`, so the two modes start from the same
+neighbourhood and differ only in whether the *count* or the *volume* is
+held fixed. That is the comparison worth making; anything else compares two
+differently sized neighbourhoods and calls it a comparison of modes.
+
+Radius mode inherited `NEIGHBOUR_TARGET`, and 2 was measured for the other
+mode. Here the number *is* the search cutoff, which is a different job: at a
+target of 2, **10.7% of points at $d=100$ and 14.5% at $d=200$ have an empty
+neighbourhood**, feel no force at all and never move. By 4 that is 1.3%; by
+8 it is zero.
+
+Five is an interim value, not a measured optimum. Design quality keeps
+improving with larger targets at every dimension tested -- radius mode
+overtakes k-NN at 32, 64 and 128 for $d = 40, 100, 200$ -- so the right
+default is likely higher and probably dimension-dependent. Five is where the
+dead-point problem is largely gone and the two modes are comparable; the
+sweep that settles the rest is running.
 """
 
 
