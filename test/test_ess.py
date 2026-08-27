@@ -10,7 +10,7 @@ from typing import ClassVar
 import numpy as np
 
 import ess
-from ess import utils
+from ess import attraction, utils
 
 # `ess.ess` is the exported *function*, which shadows the submodule of
 # the same name, so the private helpers need an explicit module import.
@@ -390,72 +390,74 @@ class TestAttractionModels(unittest.TestCase):
             err.append(abs(f.at(pos[i:i + 1])[0] - val[i]))
         return float(np.mean(err))
 
-    def test_the_fit_beats_inverse_distance_where_data_allows(self):
-        """Leave-one-out, 60 points: 0.47 idw against 0.12 fourier at d=8."""
-        for d in (8, 16):
-            self.assertLess(self._loo("fourier", d, 60),
-                            self._loo("idw", d, 60))
+    def test_more_points_helps_less_as_dimension_rises(self):
+        """More measured points is not a general escape from high dimension.
 
-    def test_more_points_is_what_fixes_high_dimension(self):
-        """60 points in 100 dimensions is underdetermined, and every model
-        correctly reports that it knows little. Raising the measured count at
-        the *same* dimension is what recovers the signal -- the limit is the
-        data, not the estimator."""
-        few = self._loo("fourier", 100, 60)
-        many = self._loo("fourier", 100, 300)
-        self.assertLess(many, few * 0.5)
+        This asserted a halving of the error, which held only for the
+        least-squares ridge: `M = 300` crosses its `M > 2d` threshold at
+        `d = 100` exactly, so the improvement it measured was the fit becoming
+        identifiable rather than the estimate getting more data. Neither
+        surviving model has a threshold to cross, and what they show instead
+        is the concentration of distances -- measured leave-one-out error,
+        `M = 60` against `M = 300`:
 
-    def test_the_table_matches_the_closed_form(self):
-        """The fitted model is tabulated as `d` one-dimensional curves and
-        looked up, so the table must not be a second, different model."""
-        pos, val = self._sample(32, 60)
-        f = ess_core._AttractionField(pos, val, model="fourier")
-        rng = np.random.default_rng(4)
-        q = rng.random((2000, 32))
-        # `_AttractionField` owns the sources; the model owns the estimate,
-        # so the closed form is read off the model rather than the field.
-        m = f.model
-        closed = m._features(q) @ m._w + m._bias
-        np.testing.assert_allclose(f.at(q), closed, atol=1e-5)
+        =============  ==========  ===========
+        model          d=8 ratio   d=100 ratio
+        =============  ==========  ===========
+        idw            0.69        0.98
+        projection     0.61        0.74
+        =============  ==========  ===========
 
-    def test_the_table_costs_less_than_the_distance_weighting(self):
-        pos, val = self._sample(32, 60)
-        rng = np.random.default_rng(5)
-        q = rng.random((20000, 32))
-        import time
-        out = {}
-        for model in ("idw", "fourier"):
-            f = ess_core._AttractionField(pos, val, model=model)
-            f.at(q[:50])
-            t = time.perf_counter()
-            f.at(q)
-            out[model] = time.perf_counter() - t
-        self.assertLess(out["fourier"], out["idw"])
+        At `d = 100` inverse-distance weighting gains essentially nothing from
+        five times the sources. That is the documented failure mode -- the
+        weights flatten and the estimate tends to the mean -- and it matters
+        for a caller who assumed more anchors would sharpen the field. It does
+        not; what extra anchors buy is on the placement side, where a probe is
+        scored against points whose objective was actually paid for.
+        """
+        for model in ("idw",):
+            for d in (8, 100):
+                with self.subTest(model=model, d=d):
+                    few = self._loo(model, d, 60)
+                    many = self._loo(model, d, 300)
+                    self.assertLessEqual(many, few)
+            # The gain is real where distances still separate.
+            self.assertLess(self._loo(model, 8, 300),
+                            self._loo(model, 8, 60) * 0.8)
 
-    def test_the_basis_is_periodic(self):
-        """A linear or polynomial basis is discontinuous at the wrap, and the
-        model would disagree with itself across a seam the torus lacks."""
+    def test_the_estimate_never_leaves_the_range_of_its_sources(self):
+        """This used to assert the opposite, of a parametric fit.
+
+        A harmonic fit can call a position more promising than anything
+        measured, which is what made it attractive and also what made it
+        dangerous when the basis did not match the objective. What is left is
+        a convex combination, so the bound is now a guarantee: no probe is
+        ever pulled toward a value nobody paid for.
+        """
+        pos, val = self._sample(4, 50)
+        f = ess_core._AttractionField(pos, val)
+        rng = np.random.default_rng(2)
+        got = f.at(rng.random((400, 4)))
+        self.assertGreaterEqual(got.min(), val.min())
+        self.assertLessEqual(got.max(), val.max())
+
+    def test_the_estimate_is_periodic(self):
+        """The space wraps, so an estimate over it must agree across the seam.
+
+        The basis used to carry this; the metric carries it now.
+        """
         pos, val = self._sample(6, 40)
-        f = ess_core._AttractionField(pos, val, model="fourier")
+        f = ess_core._AttractionField(pos, val)
         near_zero = f.at(np.array([[1e-9] + [0.5] * 5]))
         near_one = f.at(np.array([[1.0 - 1e-9] + [0.5] * 5]))
         self.assertAlmostEqual(float(near_zero[0]), float(near_one[0]), places=6)
-
-    def test_the_fit_can_leave_the_range_of_the_measured_values(self):
-        """A convex combination of neighbours never can, so plain IDW cannot
-        call anywhere more promising than the best point already evaluated."""
-        pos, val = self._sample(4, 50)
-        f = ess_core._AttractionField(pos, val, model="fourier")
-        rng = np.random.default_rng(2)
-        got = f.at(rng.random((400, 4)))
-        self.assertTrue(got.max() > val.max() or got.min() < val.min())
 
     def test_every_model_is_reachable_through_esa(self):
         rng = np.random.default_rng(0)
         static = rng.uniform(-5, 5, (40, 6))
         bounds = np.array([[-5.0, 5.0]] * 6)
         att = -np.linalg.norm(static, axis=1)
-        for model in ("idw", "fourier", "detrended"):
+        for model in ("idw",):
             out = ess.esa(static, bounds, n=20, seed=1, attractiveness=att,
                           attraction_weight=0.5, att_model=model,
                           attraction_metric="cauchy",
@@ -466,17 +468,39 @@ class TestAttractionModels(unittest.TestCase):
 class TestEstimateImprovesWithData(unittest.TestCase):
     """More measured points must make the estimate better, monotonically.
 
-    This is the property the whole design rests on. The attractiveness
-    function is fitted from the points whose objective has actually been paid
-    for, so the guarantee a caller needs is that paying for more of them buys
-    a better function -- and that the estimator is never the thing standing in
-    the way.
+    This is the property the whole design rests on: the field is fitted from
+    points whose objective has actually been paid for, so a caller needs the
+    guarantee that paying for more of them buys a better function.
 
-    It is also what settles the high-dimension question. At d=100 with 60
-    measured points every model is near-useless, and it would be easy to read
-    that as a defect in the estimator. It is not: 60 samples cannot determine
-    a function in 100 dimensions. Hold the dimension fixed, raise the count,
-    and the error falls -- so the lever is the population, not the maths.
+    **Better at what, though.** These tests asserted the held-out error falls
+    by a quarter. That held for the parametric models because `M` crossing
+    `2d` made their fit identifiable, and it does not hold for what is left:
+    at `d = 100` inverse-distance weighting moves 0.6384 -> 0.6041 as `M` goes
+    60 -> 1200, a 5% gain, because it has already hit the floor. Predicting
+    the constant mean scores 0.6662 there. Distances have concentrated, the
+    weights have flattened, and the estimate *is* a local mean -- no anchor
+    count fixes that, since the ceiling is the objective's own spread.
+
+    Placement never consumes the value. `_smart_init` scores a candidate as
+    `z(novelty) + w * z(a_hat)` and takes an argmax, so what has to improve is
+    the *ordering*, and it does long after the magnitudes stop:
+
+    ======  ==========  ==========  ============
+    d=100   abs error   spearman    top decile
+    ======  ==========  ==========  ============
+    M=60    0.6384      0.289       0.200
+    M=300   0.6121      0.409       0.248
+    M=1200  0.6041      0.442       0.276
+    ======  ==========  ==========  ============
+
+    Top-decile precision of 0.100 is chance. At the anchor count a
+    population-sized caller actually supplies, the field is already picking
+    the true best tenth at twice chance -- which is why the relaxed block
+    still wins 71% of the selected population at `d = 64` while its held-out
+    error says it knows almost nothing.
+
+    So error is asserted to be non-increasing and to beat the mean predictor;
+    the *gain* is asserted on the ranking, where the gain lives.
     """
 
     @staticmethod
@@ -488,7 +512,7 @@ class TestEstimateImprovesWithData(unittest.TestCase):
                 + 0.5 * np.cos(2 * np.pi * x[:, 1])
                 + 0.25 * np.sin(4 * np.pi * x[:, 2]))
 
-    def _error(self, d, m, model="fourier", seeds=5):
+    def _error(self, d, m, model="idw", seeds=5):
         """Mean absolute error on a held-out set, averaged over seeds."""
         errs = []
         for seed in range(seeds):
@@ -499,29 +523,58 @@ class TestEstimateImprovesWithData(unittest.TestCase):
             errs.append(float(np.abs(f.at(q) - self._truth(q)).mean()))
         return float(np.mean(errs))
 
-    def test_error_falls_as_measured_points_are_added(self):
+    def _ranking(self, d, m, seeds=5):
+        """Share of the true top decile the estimate's top decile recovers.
+
+        0.10 is chance. This is what the placement argmax actually consumes.
+        """
+        got = []
+        for seed in range(seeds):
+            rng = np.random.default_rng(1000 + seed)
+            pos = rng.random((m, d))
+            f = ess_core._AttractionField(pos, self._truth(pos))
+            q = rng.random((500, d))
+            est, tru = f.at(q), self._truth(q)
+            n = max(1, len(q) // 10)
+            pick = set(np.argsort(est)[-n:].tolist())
+            best = set(np.argsort(tru)[-n:].tolist())
+            got.append(len(pick & best) / n)
+        return float(np.mean(got))
+
+    def test_error_never_rises_as_measured_points_are_added(self):
         for d in (8, 32):
             ladder = [(m, self._error(d, m)) for m in (20, 40, 80, 160, 320)]
-            errs = [e for _, e in ladder]
             # non-increasing, with a little slack for sampling noise
             for (m0, e0), (m1, e1) in itertools.pairwise(ladder):
                 self.assertLessEqual(
                     e1, e0 * 1.10,
                     f"d={d}: error rose from {e0:.4f} at M={m0} to "
                     f"{e1:.4f} at M={m1}")
-            self.assertLess(errs[-1], errs[0] * 0.75, f"d={d}: {errs}")
 
-    def test_the_same_holds_where_the_data_is_scarcest(self):
-        """d=100 is where the estimate looks worst, and where it is most
-        important that more data is the answer."""
-        few = self._error(100, 60)
-        many = self._error(100, 600)
-        self.assertLess(many, few * 0.75, f"{few:.4f} -> {many:.4f}")
+    def test_the_ranking_is_what_keeps_improving(self):
+        """Including where the error has stopped: d=100 is the whole point."""
+        for d in (8, 32, 100):
+            with self.subTest(d=d):
+                few = self._ranking(d, 60)
+                many = self._ranking(d, 600)
+                self.assertGreater(many, few, f"d={d}: {few:.3f} -> {many:.3f}")
+                self.assertGreater(few, 0.10,
+                                   f"d={d}: {few:.3f} is chance or worse")
+
+    def test_the_estimate_beats_predicting_the_mean(self):
+        """The floor it plateaus onto, made explicit rather than assumed."""
+        for d, m in ((8, 60), (32, 60), (100, 60)):
+            with self.subTest(d=d, m=m):
+                rng = np.random.default_rng(7)
+                q = rng.random((500, d))
+                tru = self._truth(q)
+                flat = float(np.abs(tru - tru.mean()).mean())
+                self.assertLess(self._error(d, m), flat)
 
     def test_it_holds_for_every_model(self):
         """Whatever the estimator, paying for more points must not make it
         worse -- otherwise the caller cannot reason about the trade at all."""
-        for model in ("idw", "fourier", "detrended"):
+        for model in ("idw",):
             lo = self._error(16, 40, model=model)
             hi = self._error(16, 320, model=model)
             self.assertLess(hi, lo, f"{model}: {lo:.4f} -> {hi:.4f}")
@@ -604,10 +657,16 @@ class TestAttractivenessEstimate(unittest.TestCase):
     attractive thing in the space.
     """
 
+    @staticmethod
+    def _fit(static, values):
+        """The estimator, fitted -- `_idw` below is just this, named."""
+        return attraction.InverseDistance().fit(
+            static, values, np.ones(len(values)))
+
     def test_a_point_on_a_static_point_takes_its_value(self):
         static = np.array([[0.1, 0.1], [0.8, 0.8]])
         a = np.array([0.25, 0.75])
-        got = ess_core._estimate_attractiveness(static.copy(), static, a)
+        got = self._fit(static, a).at(static.copy())
         np.testing.assert_allclose(got, a)
 
     def test_the_estimate_is_bounded_by_the_known_values(self):
@@ -615,7 +674,7 @@ class TestAttractivenessEstimate(unittest.TestCase):
         static = rng.random((30, 5))
         a = rng.random(30)
         q = rng.random((200, 5))
-        got = ess_core._estimate_attractiveness(q, static, a)
+        got = self._fit(static, a).at(q)
         self.assertGreaterEqual(got.min(), a.min() - 1e-12)
         self.assertLessEqual(got.max(), a.max() + 1e-12)
 
@@ -623,13 +682,11 @@ class TestAttractivenessEstimate(unittest.TestCase):
         """Inverse-distance weighting: the near value must dominate."""
         static = np.array([[0.10, 0.5], [0.90, 0.5]])
         a = np.array([0.0, 1.0])
-        got = ess_core._estimate_attractiveness(
-            np.array([[0.15, 0.5]]), static, a)
+        got = self._fit(static, a).at(np.array([[0.15, 0.5]]))
         self.assertLess(got[0], 0.25)
 
     def test_no_static_points_is_not_an_error(self):
-        got = ess_core._estimate_attractiveness(
-            np.zeros((4, 3)), np.zeros((0, 3)), np.zeros(0))
+        got = self._fit(np.zeros((0, 3)), np.zeros(0)).at(np.zeros((4, 3)))
         self.assertEqual(got.shape, (4,))
 
     def test_it_wraps_around_the_torus(self):
@@ -637,9 +694,60 @@ class TestAttractivenessEstimate(unittest.TestCase):
         would call them the two most distant points in the axis."""
         static = np.array([[0.98, 0.5], [0.50, 0.5]])
         a = np.array([1.0, 0.0])
-        got = ess_core._estimate_attractiveness(
-            np.array([[0.02, 0.5]]), static, a)
+        got = self._fit(static, a).at(np.array([[0.02, 0.5]]))
         self.assertGreater(got[0], 0.5)
+
+
+class TestGuardsAndDegenerateInputs(unittest.TestCase):
+    """Branches that only fire on bad or edge input, and so never ran."""
+
+    def test_an_unknown_attraction_metric_is_refused_by_name(self):
+        """Silently falling back would make the force law unknowable."""
+        rng = np.random.default_rng(0)
+        static = rng.uniform(-5, 5, (20, 3))
+        bounds = np.array([[-5.0, 5.0]] * 3)
+        with self.assertRaises(ValueError) as cm:
+            ess.esa(static, bounds, n=5, seed=1,
+                    attractiveness=-np.linalg.norm(static, axis=1),
+                    attraction_weight=0.5,
+                    attraction_metric="no-such-law")
+        self.assertIn("no-such-law", str(cm.exception))
+
+    def test_a_generator_is_used_as_given(self):
+        """Passing a Generator must not reseed it into a different stream."""
+        static = np.random.default_rng(3).uniform(-5, 5, (20, 3))
+        bounds = np.array([[-5.0, 5.0]] * 3)
+        one = ess.esa(static, bounds, n=6, seed=np.random.default_rng(11))
+        two = ess.esa(static, bounds, n=6, seed=np.random.default_rng(11))
+        np.testing.assert_array_equal(one, two)
+
+    def test_a_per_axis_grid_must_match_the_dimension(self):
+        pts = np.random.default_rng(0).random((30, 3))
+        bounds = np.array([[0.0, 1.0]] * 3)
+        self.assertGreaterEqual(
+            utils.calculate_grid_coverage(pts, bounds, [4, 4, 4]), 0.0)
+        with self.assertRaises(ValueError):
+            utils.calculate_grid_coverage(pts, bounds, [4, 4])
+
+    def test_an_empty_grid_scores_nothing_rather_than_dividing_by_zero(self):
+        pts = np.random.default_rng(0).random((10, 2))
+        bounds = np.array([[0.0, 1.0]] * 2)
+        self.assertEqual(
+            utils.calculate_grid_coverage(pts, bounds, [0, 5]), 0.0)
+
+    def test_a_sampler_can_be_asked_for_no_points(self):
+        for sampler in (ess.LHCSampler(random_state=0),
+                        ess.UniformSampler(random_state=0)):
+            with self.subTest(sampler=type(sampler).__name__):
+                out = sampler.sample(0, 4)
+                self.assertEqual(out.shape, (0, 4))
+
+    def test_check_sampler_refuses_what_it_cannot_build(self):
+        self.assertIsInstance(ess.check_sampler(7), ess.LHCSampler)
+        built = ess.UniformSampler(random_state=1)
+        self.assertIs(ess.check_sampler(built), built)
+        with self.assertRaises(TypeError):
+            ess.check_sampler("lhs")
 
 
 class TestInitPool(unittest.TestCase):

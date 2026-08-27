@@ -97,29 +97,20 @@ except importlib.metadata.PackageNotFoundError:  # pragma: no cover
 # 3. Neighbour-search engine (re-exported for custom configuration)
 from torann import ToroidalNN
 
-from . import attraction, baseline, legacy, samplers, utils
+from . import attraction, baseline, geometry, legacy, samplers, utils
 
 # 2. Main API Exports
-from .attraction import (
-    AttractionModel,
-    Auto,
-    Detrended,
-    HarmonicProjection,
-    HarmonicRidge,
-    InverseDistance,
-)
+from .attraction import AttractionModel, InverseDistance
 from .ess import esa, ess
+from .geometry import NEIGHBOUR_TARGET, l1_radius_for_count, radius_for_target
 
 # 4. Sampler Exports
 from .samplers import LHCSampler, Sampler, UniformSampler, check_sampler
 
 # Define __all__ to control what 'from ess import *' exports
 __all__ = [
+    "NEIGHBOUR_TARGET",
     "AttractionModel",
-    "Auto",
-    "Detrended",
-    "HarmonicProjection",
-    "HarmonicRidge",
     "InverseDistance",
     "LHCSampler",
     "Sampler",
@@ -130,7 +121,10 @@ __all__ = [
     "check_sampler",
     "esa",
     "ess",
+    "geometry",
+    "l1_radius_for_count",
     "legacy",
+    "radius_for_target",
     "samplers",
     "utils",
 ]

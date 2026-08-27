@@ -37,57 +37,32 @@ Three consequences that are easy to get backwards:
    repulsion. A model that instead fits confidently to noise is *worse than
    useless*: it pulls the block somewhere unjustified. This is why `Auto`
    scores abstention fairly and why `HarmonicRidge` is dangerous below
-   `M > 2 * d` -- see the table below.
+   `M > 2 * d`, which is why no such model is left here.
 3. **The field is fitted once, from the anchors, before the relaxation
    loop.** The anchors are static, so nothing about the fit changes as the
    run proceeds; `_AttractionField` builds it in its constructor. What repeats
    every `att_every` epochs is *evaluation* at the candidates' new positions,
    which cannot be hoisted out: attractiveness belongs to a position, not to a
    point, and a point that has relaxed into a good region must become an
-   attractor rather than carry its placement-time value. The harmonic models
-   make that cheap by tabulating the whole torus as `d` one-dimensional curves
-   at fit time (`_build_table`), after which a query is integer indexing and a
-   sum; `InverseDistance` has no closed form to tabulate and pays `O(M d)` per
-   query instead.
+   attractor rather than carry its placement-time value. `InverseDistance`
+   has no closed form to tabulate, so each refresh pays `O(M d)`; see
+   `ess._toroidal_l1` for what that costs and what was done about it.
 
-**What fits a torus.** The space is $[0, 1)^d$ with opposite faces identified,
-so a model of it must be periodic: a polynomial is discontinuous at the seam
-and would assert a gradient across a boundary the space does not have. The
-periodic analogue of a quadratic well is the von Mises density,
-$p(\\theta) \\propto \\exp(\\kappa \\cos(\\theta - \\mu))$, whose logarithm is
+**One model, and what replaced the choice.** Every parametric model this
+module carried fitted `2d` coefficients against `M` measured points, so each
+one needed `M > 2d` to be identifiable -- a condition set by the caller's
+population, not by anything this module controls. `InverseDistance` fits
+nothing, has no such threshold, and is a convex combination of measured
+values, so it provably cannot leave their range. It is the only built-in left,
+and `k` and `power` are the whole of its configuration.
 
-$$ \\kappa\\cos(\\theta - \\mu)
-   = (\\kappa\\cos\\mu)\\cos\\theta + (\\kappa\\sin\\mu)\\sin\\theta $$
-
--- one first-harmonic Fourier term per axis. So a first-harmonic model *is* an
-additive log-von-Mises field, and that is the right lowest-order shape here
-rather than a convenient one. Higher harmonics buy narrower wells and
-multimodality, at `2 * harmonics * d` coefficients.
-
-**Which model, and when.** The deciding ratio is coefficients against measured
-points, not the choice of basis:
-
-===========================  ============================  =================
-model                        coefficients                  identifiable when
-===========================  ============================  =================
-:class:`HarmonicRidge`       ``2 * harmonics * d + 1``      ``M > 2 * d``
-:class:`HarmonicProjection`  ``2 * d`` (each an average)    always
-:class:`InverseDistance`     none                          always
-===========================  ============================  =================
-
-`HarmonicRidge` *solves* for its coefficients, so it needs more points than
-unknowns; below that the ridge penalty shrinks it toward the global mean,
-which carries no spatial information at all. `HarmonicProjection` estimates the
-same first-harmonic coefficients by **correlating** the attractiveness signal
-against the basis instead of inverting a normal-equation matrix. Each
-coefficient is then a weighted average, with the variance of a mean rather
-than of a regression, and it stays defined however few points there are. The
-two agree when the design is orthogonal; they part company exactly where the
-solve stops being well-posed.
-
-:class:`InverseDistance` fits nothing and interpolates locally. It degrades to
-a *local* mean as distances concentrate, which still moves with position --
-where a shrunk parametric fit degrades to a constant.
+Its two costs, both measured rather than argued: the query is `O(M d)` with no
+closed form to tabulate, and in high dimension distances concentrate so extra
+sources stop sharpening the estimate -- leave-one-out error at `d = 100` moves
+only 0.624 to 0.614 as `M` goes 60 to 300. Neither bites at the anchor counts
+a population-sized caller supplies. Degrading to a *local* mean is also the
+right failure: it still moves with position, where a shrunk parametric fit
+degrades to a constant and says nothing at all.
 
 **Custom models.** Subclass :class:`AttractionModel`, implement `fit` and `at`,
 and pass the instance as `att_model`::
@@ -107,6 +82,9 @@ import abc
 import inspect
 
 import numpy as np
+from torann import ToroidalNN
+
+from . import geometry
 
 
 class AttractionModel(abc.ABC):
@@ -142,12 +120,6 @@ class AttractionModel(abc.ABC):
         """Estimated attractiveness at `positions`, shape $(Q,)$."""
 
 
-def _wmean(values: np.ndarray, weights: np.ndarray) -> float:
-    total = float(weights.sum())
-    return float(values.mean()) if total <= 0 else float(
-        np.dot(values, weights) / total)
-
-
 class InverseDistance(AttractionModel):
     """Shepard interpolation over the `k` nearest measured points.
 
@@ -170,332 +142,182 @@ class InverseDistance(AttractionModel):
     range falls 70.4 -> 41.9 -> 18.0 -> 13.8 as its fit stops being
     identifiable. Do not drop this model on the concentration argument alone.
 
+    **The neighbour search is `torann`, not a second implementation.** The
+    library already delegates every toroidal-L1 query to `ToroidalNN`, and
+    this model's estimate is a toroidal-L1 k-NN like any other, so it uses an
+    index rather than scanning. That index is separate from the relaxation's
+    on purpose: the relaxation's holds the moving candidates as well, and an
+    estimate must average over *sources* -- points whose objective was paid
+    for -- never over the points being placed.
+
+    The index is fitted once, in `fit`, and queried on every refresh. It also
+    means the backend decision is `torann`'s: below its crossover the search
+    is exact brute force, and above it the same call is LSH, so a caller who
+    supplies far more anchors than a population gets the faster path without
+    changing anything here.
+
+    **Let it take the LSH path.** The approximation looks alarming measured
+    against exact k-NN -- rank correlation between the two estimates falls to
+    0.638 at `M = 15360, d = 100` -- but that is the wrong reference. Both are
+    noisy readings of one field, and disagreeing with each other says nothing
+    about which is closer to it. Scored against the truth they are recovering:
+
+    ==========  =====  ==========  ========  =========
+    M           d      exact rho   LSH rho   speed-up
+    ==========  =====  ==========  ========  =========
+    960         100    0.4649      0.4648    25x
+    3840        100    0.5208      0.5281    45x
+    15360       100    0.5147      0.5429    111x
+    15360       8      0.9613      0.9613    73x
+    ==========  =====  ==========  ========  =========
+
+    LSH is as good or better everywhere, and at the largest cell it is
+    *better* than exact -- in high dimension the formally-nearest `k` are
+    barely nearer than any other `k`, so paying to identify them exactly buys
+    precision in a quantity that has stopped carrying information. Forcing
+    `brute_threshold` there spends two orders of magnitude for nothing.
+
+    **k-NN or radius.** The two differ in what they hold fixed. ``'k_nn'``
+    averages over a fixed *count*, so the neighbourhood grows and shrinks with
+    the local density and every candidate is estimated from the same number of
+    sources -- a candidate in a void reaches far away for its `k` and is
+    smoothed by distant, weakly-related values. ``'radius'`` fixes the
+    *volume* instead: a candidate in a dense region averages many sources, one
+    in a void averages few or none and falls back to the mean, which is the
+    honest answer for a position nothing nearby has measured. Which is better
+    is an empirical question and the reason this is a switch.
+
     Args:
-        k (int): Neighbours averaged over.
+        k (int): Neighbours averaged over in ``'k_nn'`` mode.
         power (float): Inverse-distance exponent.
+        backend (str): Forwarded to `ToroidalNN`; `'auto'` picks the compiled
+            kernel when it is installed.
+        search_mode (str): ``'k_nn'`` or ``'radius'``.
+        radius (float | None): Normalized radius in $(0, 1]$ for
+            ``'radius'`` mode -- a fraction of the torus diameter, see
+            `geometry.radius_from_normalized`. ``None`` or ``0`` derives one
+            from the fitted anchors that targets `k` neighbours, so the two
+            modes are calibrated to the same neighbourhood by default and
+            differ only in which of count and volume is held fixed.
     """
 
-    def __init__(self, k: int = 8, power: float = 2.0):
+    def __init__(self, k: int = 8, power: float = 2.0, backend: str = "auto",
+                 search_mode: str = "k_nn", radius: float | None = None):
+        if search_mode not in ("k_nn", "radius"):
+            raise ValueError(
+                f"search_mode must be 'k_nn' or 'radius', got {search_mode!r}")
         self.k = int(k)
         self.power = float(power)
-        self._pos = np.empty((0, 0))
+        self.backend = str(backend)
+        self.search_mode = str(search_mode)
+        self.radius = radius
         self._val = np.empty(0)
         self._conf = np.empty(0)
+        self._index: ToroidalNN | None = None
+        self._r: float = 0.0
 
     def fit(self, positions, values, confidence):
-        self._pos = np.asarray(positions, dtype=np.float64)
+        pos = np.asarray(positions, dtype=np.float64)
         self._val = np.asarray(values, dtype=np.float64)
         self._conf = np.asarray(confidence, dtype=np.float64)
+        self._index = None
+        if pos.shape[0]:
+            n, dim = pos.shape
+            # Resolved here, not in `at`: the radius is a property of the
+            # source set, which is fixed at fit time, and `at` runs on every
+            # refresh.
+            self._r = (
+                geometry.l1_radius_for_count(dim, n, min(self.k, n))
+                if not self.radius
+                else geometry.radius_from_normalized(float(self.radius), dim)
+            )
+            self._index = ToroidalNN(backend=self.backend).fit(
+                np.mod(pos, 1.0), k=min(self.k, n))
         return self
 
     def at(self, positions):
-        # Imported here: `ess.ess` imports this module, so a module-level
-        # import back into it would close a cycle at import time.
-        from ess.ess import _estimate_attractiveness
+        """Attractiveness a candidate position is *expected* to have.
 
-        return _estimate_attractiveness(
-            np.asarray(positions, dtype=np.float64), self._pos, self._val,
-            k=self.k, power=self.power, confidence=self._conf,
-        )
+        Attractiveness is only ever known for the sources -- they are the ones
+        whose objective has been paid for. A candidate has none, and treating
+        that as zero is not neutral: `_rank_normalise` puts the scale on
+        `[0, 1]`, so zero is the *bottom* of it, every candidate is modelled
+        as the least attractive thing in the space, candidates that should
+        pull on one another repel instead, and the only attraction left in the
+        system is toward the sources.
 
-
-class _Harmonic(AttractionModel):
-    """Shared machinery for the additive trigonometric models.
-
-    Both subclasses fit the same shape,
-
-    $$ \\hat a(x) = b + \\sum_{j}\\sum_{h=1}^{H}
-       \\alpha_{jh}\\sin 2\\pi h x_j + \\beta_{jh}\\cos 2\\pi h x_j $$
-
-    and differ only in how the coefficients are obtained. Being additive over
-    the axes is what makes the model tabulable as `d` one-dimensional curves
-    rather than one `d`-dimensional surface -- a grid would be $g^d$ cells,
-    which at $d = 100$ is beyond counting.
-    """
-
-    def __init__(self, harmonics: int = 1, bins: int = 4096):
-        self.harmonics = max(1, int(harmonics))
-        self.bins = int(bins)
-        self._w = None
-        self._table = None
-        self._bias = 0.0
-
-    def _features(self, positions: np.ndarray) -> np.ndarray:
-        """`[sin 2*pi*h*x, cos 2*pi*h*x]` for `h = 1..H`, shape $(M, 2Hd)$."""
-        ang = 2.0 * np.pi * positions
-        blocks = []
-        for h in range(1, self.harmonics + 1):
-            blocks.append(np.sin(h * ang))
-            blocks.append(np.cos(h * ang))
-        return np.concatenate(blocks, axis=1)
-
-    def _build_table(self, dim: int) -> None:
-        """Tabulate as `d` one-dimensional curves, one per axis.
-
-        `d * bins` floats -- 3.3 MB at `d=100` with 4096 bins -- and
-        prediction becomes integer indexing and a sum, with no transcendental
-        call at all. The curves are periodic, so the table wraps rather than
-        clamps, which is the same reason the basis is trigonometric.
+        A candidate sitting exactly on a source takes that source's value
+        rather than dividing by zero.
         """
-        if self._w is None:
-            self._table = None
-            return
-        grid = (np.arange(self.bins) + 0.5) / self.bins
-        ang = 2.0 * np.pi * grid
-        table = np.zeros((dim, self.bins))
-        for h in range(1, self.harmonics + 1):
-            off = 2 * dim * (h - 1)
-            table += (np.sin(h * ang)[None, :] * self._w[off:off + dim, None]
-                      + np.cos(h * ang)[None, :]
-                      * self._w[off + dim:off + 2 * dim, None])
-        self._table = table
+        queries = np.asarray(positions, dtype=np.float64)
+        if self._index is None or queries.shape[0] == 0:
+            return np.zeros(queries.shape[0], dtype=np.float64)
 
-    def at(self, positions):
-        pos = np.asarray(positions, dtype=np.float64)
-        if self._w is None:
-            return np.full(pos.shape[0], self._bias)
-        if self._table is None:
-            return self._features(pos) @ self._w + self._bias
-        # Linear interpolation between adjacent bins, wrapping at the end.
-        # -0.5 because the curves are stored at bin *centres*, (i + 0.5) / B;
-        # indexing as though they sat at the left edges offsets every lookup
-        # by half a bin, which costs more than the interpolation recovers.
-        t = (pos % 1.0) * self.bins - 0.5
-        lo = np.floor(t)
-        frac = t - lo
-        i0 = lo.astype(np.intp, copy=False) % self.bins
-        i1 = (i0 + 1) % self.bins
-        axes = np.arange(pos.shape[1])
-        v0 = self._table[axes, i0]
-        v1 = self._table[axes, i1]
-        return (v0 + (v1 - v0) * frac).sum(axis=1) + self._bias
+        q = np.mod(queries, 1.0)
+        if self.search_mode == "radius":
+            # `pad=True` returns the same dense (m, width) shape `query` does,
+            # under the same -1 / inf convention -- which is the whole reason
+            # radius mode costs two lines here instead of a second weighting
+            # path. A query that found nothing is an all-padded row, and the
+            # fallback to the mean below is already what handles it.
+            ids, dist = self._index.query_radius(self._r, queries=q, pad=True)
+        else:
+            kk = min(self.k, self._val.shape[0])
+            ids, dist = self._index.query(k=kk, queries=q)
 
+        # LSH mode guarantees `k` results, but a source set smaller than `k`
+        # pads with -1 / inf, and a radius that found nothing pads the whole
+        # row. All three are handled by zeroing the weight.
+        missing = ids < 0
+        safe = np.where(missing, 0, ids)
+        a_near = self._val[safe]
 
-class HarmonicRidge(_Harmonic):
-    """Least squares for the coefficients, ridge-regularised. **`M > 2d`.**
+        exact = (dist <= 0.0) & ~missing
+        with np.errstate(divide="ignore", invalid="ignore"):
+            w = np.where(exact | missing, 0.0, dist ** (-self.power))
+        w = w * self._conf[safe]
 
-    Solves $(\\Phi^\\top W \\Phi + \\lambda I)w = \\Phi^\\top W y$ once per fit.
-    The penalty is what makes the system well-posed when the measured set is
-    smaller than the number of unknowns -- but well-posed is not informative:
-    the coefficients then shrink toward zero and the model degrades to the
-    global mean, which is constant in position and so carries nothing a
-    placement search can use. Prefer :class:`HarmonicProjection` there.
-
-    Args:
-        harmonics (int): Terms per axis. One is the log-von-Mises well; more
-            buy narrower and multimodal structure, at `2 * harmonics * d`
-            coefficients.
-        ridge (float): Penalty, relative to the total source weight.
-        bins (int): Resolution of the tabulated curves.
-    """
-
-    def __init__(self, harmonics: int = 1, ridge: float = 1e-2,
-                 bins: int = 4096):
-        super().__init__(harmonics=harmonics, bins=bins)
-        self.ridge = float(ridge)
-
-    def fit(self, positions, values, confidence):
-        pos = np.asarray(positions, dtype=np.float64)
-        val = np.asarray(values, dtype=np.float64)
-        wts = np.asarray(confidence, dtype=np.float64)
-        self._bias = _wmean(val, wts) if val.size else 0.0
-        if val.size == 0:
-            self._w, self._table = None, None
-            return self
-        phi = self._features(pos)
-        y = val - self._bias
-        a = (phi * wts[:, None]).T @ phi
-        a[np.diag_indices_from(a)] += self.ridge * max(1.0, float(wts.sum()))
-        self._w = np.linalg.solve(a, (phi * wts[:, None]).T @ y)
-        self._build_table(pos.shape[1])
-        return self
+        total = w.sum(axis=1)
+        out = np.full(queries.shape[0], float(self._val.mean()))
+        ok = total > 0
+        if ok.any():
+            out[ok] = np.einsum("qk,qk->q", w[ok], a_near[ok]) / total[ok]
+        hit = exact.any(axis=1)
+        if hit.any():
+            out[hit] = a_near[hit, np.argmax(exact[hit], axis=1)]
+        return out
 
 
-class HarmonicProjection(_Harmonic):
-    """Coefficients by correlation instead of by solving. **Any `M`.**
-
-    The least-squares estimate needs more points than unknowns. The Fourier
-    coefficient of a signal is also just its projection onto the basis,
-
-    $$ \\alpha_{jh} = \\frac{2}{\\sum_i w_i}\\sum_i w_i
-       \\left(a_i - \\bar a\\right)\\sin 2\\pi h x_{ij} $$
-
-    which is a weighted average -- variance $\\sigma^2/M$, no matrix to invert,
-    defined for any $M \\ge 1$. It coincides with the ridge solution when the
-    design is orthogonal, and stays usable exactly where the solve stops being
-    well-posed. Centring on $\\bar a$ is what makes it a *contrast*: an axis
-    on which attractive and unattractive points sit at the same phase
-    contributes nothing rather than contributing noise.
-
-    The price is bias, and it has to be paid for. Correlation ignores the
-    correlation *between* basis columns, so overlapping structure is double
-    counted where least squares would apportion it, and the per-coefficient
-    noise accumulates over all `2d` of them. Left raw, the estimate is worse
-    than predicting the mean once `M` falls far enough below `2d`. A
-    James-Stein factor keeps only the fitted energy that exceeds what noise
-    alone would produce, which is what makes the trade a real one.
-
-    Args:
-        harmonics (int): Terms per axis.
-        bins (int): Resolution of the tabulated curves.
-    """
-
-    def fit(self, positions, values, confidence):
-        pos = np.asarray(positions, dtype=np.float64)
-        val = np.asarray(values, dtype=np.float64)
-        wts = np.asarray(confidence, dtype=np.float64)
-        self._bias = _wmean(val, wts) if val.size else 0.0
-        total = float(wts.sum())
-        if val.size == 0 or total <= 0:
-            self._w, self._table = None, None
-            return self
-        phi = self._features(pos)
-        y = (val - self._bias) * wts
-        raw = 2.0 * (phi.T @ y) / total
-
-        # Shrink, or the estimate is worse than useless. Each coefficient is a
-        # mean of M terms, so it carries noise of variance ~2 Var(y) / M, and
-        # the p of them accumulate: unshrunk, the d=100, M=30 field scored a
-        # held-out error of 1.93 against 1.0 for simply predicting the mean.
-        # The James-Stein factor asks how much of the fitted energy exceeds
-        # what noise alone would produce, and keeps only that -- so a model
-        # with nothing to say returns the mean instead of shouting.
-        energy = float(raw @ raw)
-        var = float(np.average((val - self._bias) ** 2, weights=wts))
-        noise = raw.size * 2.0 * var / max(1.0, float(val.size))
-        self._w = raw * max(0.0, 1.0 - noise / energy) if energy > 0 else None
-        self._build_table(pos.shape[1])
-        return self
-
-
-class Detrended(AttractionModel):
-    """A trend model, corrected by inverse-distance weighting on its residual.
-
-    The trend can leave the range of the measured values, which is the point:
-    a convex combination never can, so interpolation alone cannot call
-    anywhere more promising than the best point already evaluated. The
-    residual correction puts back the local detail the trend smooths away.
-
-    Costs what the interpolation costs, so it is worth it only when the trend
-    is carrying signal -- adding a shrunk, uninformative trend to a working
-    interpolation makes it worse, not better.
-
-    Args:
-        trend (AttractionModel | None): Defaults to `HarmonicRidge()`.
-        local (AttractionModel | None): Defaults to `InverseDistance()`.
-    """
-
-    def __init__(self, trend: AttractionModel | None = None,
-                 local: AttractionModel | None = None):
-        self.trend = trend if trend is not None else HarmonicRidge()
-        self.local = local if local is not None else InverseDistance()
-
-    def fit(self, positions, values, confidence):
-        self.trend.fit(positions, values, confidence)
-        resid = np.asarray(values, dtype=np.float64) - self.trend.at(positions)
-        self.local.fit(positions, resid, confidence)
-        return self
-
-    def at(self, positions):
-        return self.trend.at(positions) + self.local.at(positions)
-
-
-class Auto(AttractionModel):
-    """Cross-validates the candidates on the measured points and keeps the best.
-
-    There is no model that wins everywhere, and the two things that decide it
-    are both properties of the run rather than of the library. Whether the
-    parametric fit is *identifiable* depends on `M` against `2d`. Whether the
-    additive basis *matches the objective* depends on the objective, and that
-    one cannot be read off a ratio at all -- on a truth with no additive
-    decomposition, least squares scores worse than abstaining while the same
-    ratio says it should be trusted.
-
-    So this measures instead of guessing. The sources are already paid for, so
-    holding some out costs no objective evaluations: each candidate is fitted
-    on `folds - 1` parts and scored on the one left out, and the winner is
-    refitted on everything. What that buys is the failure mode -- a model
-    confidently fitting structure that is not there loses to one that abstains,
-    which is the ordering the fixed choice got backwards.
-
-    Args:
-        candidates (list | None): Models to choose between. Defaults to the
-            ridge fit, the shrunk projection, the interpolation, and the
-            detrended combination.
-        folds (int): Cross-validation folds. Below `2 * folds` sources there is
-            nothing to hold out and the sparse-data model is used directly.
-    """
-
-    def __init__(self, candidates: "list[AttractionModel] | None" = None,
-                 folds: int = 3):
-        self.candidates = list(candidates) if candidates else [
-            HarmonicRidge(), HarmonicProjection(), InverseDistance(),
-            Detrended(),
-        ]
-        self.folds = max(2, int(folds))
-        self._chosen: AttractionModel = self.candidates[0]
-        self._scores: dict[str, float] = {}
-
-    def fit(self, positions, values, confidence):
-        pos = np.asarray(positions, dtype=np.float64)
-        val = np.asarray(values, dtype=np.float64)
-        conf = np.asarray(confidence, dtype=np.float64)
-        m = val.size
-
-        if m < 2 * self.folds:
-            # Nothing to hold out, so nothing to choose on. Interpolation is
-            # the right answer here rather than a shrunk fit: it has no
-            # coefficients to estimate, reproduces the sources exactly, and
-            # stays informative at a handful of points, where a parametric
-            # model correctly shrinks to the mean and so says nothing at all.
-            self._chosen = next(
-                (c for c in self.candidates
-                 if isinstance(c, InverseDistance)), self.candidates[0])
-            self._chosen.fit(pos, val, conf)
-            return self
-
-        spread = float(np.std(val)) or 1.0
-        part = np.arange(m) % self.folds
-        self._scores = {}
-        for cand in self.candidates:
-            total = 0.0
-            for f in range(self.folds):
-                train, test = part != f, part == f
-                cand.fit(pos[train], val[train], conf[train])
-                total += float(np.mean(np.abs(cand.at(pos[test])
-                                              - val[test])))
-            self._scores[type(cand).__name__] = total / self.folds / spread
-
-        best = min(self._scores, key=lambda k: self._scores[k])
-        self._chosen = next(c for c in self.candidates
-                            if type(c).__name__ == best)
-        self._chosen.fit(pos, val, conf)
-        return self
-
-    def at(self, positions):
-        return self._chosen.at(positions)
-
-    @property
-    def chosen(self) -> AttractionModel:
-        """Whichever model the last `fit` selected."""
-        return self._chosen
-
-    @property
-    def scores(self) -> "dict[str, float]":
-        """Held-out error per candidate, normalised so 1.0 is the mean."""
-        return dict(self._scores)
-
-
-#: Built-in models, by the name `att_model` accepts. `'fourier'` is the
-#: first-harmonic ridge this library shipped before the interface existed, so
-#: the name keeps meaning what it meant.
-MODELS = {
-    "idw": InverseDistance,
-    "fourier": HarmonicRidge,
-    "projection": HarmonicProjection,
-    "detrended": Detrended,
-    "auto": Auto,
-}
+#: Built-in models, by the name `att_model` accepts. One, now.
+#:
+#: `'fourier'`, `'detrended'`, `'auto'` and `'projection'` were removed after a
+#: 468-arm factorial measured them against `'idw'` inside OBLESA. Every one of
+#: them fits `2d` coefficients, and a caller supplies anchors by population
+#: size rather than by dimension, so identifiability needs a population growing
+#: linearly in `d` -- where every anchor is a paid objective call.
+#:
+#: Measured as the share of the selected population the relaxed block won,
+#: against 33% parity:
+#:
+#: ============  =====  =====  =====  =====
+#: model         d=8    d=16   d=32   d=64
+#: ============  =====  =====  =====  =====
+#: detrended     70.4   41.9   18.0   13.8
+#: projection    71.4   56.8   41.1   27.9
+#: idw           74.9   73.1   72.1   71.0
+#: ============  =====  =====  =====  =====
+#:
+#: `'detrended'` and `'projection'` both end below parity, which means their
+#: field steers wrong rather than merely saying nothing. `'auto'` additionally
+#: cross-validated four candidates on every fit: 22.8 ms at 60 sources, 86
+#: seconds at 15360.
+#:
+#: The one thing lost with the harmonic basis is a query cost flat in `M` --
+#: tabulating the torus as `d` one-dimensional curves made a query integer
+#: indexing and a sum, where inverse-distance weighting pays `O(M d)`. That
+#: matters above roughly four thousand anchors and not below; a
+#: population-sized caller supplies 60 to 400.
+MODELS = {"idw": InverseDistance}
 
 
 def get_model(spec, **kwargs) -> AttractionModel:

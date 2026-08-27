@@ -26,13 +26,13 @@ import collections.abc
 import inspect
 import logging
 import math
-import statistics
 import time
 
 import numpy as np
 from torann import ToroidalNN
+from torann import rust as _torann_rust
 
-from . import attraction, samplers
+from . import attraction, geometry, samplers
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
@@ -55,17 +55,7 @@ $R/d$ (a quarter of the domain per epoch, toroidal Clark-Evans 1.28 ->
 settles (1.14 versus 1.30 here).
 """
 
-NEIGHBOUR_TARGET = 2
-r"""int: Neighbours the default interaction radius should contain.
 
-The smallest radius that costs nothing. k-NN mode is insensitive to it
-above 2 (it only normalises the force there — measured 1.469 vs 1.477
-at $d=8$, 1.299 vs 1.296 at $d=32$ for targets 2 and 3), while 1 is too
-tight in low dimension (2D toroidal Clark-Evans 1.86 versus 2.08).
-Radius mode, where it is the actual search cutoff, keeps improving with
-larger values at proportionally higher cost, so callers who want that
-should pass ``radius=`` (or ``k=``) explicitly.
-"""
 
 K_LOCAL = 5
 r"""int: Cap on the number of interacting neighbours per point.
@@ -438,159 +428,6 @@ def _inv_scale(
     return scl_arr * (max_val - min_val) + min_val
 
 
-def _l1_radius_heuristic(
-    dim: int, n_points: int, target: int = NEIGHBOUR_TARGET
-) -> float:
-    r"""Radius expected to contain `target` neighbours, from the exact
-    toroidal L1 distance law.
-
-    Per dimension the toroidal distance between two uniform points is
-    $u = \min(\delta,\, 1-\delta)$ with $\delta$ uniform, so
-    $u \sim \mathrm{U}(0, 1/2)$ *exactly*; the full distance is a sum of
-    $d$ such terms, with mean $d/4$ and variance $d/48$. Inverting
-
-    $$ N \cdot P(\mathrm{dist} \le R) = \text{target} $$
-
-    gives the radius in either regime:
-
-    * **Dense** — while $R \le 1/2$ the sum is still in its first
-      Irwin-Hall piece, where $P(\mathrm{dist} \le R) = (2R)^d/d!$ is
-      exactly the L1 ball volume, so
-      $R = \tfrac{1}{2}\,(\text{target} \cdot d!/N)^{1/d}$.
-    * **Sparse** — beyond that the ball volume exceeds the torus and the
-      formula is meaningless, but the central limit theorem applies:
-      $R = d/4 + z_{\text{target}/N}\,\sqrt{d/48}$.
-
-    Note:
-        The previous version multiplied the packing radius by a fixed
-        1.25 "safety margin". A margin on the *radius* is a margin of
-        $1.25^d$ on the *count* — 1.6 neighbours at $d=2$, but 1262 at
-        $d=32$ and $1.6\times10^{6}$ at $d=64$ — so the neighbourhood
-        grew without bound and had to be clamped at the mean pairwise
-        distance, which is why radius mode went global (and blew up
-        memory) in high dimension. Targeting the count directly is what
-        keeps it local at every $d$.
-
-    Args:
-        dim (int): Dimensionality $d$.
-        n_points (int): Total number of points $N$ (static + generated).
-        target (int): Desired neighbours inside the ball. Defaults to
-            `NEIGHBOUR_TARGET` — the smallest radius that does not cost
-            quality; callers wanting a wider interaction pass ``radius``
-            to `esa` directly.
-
-    Returns:
-        float: The interaction radius in toroidal L1 units.
-    """
-    n = max(n_points, 2)
-    count = max(min(target, n - 1), 1)
-
-    log_r = (math.lgamma(dim + 1) + math.log(count) - math.log(n)) / dim
-    dense = 0.5 * math.exp(log_r)
-    if dense <= 0.5:
-        return dense  # exact: still inside the first Irwin-Hall piece
-
-    z = statistics.NormalDist().inv_cdf(count / n)
-    return min(max(dim / 4.0 + z * math.sqrt(dim / 48.0), 1e-6), dim / 2.0)
-
-
-def _estimate_attractiveness(
-    queries: np.ndarray,
-    static: np.ndarray,
-    attract_static: np.ndarray,
-    k: int = 8,
-    power: float = 2.0,
-    confidence: np.ndarray | None = None,
-) -> np.ndarray:
-    r"""Attractiveness a candidate position is *expected* to have.
-
-    Attractiveness is only ever known for the static points -- they are the
-    ones whose objective has been paid for. A candidate has none, and treating
-    that as zero is not neutral: `_rank_normalise` puts the scale on $[0, 1]$,
-    so zero is the *bottom* of it, and every candidate is modelled as the least
-    attractive thing in the space. Candidates that should pull on each other
-    repel instead, and the only attraction in the system is toward the static
-    points.
-
-    The estimate is Shepard's method -- inverse-distance weighting over the `k`
-    nearest static points, under the same toroidal $L_1$ metric everything else
-    here uses:
-
-    $$ \hat a(c) = \frac{\sum_i w_i\, a_i}{\sum_i w_i},
-       \qquad w_i = d_{L1}^{tor}(c, x_i)^{-p} $$
-
-    A candidate sitting exactly on a static point takes that point's value
-    rather than dividing by zero.
-
-    The known limitation is the one every distance-weighted surrogate carries:
-    in high dimension distances concentrate, the weights flatten and $\hat a$
-    tends to the mean of `attract_static`. It degrades to "no information"
-    rather than to something wrong, which is the right failure mode, but the
-    guidance does fade as `dim` grows.
-
-    Args:
-        queries (np.ndarray): Positions to estimate, shape $(Q, D)$, in
-            $[0, 1)$.
-        static (np.ndarray): Points with known attractiveness, shape $(M, D)$,
-            in $[0, 1)$.
-        attract_static (np.ndarray): Their attractiveness, shape $(M,)$,
-            already normalised to $[0, 1]$.
-        k (int): Neighbours averaged over. Clamped to $M$.
-        power (float): Inverse-distance exponent $p$.
-        confidence (np.ndarray | None): Per-source weight in $(0, 1]$, folded
-            into $w_i$. Measured points sit at 1; a value inferred earlier
-            enters at less than 1 so a chain of inference fades toward the
-            mean instead of asserting itself. ``None`` treats every source as
-            measured.
-
-    Returns:
-        np.ndarray: Estimated attractiveness, shape $(Q,)$, within the range of
-        `attract_static`.
-    """
-    m = static.shape[0]
-    q = queries.shape[0]
-    if m == 0 or q == 0:
-        return np.zeros(q, dtype=np.float64)
-
-    kk = min(int(k), m)
-    out = np.empty(q, dtype=np.float64)
-    fallback = float(attract_static.mean())
-
-    # Chunked over queries. The obvious `queries[:, None, :] - static[None]`
-    # builds a (Q, M, D) temporary, which at the sizes this is actually called
-    # with -- 3840 candidates against 90 static points in 100 dimensions -- is
-    # 276 MB per call, and the run spent 71% of its initialization time
-    # allocating and touching it. Chunking caps that at a few MB and leaves
-    # the arithmetic identical.
-    step = max(1, int(2_000_000 // max(m * max(queries.shape[1], 1), 1)))
-    for lo in range(0, q, step):
-        hi = min(lo + step, q)
-        # Toroidal L1: per axis the wrap-around distance is min(|d|, 1-|d|),
-        # because the space is the unit torus -- the metric the index uses.
-        delta = np.abs(queries[lo:hi, None, :] - static[None, :, :])
-        dist = np.minimum(delta, 1.0 - delta).sum(axis=2)      # (chunk, M)
-
-        nearest = np.argpartition(dist, kk - 1, axis=1)[:, :kk]
-        rows = np.arange(hi - lo)[:, None]
-        d_near = dist[rows, nearest]
-        a_near = attract_static[nearest]
-
-        exact = d_near <= 0.0
-        with np.errstate(divide="ignore", invalid="ignore"):
-            w = np.where(exact, 0.0, d_near ** (-float(power)))
-        if confidence is not None:
-            w = w * confidence[nearest]
-        total = w.sum(axis=1)
-        chunk = np.full(hi - lo, fallback)
-        ok = total > 0
-        if ok.any():
-            chunk[ok] = np.einsum("qk,qk->q", w[ok], a_near[ok]) / total[ok]
-        hit = exact.any(axis=1)
-        if hit.any():
-            # On a known point: take its value rather than dividing by zero.
-            chunk[hit] = a_near[hit, np.argmax(exact[hit], axis=1)]
-        out[lo:hi] = chunk
-    return out
 
 
 class _AttractionField:
@@ -635,15 +472,18 @@ class _AttractionField:
     __slots__ = ("_conf", "_pos", "_val", "decay", "model", "n_measured")
 
     def __init__(self, positions, values, k=8, power=2.0, decay=0.5,
-                 model: "str | type | attraction.AttractionModel" = "auto",
-                 ridge=1e-2, bins=4096):
+                 model: "str | type | attraction.AttractionModel" = "idw",
+                 search_mode: str = "k_nn", radius: float | None = None):
         self._pos = np.asarray(positions, dtype=np.float64)
         self._val = np.asarray(values, dtype=np.float64)
         self._conf = np.ones(self._val.shape[0], dtype=np.float64)
         self.n_measured = int(self._val.shape[0])
         self.decay = float(decay)
+        # `get_model` filters by the constructor's signature, so a model
+        # that has no notion of a search mode simply does not receive one --
+        # the same capability protocol OBLESA forwards its keywords under.
         self.model = attraction.get_model(
-            model, k=k, power=power, ridge=ridge, bins=bins)
+            model, k=k, power=power, search_mode=search_mode, radius=radius)
         self.model.fit(self._pos, self._val, self._conf)
 
     def at(self, positions: np.ndarray) -> np.ndarray:
@@ -761,34 +601,20 @@ def _smart_init(
     return np.mod(picked + jitter, 1.0)
 
 
-def _pad_ragged(
-    results: list[tuple[np.ndarray, np.ndarray]],
-) -> tuple[np.ndarray, np.ndarray]:
-    """Packs per-query variable-length (ids, dists) lists into dense arrays.
-
-    Rows are padded with ``-1`` / ``inf`` — the same missing-neighbour
-    convention `ToroidalNN.query` uses — so radius-mode results feed the
-    exact same force kernel as k-NN results.
-
-    Args:
-        results (list[tuple[np.ndarray, np.ndarray]]): One (ids, distances)
-            pair per query, as returned by `ToroidalNN.query_radius`.
-
-    Returns:
-        tuple[np.ndarray, np.ndarray]: (ids, distances) of shape
-            $(M, m_{max})$; ``m_max`` is the largest neighbourhood found
-            (at least 1, so downstream shapes stay valid).
-    """
-    n = len(results)
-    width = max((ids.shape[0] for ids, _ in results), default=0)
-    width = max(width, 1)
-    ids = np.full((n, width), -1, dtype=np.int64)
-    dists = np.full((n, width), np.inf)
-    for i, (row_ids, row_dists) in enumerate(results):
-        ids[i, : row_ids.shape[0]] = row_ids
-        dists[i, : row_dists.shape[0]] = row_dists
-    return ids, dists
-
+#: Below this many direction elements per block, the compiled contraction
+#: loses to NumPy and is not used.
+#:
+#: The kernel is row-parallel, so it pays a rayon dispatch per call and ESS
+#: calls it once per block per epoch -- hundreds of times. Measured end to
+#: end, that overhead swamps the win on a small neighbourhood: at the k-NN
+#: default of `K_LOCAL = 5` neighbours the compiled path ran 0.74x at d=40,
+#: a real regression on the *default* configuration. It reaches 1.6-3.6x at
+#: 64 neighbours, which is the regime radius mode needs and where the
+#: `(rows, k, D)` tensor is tens of megabytes.
+#:
+#: Counted as `block_ids.size * D` -- the elements the tensor would have had
+#: -- because that, not the row count, is what the kernel is avoiding.
+_KERNEL_MIN_WORK = 200_000
 
 #: Elements per intermediate array in the force kernel (~64 MB in
 #: float64). The kernel materialises several $(\text{rows}, m, D)$
@@ -850,8 +676,10 @@ def _compute_forces(
     r"""Net force on each active point from its neighbour list.
 
     This is the single force kernel for both search modes: k-NN passes the
-    dense `ToroidalNN.query` result, radius mode passes the padded output
-    of `_pad_ragged`. For active point $x_i$ with neighbours $y_j$:
+    dense `ToroidalNN.query` result, radius mode passes
+    `ToroidalNN.query_radius(pad=True)`, which is the same shape under the
+    same missing-neighbour convention. For active point $x_i$ with
+    neighbours $y_j$:
 
     $$ \vec{F}_i = \sum_{j} \frac{\vec{u}_{ij}}{\lVert\vec{u}_{ij}\rVert_2}
        \, f\!\left(\frac{d_{L1}(x_i, y_j)}{R}\right), \qquad
@@ -925,27 +753,11 @@ def _compute_forces(
         valid = block_ids >= 0
 
         safe_ids = np.where(valid, block_ids, 0)
-        disp = active[lo:hi, None, :] - all_data[safe_ids]
-        disp -= np.round(disp)  # toroidal wrap: shortest displacement per axis
-        # Every norm here is L1, because every distance here is L1: torann
-        # returns toroidal L1, the force law is evaluated on it, and the step
-        # is capped in it. A single geometry end to end.
-        norms = np.abs(disp).sum(axis=2, keepdims=True)
 
-        stacked = (norms[..., 0] < 1e-9) & valid
-        if np.any(stacked):
-            noise = rng.standard_normal(size=disp.shape)
-            noise /= np.abs(noise).sum(axis=2, keepdims=True) + 1e-9
-            disp = np.where(stacked[..., None], noise, disp)
-            norms = np.where(stacked[..., None], 1.0, norms)
-
-        # grad(d_L1) = sign(delta): every coordinate is pushed equally, which
-        # is what descending L1 means. An exactly shared coordinate
-        # contributes nothing, since sign(0) = 0 — the symmetric subgradient,
-        # and the only choice that does not invent a direction.
-        grad = np.sign(disp)
-        norms = np.abs(grad).sum(axis=2, keepdims=True)
-
+        # Weights first, geometry second. Nothing above depends on a
+        # displacement -- the force law reads `dists`, which torann already
+        # returned -- so the whole $(rows, k, D)$ tensor can be deferred, and
+        # then not built at all on the compiled path.
         d_hat = np.where(valid, block_dists, 1.0) / radius
         log_mag = metric_fn(d_hat, **metric_kwargs)
         log_mag = np.where(valid, log_mag, -np.inf)
@@ -955,11 +767,52 @@ def _compute_forces(
         weights = np.exp(log_mag - m_i)
         weights[~valid] = 0.0
 
-        directions = grad / np.maximum(norms, 1e-9)
-        net = np.sum(directions * weights[..., None], axis=1)
+        # Coincident points get a random direction rather than none, and the
+        # randomness is this function's `rng` -- a NumPy Generator, whose
+        # stream cannot move into a compiled kernel without changing it. So
+        # a block containing one takes the NumPy path entire. Exact
+        # coincidence is close to measure-zero here, which is what makes
+        # "fall back for the whole block" cheaper than splitting the pairs.
+        stacked = valid & (np.where(valid, block_dists, np.inf) < 1e-9)
+        directions = None
+        pull = None
+        # The kernel itself rather than a flag, so "we took the compiled
+        # path" and "the kernel exists" are one fact instead of two that a
+        # reader (or a type checker) has to keep in step.
+        wd = _torann_rust.weighted_directions
+        kernel = (
+            wd
+            if (wd is not None
+                and not np.any(stacked)
+                and block_ids.size * active.shape[1] >= _KERNEL_MIN_WORK)
+            else None
+        )
+        if kernel is None:
+            disp = active[lo:hi, None, :] - all_data[safe_ids]
+            disp -= np.round(disp)  # toroidal wrap: shortest per axis
+            # Every norm here is L1, because every distance here is L1:
+            # torann returns toroidal L1, the force law is evaluated on it,
+            # and the step is capped in it. A single geometry end to end.
+            norms = np.abs(disp).sum(axis=2, keepdims=True)
+            if np.any(stacked):
+                noise = rng.standard_normal(size=disp.shape)
+                noise /= np.abs(noise).sum(axis=2, keepdims=True) + 1e-9
+                disp = np.where(stacked[..., None], noise, disp)
+                norms = np.where(stacked[..., None], 1.0, norms)
+
+            # grad(d_L1) = sign(delta): every coordinate is pushed equally,
+            # which is what descending L1 means. An exactly shared coordinate
+            # contributes nothing, since sign(0) = 0 — the symmetric
+            # subgradient, and the only choice that does not invent a
+            # direction.
+            grad = np.sign(disp)
+            norms = np.abs(grad).sum(axis=2, keepdims=True)
+            directions = grad / np.maximum(norms, 1e-9)
+            net = np.sum(directions * weights[..., None], axis=1)
+        else:
+            net = None  # filled below, once the second weighting is known
 
         force_cap = 1000.0
-        forces[lo:hi] = np.exp(np.minimum(m_i, np.log(force_cap))) * net
 
         # Both are set together by `esa`; testing the callable is what makes
         # that pairing explicit, and it is the thing actually invoked.
@@ -976,14 +829,26 @@ def _compute_forces(
             m_a = np.where(np.isneginf(m_a), 0.0, m_a)
             w_att = np.exp(log_att - m_a) * a
             w_att[~valid] = 0.0
-            pull = np.sum(directions * w_att[..., None], axis=1)
+            if kernel is None:
+                pull = np.sum(directions * w_att[..., None], axis=1)
+            else:
+                # Both weightings in one call. They differ only in what
+                # multiplies the direction, and the direction is 99% of the
+                # cost, so two calls would pay for the same wrap twice.
+                net, pull = kernel(all_data, active[lo:hi], block_ids,
+                                   np.stack((weights, w_att)))
+            # Scaled here rather than at the subtraction below: it is the
+            # only place `m_a` is in scope, and folding it in leaves one
+            # optional to test instead of two that must agree.
+            pull = np.exp(np.minimum(m_a, np.log(force_cap))) * pull
             # `directions` points from the neighbour towards the active point,
             # so repulsion adds along it and attraction subtracts.
-            forces[lo:hi] -= (
-                attraction_weight
-                * np.exp(np.minimum(m_a, np.log(force_cap)))
-                * pull
-            )
+        if net is None and kernel is not None:
+            # Repulsion only: one weighting, so nothing to share with.
+            (net,) = kernel(all_data, active[lo:hi], block_ids, weights[None])
+        forces[lo:hi] = np.exp(np.minimum(m_i, np.log(force_cap))) * net
+        if pull is not None:
+            forces[lo:hi] -= attraction_weight * pull
 
     return forces
 
@@ -1014,9 +879,11 @@ def _esa(
     attraction_kwargs: dict | None = None,
     k_att: int = 8,
     att_power: float = 2.0,
+    att_search_mode: str = "k_nn",
+    att_radius: float | None = None,
     placement_weight: float | None = None,
     att_every: int = 5,
-    att_model: "str | type | attraction.AttractionModel" = "auto",
+    att_model: "str | type | attraction.AttractionModel" = "idw",
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -1078,6 +945,13 @@ def _esa(
         attraction_kwargs (dict | None): Its parameters.
         k_att (int): Neighbours the attractiveness estimate averages over.
         att_power (float): Inverse-distance exponent of that estimate.
+        att_search_mode (str): ``'k_nn'`` or ``'radius'`` for the
+            attractiveness estimate. Independent of `search_mode`, which
+            governs the repulsion: the two are separate uses of the index
+            and there is no reason a run must make the same choice twice.
+        att_radius (float | None): Normalized radius in $(0, 1]$ for
+            ``att_search_mode='radius'``; ``None`` or ``0`` derives one
+            targeting `k_att` neighbours.
         placement_weight (float | None): Attraction weight for the placement
             only; ``None`` uses `attraction_weight`.
         att_every (int): Refresh the attractiveness field every this many
@@ -1103,7 +977,9 @@ def _esa(
     field = None
     if attract is not None and n_static > 0:
         field = _AttractionField(all_data[:n_static], attract[:n_static],
-                                 k=k_att, power=att_power, model=att_model)
+                                 k=k_att, power=att_power, model=att_model,
+                                 search_mode=att_search_mode,
+                                 radius=att_radius)
     if fitted:
         index.fit(all_data[:n_static], k=k, radius=radius_hint)
 
@@ -1160,7 +1036,7 @@ def _esa(
         for epochs_used in range(1, epochs + 1):
             started = time.perf_counter()
             if search_mode == "radius":
-                ids, dists = _pad_ragged(index.query_radius(radius))
+                ids, dists = index.query_radius(radius, pad=True)
             else:
                 ids, dists = index.query(k=k)
             _accumulate(timers, "query_s", started)
@@ -1262,6 +1138,7 @@ def esa(
     batch_size: int | None = None,
     k: int | None = None,
     radius: float | None = None,
+    radius_target: int = geometry.NEIGHBOUR_TARGET,
     tol: float = 1e-2,
     patience: int = 25,
     metric: str | collections.abc.Callable = "gaussian",
@@ -1274,9 +1151,11 @@ def esa(
     attraction_kwargs: dict | None = None,
     k_att: int = 8,
     att_power: float = 2.0,
+    att_search_mode: str = "k_nn",
+    att_radius: float | None = None,
     placement_weight: float | None = None,
     att_every: int = 5,
-    att_model: "str | type | attraction.AttractionModel" = "auto",
+    att_model: "str | type | attraction.AttractionModel" = "idw",
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -1287,7 +1166,7 @@ def esa(
     and maps the result back:
 
     $$ R = \min\!\left(\tfrac{5}{8}\,(d!/N)^{1/d},\; d/4\right)
-       \quad \text{(when not given; see `_l1_radius_heuristic`)} $$
+       \quad \text{(when not given; see `geometry.l1_radius_for_count`)} $$
 
     The same $R$ is the range cutoff in radius mode and the distance
     normalisation of every force law in both modes, which is what keeps
@@ -1354,7 +1233,39 @@ def esa(
             when memory, not time, is the constraint.
         k (int | None): Neighbours in k-NN mode; default
             $\min(2D + 1, \text{`K_LOCAL`})$.
-        radius (float | None): Interaction radius; default heuristic.
+        radius (float | None): Interaction radius as a **fraction of the
+            torus diameter**, in $(0, 1]$. ``None`` or ``0`` derives it
+            from `geometry.l1_radius_for_count`.
+
+            Normalized rather than expressed in the units `bounds` is in,
+            because for this metric there is no such number: each axis is
+            min-maxed onto $[0, 1]$ *independently* and the distance is an
+            L1 sum over all $D$ of them, so the radius is a sum of $D$
+            dimensionless per-axis fractions. It equals a length in the
+            caller's units only if every axis happens to share a unit and a
+            width, which `bounds` need not.
+
+            Per axis it does read directly: ``radius / 2`` is the mean
+            fraction of *each axis's own range* the ball reaches. On bounds
+            of $[-5, 5]$, ``radius=0.2`` reaches 10% of the range, so 1.0 in
+            the caller's units, on a typical axis.
+
+            Setting it by hand gets harder as $D$ grows -- the value that
+            holds a fixed neighbour count converges on $1/2$, so at
+            $D = 1000$ the whole range from 1 to 64 neighbours spans
+            $0.474$ to $0.491$. Use `radius_for_target` rather than guessing
+            inside that band.
+        radius_target (int): Neighbours the derived radius should contain,
+            when `radius` is not given. This is the knob radius mode is meant
+            to be tuned with. The radius itself stops being tunable by hand
+            once $D$ is large, but the count behind it does not: at
+            $D = 100, N = 300$ the span from 1 to 64 neighbours is a 13%
+            change in radius, and at $D = 1000$ a 3.5% one. Same information,
+            on a scale a caller can act on.
+
+            No effect in k-NN mode, where `k` fixes the count directly. The
+            attraction field's own radius already targets `k_att` neighbours,
+            so that side needs no second knob.
         tol (float): Absolute early-stop floor on the EMA of the largest
             force magnitude (fires only when forces genuinely vanish;
             the working criterion is the plateau — see `_esa`).
@@ -1479,6 +1390,18 @@ def esa(
             model correctly reports that it knows little. Raising the measured
             count to 300 at the same dimension drops fourier to 0.11, which is
             the evidence that the limit is the data rather than the estimator.
+        att_search_mode (str): ``'k_nn'`` or ``'radius'`` for the
+            attractiveness estimate. Deliberately independent of
+            `search_mode`, which governs the repulsion: they are two separate
+            uses of the index and nothing requires a run to make the same
+            choice twice. k-NN holds the neighbour *count* fixed, so a
+            candidate in a void reaches far out and is smoothed by distant
+            values; radius holds the *volume* fixed, so that candidate
+            averages few sources or none and falls back to the mean.
+        att_radius (float | None): Normalized radius in $(0, 1]$ for
+            ``att_search_mode='radius'``; ``None`` or ``0`` derives one
+            targeting `k_att` neighbours, so the two modes start from the
+            same neighbourhood and differ only in what they hold fixed.
         att_every (int): Epochs between refreshes of the attractiveness
             field. The estimate belongs to a position, so it is re-read as the
             points move; a stride of 5 is enough because a point travels at
@@ -1565,9 +1488,16 @@ def esa(
 
     k_value = k if k is not None else min(2 * dim + 1, K_LOCAL)
     batch = batch_size if batch_size is not None else max(n, 1)
+    # `radius` is a *fraction of the torus diameter*, not a distance: a
+    # caller one layer up holds points and no geometry, so a raw L1 cutoff is
+    # not a number it could form. Zero and None both mean "derive it", which
+    # keeps the auto case expressible from a config file or a CLI flag that
+    # cannot carry None. `radius_for_target` converts a neighbour count into
+    # a value for this argument.
     final_radius = (
-        radius if radius is not None
-        else _l1_radius_heuristic(dim, samples.shape[0] + n)
+        geometry.l1_radius_for_count(dim, samples.shape[0] + n, radius_target)
+        if not radius
+        else geometry.radius_from_normalized(float(radius), dim)
     )
     logger.debug("Interaction radius (toroidal L1): %.4f", final_radius)
 
@@ -1598,6 +1528,8 @@ def esa(
         attraction_kwargs=attraction_kw,
         k_att=int(k_att),
         att_power=float(att_power),
+        att_search_mode=str(att_search_mode),
+        att_radius=att_radius,
         placement_weight=(None if placement_weight is None
                           else float(placement_weight)),
         att_every=max(1, int(att_every)),

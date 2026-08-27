@@ -49,20 +49,18 @@ class TestInterface(unittest.TestCase):
                 self.assertTrue(np.all(np.isfinite(out)))
 
     def test_get_model_accepts_name_class_and_instance(self):
-        built = attraction.HarmonicRidge(harmonics=3)
+        built = attraction.InverseDistance(k=3)
         self.assertIs(attraction.get_model(built), built)
-        self.assertIsInstance(attraction.get_model("projection"),
-                              attraction.HarmonicProjection)
+        self.assertIsInstance(attraction.get_model("idw"),
+                              attraction.InverseDistance)
         self.assertIsInstance(
             attraction.get_model(attraction.InverseDistance),
             attraction.InverseDistance)
 
     def test_get_model_forwards_only_what_the_class_takes(self):
         """`_AttractionField` passes every knob; each model takes its own."""
-        idw = attraction.get_model("idw", k=3, power=1.5, ridge=9.9, bins=8)
+        idw = attraction.get_model("idw", k=3, power=1.5, nonsense=8)
         self.assertEqual((idw.k, idw.power), (3, 1.5))
-        ridge = attraction.get_model("fourier", k=3, power=1.5, ridge=9.9)
-        self.assertEqual(ridge.ridge, 9.9)
 
     def test_get_model_rejects_nonsense(self):
         with self.assertRaises(ValueError):
@@ -71,7 +69,7 @@ class TestInterface(unittest.TestCase):
             attraction.get_model(42)
 
     def test_empty_source_set_is_not_an_error(self):
-        for name in ("fourier", "projection"):
+        for name in ("idw",):
             with self.subTest(model=name):
                 model = attraction.get_model(name)
                 model.fit(np.empty((0, 4)), np.empty(0), np.empty(0))
@@ -108,101 +106,35 @@ class TestCustomModel(unittest.TestCase):
 class TestRegimes(unittest.TestCase):
     """Which model to trust is a question about the data, not a preference."""
 
-    def test_ridge_wins_when_the_basis_matches_and_there_is_data(self):
-        d, m = 8, 300
-        ridge = held_out(attraction.HarmonicRidge(), additive_truth, d, m)
-        idw = held_out(attraction.InverseDistance(), additive_truth, d, m)
-        self.assertLess(ridge, idw)
-
-    def test_ridge_overclaims_when_the_basis_does_not_match(self):
-        """Fitting hard to structure that is absent is worse than abstaining.
-
-        This is the failure that matters in practice: four of the eight
-        benchmark objectives are non-separable, and a confident additive fit
-        of them scores below the constant predictor.
-        """
-        err = held_out(attraction.HarmonicRidge(), coupled_truth, 32, 120)
-        self.assertGreater(err, 1.0)
-
     def test_the_hedging_models_never_do(self):
-        for name in ("projection", "idw"):
+        for name in ("idw",):
             for d, m in ((32, 120), (100, 300)):
                 with self.subTest(model=name, d=d, m=m):
                     err = held_out(attraction.get_model(name),
                                    coupled_truth, d, m)
                     self.assertLess(err, 1.0)
 
-    def test_projection_survives_where_the_solve_is_underdetermined(self):
-        """`M` well under `2d`: the regime `HarmonicRidge` cannot serve.
+    def test_the_estimate_cannot_leave_the_range_of_its_sources(self):
+        """The guarantee the whole default rests on.
 
-        Unshrunk, this scored 1.93 -- twice as bad as predicting the mean --
-        because 2d coefficients each carry noise and they accumulate.
+        A convex combination of measured values cannot exceed them, so the
+        field can never pull a probe toward a number nobody observed. The
+        removed parametric fits could and did -- that was the argument *for*
+        them, and it is why they were dangerous when the basis was wrong.
         """
-        err = held_out(attraction.HarmonicProjection(), additive_truth, 100, 30)
-        self.assertLess(err, 1.0)
+        rng = np.random.default_rng(2)
+        pos = rng.uniform(0, 1, size=(50, 4))
+        val = additive_truth(pos)
+        model = attraction.InverseDistance().fit(pos, val, np.ones(50))
+        got = model.at(rng.uniform(0, 1, size=(400, 4)))
+        self.assertGreaterEqual(got.min(), val.min())
+        self.assertLessEqual(got.max(), val.max())
 
-    def test_auto_refuses_the_model_that_would_overclaim(self):
-        """The case a ratio cannot see: enough data, wrong basis.
-
-        `M = 300` against `2d = 64` says the solve is well determined, and it
-        is -- of structure the truth does not have. Auto scores it instead.
-        """
-        rng = np.random.default_rng(0)
-        xs = rng.uniform(0, 1, size=(300, 32))
-        auto = attraction.Auto().fit(xs, coupled_truth(xs), np.ones(300))
-        self.assertNotIsInstance(auto.chosen, attraction.HarmonicRidge)
-        self.assertLess(auto.scores[type(auto.chosen).__name__],
-                        auto.scores["HarmonicRidge"])
-
-    def test_auto_takes_the_parametric_fit_when_it_earns_it(self):
-        rng = np.random.default_rng(0)
-        xs = rng.uniform(0, 1, size=(300, 8))
-        auto = attraction.Auto().fit(xs, additive_truth(xs), np.ones(300))
-        self.assertIsInstance(
-            auto.chosen, attraction.HarmonicRidge | attraction.Detrended)
-
-    def test_auto_interpolates_when_there_is_nothing_to_hold_out(self):
-        """Too few sources to cross-validate is not too few to be useful.
-
-        A parametric model correctly shrinks to the mean at four points and so
-        reports nothing; interpolation still separates a good corner from a
-        bad one, which is what the placement search needs.
-        """
-        pos = np.array([[0.1, 0.1], [0.9, 0.9], [0.1, 0.9], [0.9, 0.1]])
-        auto = attraction.Auto().fit(
-            pos, np.array([1.0, 0.0, 0.5, 0.5]), np.ones(4))
-        self.assertIsInstance(auto.chosen, attraction.InverseDistance)
-        self.assertGreater(auto.at(np.array([[0.12, 0.12]]))[0],
-                           auto.at(np.array([[0.88, 0.88]]))[0])
-
-
-class TestHarmonicInternals(unittest.TestCase):
-    def test_table_agrees_with_the_closed_form(self):
-        """The table is the same model, not a cheaper one that disagrees."""
-        rng = np.random.default_rng(0)
-        pos = rng.uniform(0, 1, size=(200, 5))
-        model = attraction.HarmonicRidge(harmonics=2)
-        model.fit(pos, additive_truth(pos), np.ones(200))
-        query = rng.uniform(0, 1, size=(50, 5))
-        tabulated = model.at(query)
-        closed = model._features(query) @ model._w + model._bias
-        np.testing.assert_allclose(tabulated, closed, atol=1e-5)
-
-    def test_more_harmonics_fit_a_second_harmonic_better(self):
-        def second_only(x):
-            return np.cos(4.0 * np.pi * x).sum(1)
-
-        one = held_out(attraction.HarmonicRidge(harmonics=1), second_only,
-                       6, 400)
-        two = held_out(attraction.HarmonicRidge(harmonics=2), second_only,
-                       6, 400)
-        self.assertLess(two, one)
-
-    def test_estimate_is_periodic_across_the_seam(self):
-        """No seam: the space wraps, so the model must too."""
+    def test_the_estimate_is_periodic_across_the_seam(self):
+        """No seam: the space wraps, so the metric behind the estimate must."""
         rng = np.random.default_rng(0)
         pos = rng.uniform(0, 1, size=(120, 4))
-        model = attraction.HarmonicRidge().fit(
+        model = attraction.InverseDistance().fit(
             pos, additive_truth(pos), np.ones(120))
         left = np.full((1, 4), 1e-9)
         right = np.full((1, 4), 1.0 - 1e-9)
@@ -211,3 +143,87 @@ class TestHarmonicInternals(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestRadiusMode(unittest.TestCase):
+    """`InverseDistance(search_mode='radius')`.
+
+    The two modes differ in what they hold fixed -- k-NN the neighbour
+    *count*, radius the *volume* -- so these assert the consequences of that
+    difference rather than that the numbers match.
+    """
+
+    def setUp(self):
+        rng = np.random.default_rng(4)
+        self.pos = rng.random((200, 10))
+        self.val = rng.random(200)
+        self.conf = np.ones(200)
+        self.q = rng.random((50, 10))
+
+    def _fit(self, **kw):
+        return attraction.InverseDistance(k=8, **kw).fit(
+            self.pos, self.val, self.conf)
+
+    def test_the_default_radius_tracks_the_k_nn_estimate(self):
+        """Auto targets `k` neighbours, so the two modes start from the same
+        neighbourhood and should agree closely -- if they did not, the
+        default radius would be calibrated to something else."""
+        a = self._fit().at(self.q)
+        b = self._fit(search_mode="radius").at(self.q)
+        self.assertGreater(float(np.corrcoef(a, b)[0, 1]), 0.85)
+
+    def test_a_wide_radius_collapses_toward_the_mean(self):
+        """Averaging over nearly everything is averaging: the estimate must
+        lose its spread, which is the check that the radius is really
+        widening the neighbourhood and not being ignored."""
+        narrow = self._fit(search_mode="radius").at(self.q)
+        wide = self._fit(search_mode="radius", radius=0.95).at(self.q)
+        self.assertLess(float(wide.std()), float(narrow.std()))
+
+    def test_an_empty_neighbourhood_falls_back_to_the_mean(self):
+        """A radius small enough to find nothing is legal, not an error: the
+        honest estimate for a position nothing has measured near is the mean
+        of what has been measured."""
+        out = self._fit(search_mode="radius", radius=1e-9).at(self.q)
+        np.testing.assert_allclose(out, self.val.mean())
+
+    def test_a_query_on_a_source_takes_its_value(self):
+        """The exact-hit path is shared, so radius mode must not lose it."""
+        out = self._fit(search_mode="radius").at(self.pos[:5])
+        np.testing.assert_allclose(out, self.val[:5])
+
+    def test_bad_arguments_are_refused(self):
+        with self.assertRaises(ValueError):
+            attraction.InverseDistance(search_mode="bogus")
+        with self.assertRaises(ValueError):
+            attraction.InverseDistance(search_mode="radius", radius=1.5).fit(
+                self.pos, self.val, self.conf)
+
+
+class TestRadiusModeThroughEsa(unittest.TestCase):
+    """`att_search_mode` reaches the model, and is independent of the
+    repulsion's `search_mode`."""
+
+    def _run(self, **kw):
+        rng = np.random.default_rng(2)
+        bounds = np.tile([0.0, 1.0], (8, 1))
+        samples = rng.random((40, 8))
+        return ess.esa(samples, bounds, n=12, epochs=40, seed=1,
+                       attractiveness=rng.random(40), **kw)
+
+    def test_every_combination_of_the_two_modes_runs(self):
+        for repel in ("k_nn", "radius"):
+            for attract in ("k_nn", "radius"):
+                with self.subTest(search_mode=repel, att_search_mode=attract):
+                    out = self._run(search_mode=repel, att_search_mode=attract)
+                    self.assertEqual(out.shape, (12, 8))
+                    self.assertTrue(np.isfinite(out).all())
+
+    def test_the_two_modes_are_genuinely_independent(self):
+        """Changing one must move the result while the other is held: if the
+        arms coincided, the 2x2 would not be measuring two things."""
+        base = self._run(search_mode="k_nn", att_search_mode="k_nn")
+        att = self._run(search_mode="k_nn", att_search_mode="radius")
+        rep = self._run(search_mode="radius", att_search_mode="k_nn")
+        self.assertFalse(np.allclose(base, att))
+        self.assertFalse(np.allclose(base, rep))
