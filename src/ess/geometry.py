@@ -107,6 +107,16 @@ def radius_from_normalized(value: float, dim: int) -> float:
     holds points that came out of `esa` and has no way to know the geometry
     they were relaxed under.
 
+    **What the number means in the caller's own units.** `esa` min-maxes
+    each axis onto ``[0, 1]`` *independently*, and the metric is an L1 sum
+    over all of them, so the internal radius is a sum of `dim` dimensionless
+    per-axis fractions -- there is no single length in domain units it
+    corresponds to unless every axis happens to share a unit and a width.
+    The scale is still readable per axis, and that is the useful reading:
+    ``value / 2`` is the mean fraction of *each axis's own range* the ball
+    reaches. On bounds of ``[-5, 5]``, ``value=0.2`` reaches 10% of the
+    range, so 1.0 in the caller's units, on a typical axis.
+
     Args:
         value (float): Fraction of the torus diameter, in ``(0, 1]``.
         dim (int): Dimensionality.
