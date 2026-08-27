@@ -1138,7 +1138,7 @@ def esa(
     batch_size: int | None = None,
     k: int | None = None,
     radius: float | None = None,
-    radius_target: int = geometry.NEIGHBOUR_TARGET,
+    radius_target: int | None = None,
     tol: float = 1e-2,
     patience: int = 25,
     metric: str | collections.abc.Callable = "gaussian",
@@ -1255,9 +1255,13 @@ def esa(
             $D = 1000$ the whole range from 1 to 64 neighbours spans
             $0.474$ to $0.491$. Use `radius_for_target` rather than guessing
             inside that band.
-        radius_target (int): Neighbours the derived radius should contain,
-            when `radius` is not given. This is the knob radius mode is meant
-            to be tuned with. The radius itself stops being tunable by hand
+        radius_target (int | None): Neighbours the derived radius should
+            contain, when `radius` is not given. ``None`` takes the default
+            for the mode -- `geometry.NEIGHBOUR_TARGET` (2) for k-NN, where
+            the radius only scales the force law, and
+            `geometry.RADIUS_TARGET` (5) for radius mode, where it is the
+            search cutoff and 2 leaves one point in eight with no neighbour
+            at all. This is the knob radius mode is meant to be tuned with. The radius itself stops being tunable by hand
             once $D$ is large, but the count behind it does not: at
             $D = 100, N = 300$ the span from 1 to 64 neighbours is a 13%
             change in radius, and at $D = 1000$ a 3.5% one. Same information,
@@ -1494,8 +1498,16 @@ def esa(
     # keeps the auto case expressible from a config file or a CLI flag that
     # cannot carry None. `radius_for_target` converts a neighbour count into
     # a value for this argument.
+    # Two modes, two defaults, because the radius does two different jobs.
+    # In k-NN mode it only scales the force law and `NEIGHBOUR_TARGET` is
+    # calibrated for that; in radius mode it *is* the search cutoff, where
+    # that value leaves one point in eight without a neighbour at all.
+    target = radius_target if radius_target is not None else (
+        geometry.RADIUS_TARGET if search_mode == "radius"
+        else geometry.NEIGHBOUR_TARGET
+    )
     final_radius = (
-        geometry.l1_radius_for_count(dim, samples.shape[0] + n, radius_target)
+        geometry.l1_radius_for_count(dim, samples.shape[0] + n, target)
         if not radius
         else geometry.radius_from_normalized(float(radius), dim)
     )
