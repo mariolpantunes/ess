@@ -1085,6 +1085,7 @@ def esa(
     batch_size: int | None = None,
     k: int | None = None,
     radius: float | None = None,
+    radius_target: int = geometry.NEIGHBOUR_TARGET,
     tol: float = 1e-2,
     patience: int = 25,
     metric: str | collections.abc.Callable = "gaussian",
@@ -1201,6 +1202,17 @@ def esa(
             $D = 1000$ the whole range from 1 to 64 neighbours spans
             $0.474$ to $0.491$. Use `radius_for_target` rather than guessing
             inside that band.
+        radius_target (int): Neighbours the derived radius should contain,
+            when `radius` is not given. This is the knob radius mode is meant
+            to be tuned with. The radius itself stops being tunable by hand
+            once $D$ is large, but the count behind it does not: at
+            $D = 100, N = 300$ the span from 1 to 64 neighbours is a 13%
+            change in radius, and at $D = 1000$ a 3.5% one. Same information,
+            on a scale a caller can act on.
+
+            No effect in k-NN mode, where `k` fixes the count directly. The
+            attraction field's own radius already targets `k_att` neighbours,
+            so that side needs no second knob.
         tol (float): Absolute early-stop floor on the EMA of the largest
             force magnitude (fires only when forces genuinely vanish;
             the working criterion is the plateau — see `_esa`).
@@ -1430,7 +1442,7 @@ def esa(
     # cannot carry None. `radius_for_target` converts a neighbour count into
     # a value for this argument.
     final_radius = (
-        geometry.l1_radius_for_count(dim, samples.shape[0] + n)
+        geometry.l1_radius_for_count(dim, samples.shape[0] + n, radius_target)
         if not radius
         else geometry.radius_from_normalized(float(radius), dim)
     )
