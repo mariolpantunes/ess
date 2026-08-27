@@ -30,6 +30,7 @@ import time
 
 import numpy as np
 from torann import ToroidalNN
+from torann import rust as _torann_rust
 
 from . import attraction, geometry, samplers
 
@@ -600,6 +601,21 @@ def _smart_init(
     return np.mod(picked + jitter, 1.0)
 
 
+#: Below this many direction elements per block, the compiled contraction
+#: loses to NumPy and is not used.
+#:
+#: The kernel is row-parallel, so it pays a rayon dispatch per call and ESS
+#: calls it once per block per epoch -- hundreds of times. Measured end to
+#: end, that overhead swamps the win on a small neighbourhood: at the k-NN
+#: default of `K_LOCAL = 5` neighbours the compiled path ran 0.74x at d=40,
+#: a real regression on the *default* configuration. It reaches 1.6-3.6x at
+#: 64 neighbours, which is the regime radius mode needs and where the
+#: `(rows, k, D)` tensor is tens of megabytes.
+#:
+#: Counted as `block_ids.size * D` -- the elements the tensor would have had
+#: -- because that, not the row count, is what the kernel is avoiding.
+_KERNEL_MIN_WORK = 200_000
+
 #: Elements per intermediate array in the force kernel (~64 MB in
 #: float64). The kernel materialises several $(\text{rows}, m, D)$
 #: tensors at once, so this is what keeps radius mode — whose neighbour
@@ -737,27 +753,11 @@ def _compute_forces(
         valid = block_ids >= 0
 
         safe_ids = np.where(valid, block_ids, 0)
-        disp = active[lo:hi, None, :] - all_data[safe_ids]
-        disp -= np.round(disp)  # toroidal wrap: shortest displacement per axis
-        # Every norm here is L1, because every distance here is L1: torann
-        # returns toroidal L1, the force law is evaluated on it, and the step
-        # is capped in it. A single geometry end to end.
-        norms = np.abs(disp).sum(axis=2, keepdims=True)
 
-        stacked = (norms[..., 0] < 1e-9) & valid
-        if np.any(stacked):
-            noise = rng.standard_normal(size=disp.shape)
-            noise /= np.abs(noise).sum(axis=2, keepdims=True) + 1e-9
-            disp = np.where(stacked[..., None], noise, disp)
-            norms = np.where(stacked[..., None], 1.0, norms)
-
-        # grad(d_L1) = sign(delta): every coordinate is pushed equally, which
-        # is what descending L1 means. An exactly shared coordinate
-        # contributes nothing, since sign(0) = 0 — the symmetric subgradient,
-        # and the only choice that does not invent a direction.
-        grad = np.sign(disp)
-        norms = np.abs(grad).sum(axis=2, keepdims=True)
-
+        # Weights first, geometry second. Nothing above depends on a
+        # displacement -- the force law reads `dists`, which torann already
+        # returned -- so the whole $(rows, k, D)$ tensor can be deferred, and
+        # then not built at all on the compiled path.
         d_hat = np.where(valid, block_dists, 1.0) / radius
         log_mag = metric_fn(d_hat, **metric_kwargs)
         log_mag = np.where(valid, log_mag, -np.inf)
@@ -767,11 +767,52 @@ def _compute_forces(
         weights = np.exp(log_mag - m_i)
         weights[~valid] = 0.0
 
-        directions = grad / np.maximum(norms, 1e-9)
-        net = np.sum(directions * weights[..., None], axis=1)
+        # Coincident points get a random direction rather than none, and the
+        # randomness is this function's `rng` -- a NumPy Generator, whose
+        # stream cannot move into a compiled kernel without changing it. So
+        # a block containing one takes the NumPy path entire. Exact
+        # coincidence is close to measure-zero here, which is what makes
+        # "fall back for the whole block" cheaper than splitting the pairs.
+        stacked = valid & (np.where(valid, block_dists, np.inf) < 1e-9)
+        directions = None
+        pull = None
+        # The kernel itself rather than a flag, so "we took the compiled
+        # path" and "the kernel exists" are one fact instead of two that a
+        # reader (or a type checker) has to keep in step.
+        wd = _torann_rust.weighted_directions
+        kernel = (
+            wd
+            if (wd is not None
+                and not np.any(stacked)
+                and block_ids.size * active.shape[1] >= _KERNEL_MIN_WORK)
+            else None
+        )
+        if kernel is None:
+            disp = active[lo:hi, None, :] - all_data[safe_ids]
+            disp -= np.round(disp)  # toroidal wrap: shortest per axis
+            # Every norm here is L1, because every distance here is L1:
+            # torann returns toroidal L1, the force law is evaluated on it,
+            # and the step is capped in it. A single geometry end to end.
+            norms = np.abs(disp).sum(axis=2, keepdims=True)
+            if np.any(stacked):
+                noise = rng.standard_normal(size=disp.shape)
+                noise /= np.abs(noise).sum(axis=2, keepdims=True) + 1e-9
+                disp = np.where(stacked[..., None], noise, disp)
+                norms = np.where(stacked[..., None], 1.0, norms)
+
+            # grad(d_L1) = sign(delta): every coordinate is pushed equally,
+            # which is what descending L1 means. An exactly shared coordinate
+            # contributes nothing, since sign(0) = 0 — the symmetric
+            # subgradient, and the only choice that does not invent a
+            # direction.
+            grad = np.sign(disp)
+            norms = np.abs(grad).sum(axis=2, keepdims=True)
+            directions = grad / np.maximum(norms, 1e-9)
+            net = np.sum(directions * weights[..., None], axis=1)
+        else:
+            net = None  # filled below, once the second weighting is known
 
         force_cap = 1000.0
-        forces[lo:hi] = np.exp(np.minimum(m_i, np.log(force_cap))) * net
 
         # Both are set together by `esa`; testing the callable is what makes
         # that pairing explicit, and it is the thing actually invoked.
@@ -788,14 +829,26 @@ def _compute_forces(
             m_a = np.where(np.isneginf(m_a), 0.0, m_a)
             w_att = np.exp(log_att - m_a) * a
             w_att[~valid] = 0.0
-            pull = np.sum(directions * w_att[..., None], axis=1)
+            if kernel is None:
+                pull = np.sum(directions * w_att[..., None], axis=1)
+            else:
+                # Both weightings in one call. They differ only in what
+                # multiplies the direction, and the direction is 99% of the
+                # cost, so two calls would pay for the same wrap twice.
+                net, pull = kernel(all_data, active[lo:hi], block_ids,
+                                   np.stack((weights, w_att)))
+            # Scaled here rather than at the subtraction below: it is the
+            # only place `m_a` is in scope, and folding it in leaves one
+            # optional to test instead of two that must agree.
+            pull = np.exp(np.minimum(m_a, np.log(force_cap))) * pull
             # `directions` points from the neighbour towards the active point,
             # so repulsion adds along it and attraction subtracts.
-            forces[lo:hi] -= (
-                attraction_weight
-                * np.exp(np.minimum(m_a, np.log(force_cap)))
-                * pull
-            )
+        if net is None and kernel is not None:
+            # Repulsion only: one weighting, so nothing to share with.
+            (net,) = kernel(all_data, active[lo:hi], block_ids, weights[None])
+        forces[lo:hi] = np.exp(np.minimum(m_i, np.log(force_cap))) * net
+        if pull is not None:
+            forces[lo:hi] -= attraction_weight * pull
 
     return forces
 
