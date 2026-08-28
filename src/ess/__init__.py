@@ -102,17 +102,29 @@ from . import attraction, baseline, geometry, legacy, samplers, utils
 # 2. Main API Exports
 from .attraction import AttractionModel, InverseDistance
 from .ess import esa, ess
-from .geometry import NEIGHBOUR_TARGET, l1_radius_for_count, radius_for_target
+from .geometry import (
+    LOW_DIM,
+    NEIGHBOUR_TARGET,
+    RADIUS_TARGET,
+    Neighbourhood,
+    l1_radius_for_count,
+    neighbourhood_for,
+    radius_for_target,
+    radius_target_for,
+)
 
 # 4. Sampler Exports
 from .samplers import LHCSampler, Sampler, UniformSampler, check_sampler
 
 # Define __all__ to control what 'from ess import *' exports
 __all__ = [
+    "LOW_DIM",
     "NEIGHBOUR_TARGET",
+    "RADIUS_TARGET",
     "AttractionModel",
     "InverseDistance",
     "LHCSampler",
+    "Neighbourhood",
     "Sampler",
     "ToroidalNN",
     "UniformSampler",
@@ -124,7 +136,9 @@ __all__ = [
     "geometry",
     "l1_radius_for_count",
     "legacy",
+    "neighbourhood_for",
     "radius_for_target",
+    "radius_target_for",
     "samplers",
     "utils",
 ]

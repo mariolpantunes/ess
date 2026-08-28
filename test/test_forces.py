@@ -10,6 +10,7 @@ heuristic.
 import inspect
 import itertools
 import math
+import typing
 import unittest
 
 import numpy as np
@@ -23,10 +24,16 @@ from ess.ess import (
     softened_inverse_force,
 )
 from ess.geometry import (
+    LOW_DIM,
     NEIGHBOUR_TARGET,
+    RADIUS_TARGET,
+    SEARCH_MODES,
+    Neighbourhood,
     l1_radius_for_count,
+    neighbourhood_for,
     radius_for_target,
     radius_from_normalized,
+    radius_target_for,
 )
 
 
@@ -505,3 +512,208 @@ class TestNormalizedRadius(unittest.TestCase):
         band = [radius_for_target(d, 400) for d in (2, 10, 100, 1000)]
         self.assertTrue(all(x < y for x, y in itertools.pairwise(band)), band)
         self.assertLess(abs(band[-1] - 0.5), abs(band[0] - 0.5))
+
+
+class TestRadiusTargetHeuristic(unittest.TestCase):
+    """`radius_target_for` — what makes radius mode parameter-free.
+
+    The measured optima it is fitted to, and the property that the law it is
+    built on (`2D`) does not have on its own: boundedness.
+    """
+
+    #: Sweep optima at ``force_weight=1``, stage g. Below D=10 k-NN wins and
+    #: the "optimum" is noise among saturated ties, so those are not pinned.
+    MEASURED: typing.ClassVar[dict[int, int]] = {10: 16, 20: 40, 40: 96}
+
+    @staticmethod
+    def _pool(dim):
+        """The 3N pool a population-sized caller actually brings."""
+        return 3 * round(10 * math.sqrt(dim))
+
+    def test_it_tracks_the_measured_optima(self):
+        """Within a factor of 1.5 -- the grid itself only resolves powers of
+        two, so pinning tighter would be pinning noise."""
+        for dim, best in self.MEASURED.items():
+            with self.subTest(dim=dim):
+                got = radius_target_for(dim, self._pool(dim))
+                self.assertLess(max(got, best) / min(got, best), 1.5,
+                                f"D={dim}: got {got}, measured {best}")
+
+    def test_it_is_bounded_where_2d_is_not(self):
+        """The defect this function exists to fix. At D=1000 the bare rule
+        asks for 2000 neighbours from a design of 948."""
+        for dim in (225, 500, 1000, 5000):
+            with self.subTest(dim=dim):
+                n = self._pool(dim)
+                got = radius_target_for(dim, n)
+                self.assertLess(got, 2 * dim)
+                self.assertLessEqual(got, n // 2)
+
+    def test_it_never_asks_for_more_than_half_the_design(self):
+        """Past half, the radius is large enough that every d_hat compresses
+        and the force law flattens toward uniform -- which is why the optima
+        are interior rather than 'more is better'."""
+        for dim in (1, 2, 10, 100, 1000):
+            for n in (4, 10, 96, 300, 948):
+                with self.subTest(dim=dim, n=n):
+                    self.assertLessEqual(radius_target_for(dim, n), max(1, n // 2))
+
+    def test_a_design_too_small_for_the_floor_yields_what_it_has(self):
+        """The cap wins over the floor: a neighbourhood cannot contain points
+        the design does not hold."""
+        self.assertEqual(radius_target_for(100, 6), 3)
+        self.assertGreaterEqual(radius_target_for(100, 0), 1)
+
+    def test_it_is_monotone_in_dimension(self):
+        n = 10_000  # large enough that the cap never binds
+        vals = [radius_target_for(d, n) for d in (1, 2, 5, 10, 50, 200, 1000)]
+        self.assertTrue(all(a <= b for a, b in itertools.pairwise(vals)), vals)
+
+    def test_below_the_crossover_it_is_flat(self):
+        """Radius mode is not the mode to run below `LOW_DIM` -- k-NN wins
+        there on optimizer outcome -- so the law is not extended down, it is
+        replaced by a flat count."""
+        for dim in (1, 2, 3, 5, 9):
+            with self.subTest(dim=dim):
+                self.assertEqual(radius_target_for(dim, 10_000), RADIUS_TARGET)
+        self.assertEqual(radius_target_for(LOW_DIM, 10_000), 2 * LOW_DIM)
+
+    def test_the_crossover_and_the_flat_count_are_arguments(self):
+        """Both are measurements, and measurements move. Neither is welded
+        into the body."""
+        self.assertEqual(radius_target_for(5, 10_000, low_dim=1), 10)
+        self.assertEqual(radius_target_for(15, 10_000, low_dim=20), 5)
+        self.assertEqual(radius_target_for(3, 10_000, low_target=7), 7)
+
+    def test_the_cap_still_binds_below_the_crossover(self):
+        """A tiny design cannot supply the flat count either."""
+        self.assertEqual(radius_target_for(2, 6), 3)
+
+    def test_the_cap_takes_over_where_demand_crosses_supply(self):
+        """Demand grows like D, the pool like sqrt(D), so they cross -- at
+        D=225 for a population-sized design. Below it the rule is 2D; above
+        it the rule is the design's own size."""
+        below = 100
+        self.assertEqual(radius_target_for(below, 10_000), 2 * below)
+        above = 400
+        self.assertLess(radius_target_for(above, self._pool(above)), 2 * above)
+
+
+class TestRadiusTargetReachesEsa(unittest.TestCase):
+    def test_radius_mode_derives_its_target_without_being_told(self):
+        """The parameter-free path: no `radius`, no `radius_target`, and the
+        radius that comes out is the one the heuristic asks for."""
+        rng = np.random.default_rng(0)
+        for dim in (10, 40, 100):
+            with self.subTest(dim=dim):
+                n = round(10 * math.sqrt(dim))
+                bounds = np.tile([0.0, 1.0], (dim, 1))
+                stats = {}
+                esa(rng.random((2 * n, dim)), bounds, n=n, epochs=5,
+                    search_mode="radius", seed=1, stats=stats)
+                want = l1_radius_for_count(
+                    dim, 3 * n, radius_target_for(dim, 3 * n))
+                self.assertAlmostEqual(stats["radius"], want, places=12)
+
+    def test_k_nn_mode_is_untouched_by_it(self):
+        """The heuristic is radius mode's. k-NN keeps `NEIGHBOUR_TARGET`,
+        which is calibrated for scaling the force law rather than selecting
+        neighbours."""
+        rng = np.random.default_rng(0)
+        dim, n = 40, 63
+        bounds = np.tile([0.0, 1.0], (dim, 1))
+        stats = {}
+        esa(rng.random((2 * n, dim)), bounds, n=n, epochs=5, seed=1,
+            search_mode="k_nn", stats=stats)
+        self.assertAlmostEqual(
+            stats["radius"],
+            l1_radius_for_count(dim, 3 * n, NEIGHBOUR_TARGET), places=12)
+
+
+class TestNeighbourhoodPolicy(unittest.TestCase):
+    """`neighbourhood_for` is the whole of the ``"auto"`` policy: which query
+    to run, and how wide. Both halves, one call, because they are one
+    decision."""
+
+    def test_auto_switches_mode_at_the_crossover(self):
+        for dim in (2, 3, 5, 9):
+            with self.subTest(dim=dim):
+                self.assertEqual(neighbourhood_for(dim, 51).mode, "k_nn")
+        for dim in (LOW_DIM, 20, 40, 100):
+            with self.subTest(dim=dim):
+                self.assertEqual(neighbourhood_for(dim, 300).mode, "radius")
+
+    def test_naming_a_mode_is_obeyed_at_every_dimension(self):
+        """``"auto"`` is a default, not a policy imposed on a caller who has
+        decided: radius at d=3 and k-NN at d=100 are both legitimate asks."""
+        self.assertEqual(neighbourhood_for(3, 51, "radius").mode, "radius")
+        self.assertEqual(neighbourhood_for(100, 300, "k_nn").mode, "k_nn")
+
+    def test_the_target_follows_the_mode_that_was_chosen(self):
+        """The count means different things in the two modes, so it has to be
+        resolved with the mode rather than beside it."""
+        self.assertEqual(neighbourhood_for(3, 51),
+                         Neighbourhood("k_nn", NEIGHBOUR_TARGET))
+        self.assertEqual(neighbourhood_for(40, 189),
+                         Neighbourhood("radius", radius_target_for(40, 189)))
+
+    def test_an_explicit_target_wins_in_either_mode(self):
+        for mode in ("auto", "k_nn", "radius"):
+            with self.subTest(mode=mode):
+                self.assertEqual(neighbourhood_for(40, 189, mode, 7).target, 7)
+
+    def test_the_crossover_is_an_argument(self):
+        self.assertEqual(neighbourhood_for(5, 300, low_dim=2).mode, "radius")
+        self.assertEqual(neighbourhood_for(40, 300, low_dim=64).mode, "k_nn")
+
+    def test_it_unpacks_like_the_pair_it_replaces(self):
+        mode, target = neighbourhood_for(40, 189)
+        self.assertEqual((mode, target), ("radius", 80))
+
+    def test_an_unknown_mode_is_refused(self):
+        for mode in ("knn", "K_NN", "ball", ""):
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                neighbourhood_for(40, 189, mode)  # pyright: ignore[reportArgumentType]
+
+    def test_the_accepted_spellings_are_read_off_the_annotation(self):
+        """Not repeated: the validation and the type cannot drift apart."""
+        self.assertEqual(SEARCH_MODES, ("auto", "k_nn", "radius"))
+
+
+class TestAutoReachesEsa(unittest.TestCase):
+    def test_auto_is_the_default(self):
+        self.assertEqual(
+            inspect.signature(esa).parameters["search_mode"].default, "auto")
+
+    def test_the_default_run_picks_the_mode_from_the_dimension(self):
+        """End to end, with nothing passed: the radius that comes out is the
+        one the chosen mode asks for, and `stats` reports which mode ran."""
+        rng = np.random.default_rng(0)
+        for dim, want in ((3, "k_nn"), (40, "radius")):
+            with self.subTest(dim=dim):
+                n = round(10 * math.sqrt(dim))
+                bounds = np.tile([0.0, 1.0], (dim, 1))
+                stats = {}
+                esa(rng.random((2 * n, dim)), bounds, n=n, epochs=5, seed=1,
+                    stats=stats)
+                mode, target = neighbourhood_for(dim, 3 * n)
+                self.assertEqual(stats["search_mode"], want)
+                self.assertEqual(stats["search_mode"], mode)
+                self.assertAlmostEqual(
+                    stats["radius"],
+                    l1_radius_for_count(dim, 3 * n, target), places=12)
+
+    def test_auto_below_the_crossover_matches_the_old_default(self):
+        """The k-NN path is unchanged where `auto` chooses it -- same mode,
+        same radius as before this argument existed."""
+        rng = np.random.default_rng(0)
+        dim, n = 5, 22
+        bounds = np.tile([0.0, 1.0], (dim, 1))
+        points = rng.random((2 * n, dim))
+        auto, explicit = {}, {}
+        a = esa(points, bounds, n=n, epochs=20, seed=1, stats=auto)
+        b = esa(points, bounds, n=n, epochs=20, seed=1, search_mode="k_nn",
+                stats=explicit)
+        self.assertEqual(auto["search_mode"], "k_nn")
+        self.assertEqual(auto["radius"], explicit["radius"])
+        np.testing.assert_allclose(a, b)

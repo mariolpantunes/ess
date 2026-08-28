@@ -85,7 +85,8 @@ index = ToroidalNN(seed=42, backend="rust")
 lhs_sampler = LHCSampler(random_state=42)
 
 # Run ESA (returns ONLY the new points)
-# search_mode='radius' activates the dense physical interaction model
+# search_mode defaults to 'auto', which picks k-NN or radius from the
+# dimension; naming one overrides that, as here
 new_points = esa(
     obstacles,
     bounds,
@@ -216,7 +217,14 @@ on the estimator changes that.
 **ESA (Empty Space Algorithm)** treats existing points as fixed charged particles and new points as free moving charges.
 
 1. **k-NN Mode**: Points are repelled by their  nearest neighbors. Good for maintaining local uniformity.
-2. **Radius Mode (New)**: Points are repelled by **all** neighbors within a specific cutoff radius. This mimics real electrostatic fields and prevents "tunneling" in high-density regions.
+2. **Radius Mode**: Points are repelled by **all** neighbors within a specific cutoff radius. This mimics real electrostatic fields and prevents "tunneling" in high-density regions.
+3. **Auto (default, new in v0.7.2)**: the mode is chosen from the
+   dimension. Below `geometry.LOW_DIM` (10) k-NN wins on optimizer outcome
+   and is no more expensive; from there up radius mode wins on quality, and
+   from `D = 40` on cost as well (0.90x the k-NN time at `D = 40`, 0.73x at
+   `D = 100`). `ess.neighbourhood_for(dim, n_points)` is that policy on its
+   own, and it answers the neighbour *count* too, so the default path takes
+   no radius tuning at any dimension. Naming a mode still gets that mode.
 
 **Force Functions** (all evaluated on the distance normalised by the
 interaction radius, so their parameters are dimension-free):

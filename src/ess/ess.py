@@ -473,7 +473,8 @@ class _AttractionField:
 
     def __init__(self, positions, values, k=8, power=2.0, decay=0.5,
                  model: "str | type | attraction.AttractionModel" = "idw",
-                 search_mode: str = "k_nn", radius: float | None = None):
+                 search_mode: geometry.ResolvedMode = "k_nn",
+                 radius: float | None = None):
         self._pos = np.asarray(positions, dtype=np.float64)
         self._val = np.asarray(values, dtype=np.float64)
         self._conf = np.ones(self._val.shape[0], dtype=np.float64)
@@ -866,7 +867,7 @@ def _esa(
     batch_size: int,
     k: int,
     radius: float,
-    search_mode: str,
+    search_mode: geometry.ResolvedMode,
     tol: float,
     patience: int,
     metric_fn: collections.abc.Callable,
@@ -879,7 +880,7 @@ def _esa(
     attraction_kwargs: dict | None = None,
     k_att: int = 8,
     att_power: float = 2.0,
-    att_search_mode: str = "k_nn",
+    att_search_mode: geometry.ResolvedMode = "k_nn",
     att_radius: float | None = None,
     placement_weight: float | None = None,
     att_every: int = 5,
@@ -930,7 +931,9 @@ def _esa(
         k (int): Neighbours per query (k-NN mode).
         radius (float): Interaction radius $R$ (search cutoff in radius
             mode; force normalisation scale in both modes).
-        search_mode (str): ``"k_nn"`` or ``"radius"``.
+        search_mode (geometry.ResolvedMode): ``"k_nn"`` or ``"radius"``.
+            Already resolved -- ``"auto"`` is answered in `esa`, so the loop
+            never has to ask what mode it is running.
         tol (float): Absolute convergence floor on the force EMA.
         patience (int): Consecutive non-improving epochs (< 1% relative)
             before the plateau stop fires.
@@ -1119,6 +1122,7 @@ def _esa(
 
     if stats is not None:
         stats["radius"] = radius
+        stats["search_mode"] = search_mode
         stats["epochs_total"] = int(np.sum(stats.get("batch_epochs", [0])))
         stats.update(timers or {})
 
@@ -1133,7 +1137,7 @@ def esa(
     index: ToroidalNN | None = None,
     epochs: int = 1024,
     lr: float = 0.5,
-    search_mode: str = "k_nn",
+    search_mode: geometry.SearchMode = "auto",
     decay: float = 0.99,
     batch_size: int | None = None,
     k: int | None = None,
@@ -1151,7 +1155,7 @@ def esa(
     attraction_kwargs: dict | None = None,
     k_att: int = 8,
     att_power: float = 2.0,
-    att_search_mode: str = "k_nn",
+    att_search_mode: geometry.ResolvedMode = "k_nn",
     att_radius: float | None = None,
     placement_weight: float | None = None,
     att_every: int = 5,
@@ -1206,8 +1210,18 @@ def esa(
             interaction radius**. Largely inert: `STEP_CAP` binds for
             most of the run, so it mainly sets when annealing takes
             over (0.2 and 0.5 differ by <2% on every benchmark cell).
-        search_mode (str): ``"k_nn"`` (rank-based neighbourhood) or
-            ``"radius"`` (metric ball).
+        search_mode (geometry.SearchMode): How the repulsion picks the
+            neighbours it acts on. ``"auto"`` (default) chooses per
+            dimension via `geometry.neighbourhood_for`: ``"k_nn"``
+            (rank-based neighbourhood) below `geometry.LOW_DIM`, and
+            ``"radius"`` (metric ball) from there up, which is where radius
+            mode is both better and cheaper -- 0.90x the k-NN time at
+            $D = 40$ and 0.73x at $D = 100$. Naming a mode still gets that
+            mode at any dimension.
+
+            The default is ``"auto"`` rather than a fixed mode because
+            neither mode wins everywhere and the crossover is a property of
+            the dimension, not of the caller's intent.
         decay (float): Learning-rate decay $\gamma$ per epoch.
         batch_size (int | None): Points optimized together. ``None``
             (default) relaxes **all** $n$ points simultaneously, which
@@ -1257,11 +1271,12 @@ def esa(
             inside that band.
         radius_target (int | None): Neighbours the derived radius should
             contain, when `radius` is not given. ``None`` takes the default
-            for the mode -- `geometry.NEIGHBOUR_TARGET` (2) for k-NN, where
-            the radius only scales the force law, and
-            `geometry.RADIUS_TARGET` (5) for radius mode, where it is the
-            search cutoff and 2 leaves one point in eight with no neighbour
-            at all. This is the knob radius mode is meant to be tuned with. The radius itself stops being tunable by hand
+            for whichever mode is chosen -- `geometry.NEIGHBOUR_TARGET` (2)
+            for k-NN, where the radius only scales the force law, and
+            `geometry.radius_target_for(dim, N)` for radius mode, which
+            scales the count with the dimension and caps it at half the
+            design. That default is what makes radius mode parameter-free;
+            pass a number here only to override it. The radius itself stops being tunable by hand
             once $D$ is large, but the count behind it does not: at
             $D = 100, N = 300$ the span from 1 to 64 neighbours is a 13%
             change in radius, and at $D = 1000$ a 3.5% one. Same information,
@@ -1394,9 +1409,17 @@ def esa(
             model correctly reports that it knows little. Raising the measured
             count to 300 at the same dimension drops fourier to 0.11, which is
             the evidence that the limit is the data rather than the estimator.
-        att_search_mode (str): ``'k_nn'`` or ``'radius'`` for the
-            attractiveness estimate. Deliberately independent of
-            `search_mode`, which governs the repulsion: they are two separate
+        att_search_mode (geometry.ResolvedMode): ``'k_nn'`` or ``'radius'``
+            for the attractiveness estimate. No ``"auto"`` here, and the
+            omission is a measurement rather than an oversight: on the 2x2
+            mode sweep, radius attraction is the worse half at every
+            dimension where the effect resolves at all (`de` and `cs` lose
+            0.002-0.009 dlog10 to it at $D \ge 40$, under both repulsion
+            modes), so there is no crossover for a policy to find. Fixing
+            the neighbour *count* is what this estimate wants.
+
+            Deliberately independent of `search_mode`, which governs the
+            repulsion: they are two separate
             uses of the index and nothing requires a run to make the same
             choice twice. k-NN holds the neighbour *count* fixed, so a
             candidate in a void reaches far out and is smoothed by distant
@@ -1416,7 +1439,9 @@ def esa(
         stats (dict | None): Optional dictionary filled in place with run
             statistics — ``batch_epochs`` (epochs used per batch),
             ``batch_force_ema`` (final force EMA per batch),
-            ``epochs_total``, ``radius``, and a wall-clock decomposition
+            ``epochs_total``, ``radius``, ``search_mode`` (the mode actually
+            run, which is the answer when it was left to ``"auto"``), and a
+            wall-clock decomposition
             in seconds: ``query_s`` (neighbour search), ``force_s`` (the
             force kernel), ``step_s`` (position update), ``update_s``
             (re-indexing the moved points) and ``setup_s``
@@ -1498,16 +1523,17 @@ def esa(
     # keeps the auto case expressible from a config file or a CLI flag that
     # cannot carry None. `radius_for_target` converts a neighbour count into
     # a value for this argument.
-    # Two modes, two defaults, because the radius does two different jobs.
-    # In k-NN mode it only scales the force law and `NEIGHBOUR_TARGET` is
-    # calibrated for that; in radius mode it *is* the search cutoff, where
-    # that value leaves one point in eight without a neighbour at all.
-    target = radius_target if radius_target is not None else (
-        geometry.RADIUS_TARGET if search_mode == "radius"
-        else geometry.NEIGHBOUR_TARGET
-    )
+    # One call answers both halves of the neighbourhood question -- which
+    # query to run, and how wide -- because they are one decision: the target
+    # is the search cutoff in radius mode and only the force scale in k-NN, so
+    # a mode and a target resolved apart can be paired wrongly. `search_mode`
+    # is `"auto"` by default, which is what makes the default path
+    # parameter-free at every dimension rather than only above the crossover.
+    n_total = samples.shape[0] + n
+    mode, target = geometry.neighbourhood_for(
+        dim, n_total, search_mode, radius_target)
     final_radius = (
-        geometry.l1_radius_for_count(dim, samples.shape[0] + n, target)
+        geometry.l1_radius_for_count(dim, n_total, target)
         if not radius
         else geometry.radius_from_normalized(float(radius), dim)
     )
@@ -1527,7 +1553,7 @@ def esa(
         batch_size=batch,
         k=k_value,
         radius=final_radius,
-        search_mode=search_mode,
+        search_mode=mode,
         tol=tol,
         patience=patience,
         metric_fn=metric_fn,
@@ -1540,7 +1566,7 @@ def esa(
         attraction_kwargs=attraction_kw,
         k_att=int(k_att),
         att_power=float(att_power),
-        att_search_mode=str(att_search_mode),
+        att_search_mode=att_search_mode,
         att_radius=att_radius,
         placement_weight=(None if placement_weight is None
                           else float(placement_weight)),

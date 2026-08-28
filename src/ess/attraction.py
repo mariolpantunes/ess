@@ -187,12 +187,20 @@ class InverseDistance(AttractionModel):
     honest answer for a position nothing nearby has measured. Which is better
     is an empirical question and the reason this is a switch.
 
+    It has an answer, and it is why the switch has no ``'auto'`` while
+    `ess.esa`'s `search_mode` does. Across the 2x2 mode sweep, radius
+    attraction is the worse half at every dimension where the effect resolves
+    (`de` and `cs` give up 0.002-0.009 dlog10 to it from $D = 40$ up, under
+    either repulsion mode), so unlike the repulsion there is no crossover for
+    a policy to sit on -- only a default. It stays a switch because that
+    measurement is one benchmark family; it does not stay a policy.
+
     Args:
         k (int): Neighbours averaged over in ``'k_nn'`` mode.
         power (float): Inverse-distance exponent.
         backend (str): Forwarded to `ToroidalNN`; `'auto'` picks the compiled
             kernel when it is installed.
-        search_mode (str): ``'k_nn'`` or ``'radius'``.
+        search_mode (geometry.ResolvedMode): ``'k_nn'`` or ``'radius'``.
         radius (float | None): Normalized radius in $(0, 1]$ for
             ``'radius'`` mode -- a fraction of the torus diameter, see
             `geometry.radius_from_normalized`. ``None`` or ``0`` derives one
@@ -202,7 +210,8 @@ class InverseDistance(AttractionModel):
     """
 
     def __init__(self, k: int = 8, power: float = 2.0, backend: str = "auto",
-                 search_mode: str = "k_nn", radius: float | None = None):
+                 search_mode: geometry.ResolvedMode = "k_nn",
+                 radius: float | None = None):
         if search_mode not in ("k_nn", "radius"):
             raise ValueError(
                 f"search_mode must be 'k_nn' or 'radius', got {search_mode!r}")
