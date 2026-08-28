@@ -36,6 +36,35 @@ repos:
 
   - repo: local
     hooks:
+      # Resolve the venv the way the runner does, before anything reads it.
+      #
+      # CI installs `.[dev]` into a clean machine, so every dependency comes
+      # from PyPI. A developer's venv drifts from that the moment a sibling
+      # is installed editable -- and an editable install *satisfies* the
+      # requirement, so `pip install` alone will never undo one. The venv
+      # then reports the right version while loading unreleased source, and
+      # a local check passes against code the runner cannot see.
+      #
+      # That is not hypothetical: `radius_target: int | None` type-checked
+      # clean here and failed CI, because this venv had ESS installed from a
+      # branch that had the `| None` and PyPI did not. Editable installs are
+      # removed first, which is the part `pip install` cannot do for itself.
+      #
+      # ~2s when nothing has moved. Cross-repo work still belongs in the
+      # system environment; this venv exists to be what the runner is.
+      - id: venv-matches-ci
+        name: venv matches CI
+        entry: >-
+          bash -c '
+          [ -d venv ] || python -m venv venv;
+          eds=$(venv/bin/pip list --editable --format=freeze 2>/dev/null
+          | sed "s/[=@ ].*//" | grep -vix emptyspacesearch || true);
+          [ -n "$eds" ] && venv/bin/pip uninstall -y -q $eds;
+          venv/bin/pip install -q --upgrade ".[dev]"'
+        language: system
+        files: '(\.py$|^pyproject\.toml$|^requirements\.txt$)'
+        pass_filenames: false
+
       - id: ruff
         name: ruff (src, test, examples)
         entry: ruff check src test examples
@@ -65,8 +94,8 @@ repos:
         # to make a commit pass. `legacy.py` is reference material for tests
         # rather than shipped behaviour, hence the modest floor.
         entry: >-
-          bash -c 'PYTHONPATH=src python -m coverage run --source=ess -m
-          unittest discover -s test -q && python -m coverage report
+          bash -c 'PYTHONPATH=src venv/bin/python -m coverage run --source=ess
+          -m unittest discover -s test -q && venv/bin/python -m coverage report
           --fail-under=85'
         language: system
         files: '(\.py$|^pyproject\.toml$)'
@@ -78,7 +107,7 @@ repos:
         # but a commit hook has no such step and the interpreter on PATH is
         # whoever's -- usually one without this package installed. Testing the
         # working tree is also the more useful thing to check before a commit.
-        entry: env PYTHONPATH=src python -m unittest discover -s test
+        entry: env PYTHONPATH=src venv/bin/python -m unittest discover -s test
         language: system
         files: '(\.py$|^pyproject\.toml$)'
         pass_filenames: false
