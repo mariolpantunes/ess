@@ -21,6 +21,7 @@ __all__ = [
     "RADIUS_TARGET",
     "l1_radius_for_count",
     "radius_for_target",
+    "radius_target_for",
 ]
 
 NEIGHBOUR_TARGET = 2
@@ -40,7 +41,13 @@ a test pins it to. Two jobs, two constants.
 """
 
 RADIUS_TARGET = 5
-r"""int: Neighbours the interaction radius should contain in **radius mode**.
+r"""int: Floor on the neighbour count in **radius mode**.
+
+Was the whole answer; is now the lower bound of `radius_target_for`, which
+scales the target with the dimension. It still sets the floor for the same
+reason it was chosen: below about five neighbours the estimate is starved,
+and at two roughly one point in eight at $D=100$ has an empty neighbourhood,
+feels no force at all and never moves.
 
 Matched to `ess.K_LOCAL`, so the two modes start from the same
 neighbourhood and differ only in whether the *count* or the *volume* is
@@ -123,6 +130,73 @@ def l1_radius_for_count(
 
     z = statistics.NormalDist().inv_cdf(count / n)
     return min(max(dim / 4.0 + z * math.sqrt(dim / 48.0), 1e-6), dim / 2.0)
+
+
+def radius_target_for(dim: int, n_points: int) -> int:
+    r"""Neighbours radius mode should aim for, from the dimension and the
+    design size. This is what makes radius mode parameter-free.
+
+    $$ t = \min\big(\max(2D,\ \texttt{RADIUS\_TARGET}),\ \lfloor N/2 \rfloor\big) $$
+
+    **Why $2D$.** It is the spanning requirement, and it long predates this
+    function -- it was the original k-NN default, on the argument that in one
+    dimension a point needs a neighbour on each side to settle, so $D$
+    dimensions need $2D$. Measured against the sweep optima at
+    ``force_weight=1``, it is also simply the best-fitting law: mean factor
+    error 1.22x, against 1.45x for $c\sqrt{D}$ and 1.58x for $c\log_2 D$.
+    Those two fail on *curvature*, not calibration -- fitted optimally they
+    still over-provision 2x at $D=10$ (34 against a measured 16) and
+    under-provision at $D=40$ (67 against 96), because neither can bend
+    enough. Observed optima were 16 at $D=10$, 32-48 at $D=20$ and 96 at
+    $D=40$.
+
+    **Why the cap, and why it is not optional.** $2D$ is unbounded and the
+    design is not. A population-sized pool holds $3N \approx 30\sqrt{D}$
+    points, so demand grows like $D$ while supply grows like $\sqrt{D}$:
+    $2D$ is 42% of the pool at $D=40$, 95% at $D=200$, and **exceeds it
+    entirely at $D=225$**. Past that the rule would silently ask for more
+    neighbours than exist. The cap is where $\sqrt{D}$ belongs -- $N/2$ is a
+    $\sqrt{D}$ ceiling because $N$ is -- and at $D=1000$ it yields 474
+    rather than 2000.
+
+    Half the pool is also where the neighbourhood stops being local: the
+    measured optimum at $D=40$ is 96 of 189 points, 51%. Beyond that the
+    radius grows enough that every $\hat{d} = d_{L1}/R$ compresses and the
+    force law flattens toward uniform, which is the mechanism behind the
+    optima being *interior* rather than "more is better". Too few neighbours
+    leaves points with none at all; too many erase the local structure the
+    field exists to express.
+
+    When the cap binds, the answer is a larger pool -- `n_ess`, or more
+    rounds -- not a different formula. The design has run out of points.
+
+    Note:
+        Fitted at ``force_weight=1``. The stronger-attraction operating point
+        has its optima pinned at the pool ceiling throughout, so whether it
+        wants a term of its own is open until that sweep lands.
+
+        Radius mode itself is worth choosing from about $D=10$: below that
+        k-NN is both better and cheaper, above it radius wins on quality from
+        $D=10$ and on cost from $D=40$.
+
+    Args:
+        dim (int): Dimensionality $D$.
+        n_points (int): Points the neighbourhood is drawn from (static +
+            generated) -- the pool, not the population.
+
+    Returns:
+        int: Neighbours to target, at least `RADIUS_TARGET` unless the design
+            is too small to hold that many, and never more than half of it.
+
+    Example:
+        >>> radius_target_for(40, 189)      # 2D = 80, well under the cap
+        80
+        >>> radius_target_for(1000, 948)    # 2D = 2000; the cap binds
+        474
+    """
+    want = max(2 * dim, RADIUS_TARGET)
+    cap = max(1, n_points // 2)
+    return int(min(want, cap))
 
 
 def radius_from_normalized(value: float, dim: int) -> float:

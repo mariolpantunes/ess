@@ -1259,9 +1259,10 @@ def esa(
             contain, when `radius` is not given. ``None`` takes the default
             for the mode -- `geometry.NEIGHBOUR_TARGET` (2) for k-NN, where
             the radius only scales the force law, and
-            `geometry.RADIUS_TARGET` (5) for radius mode, where it is the
-            search cutoff and 2 leaves one point in eight with no neighbour
-            at all. This is the knob radius mode is meant to be tuned with. The radius itself stops being tunable by hand
+            and `geometry.radius_target_for(dim, N)` for radius mode, which
+            scales the count with the dimension and caps it at half the
+            design. That default is what makes radius mode parameter-free;
+            pass a number here only to override it. The radius itself stops being tunable by hand
             once $D$ is large, but the count behind it does not: at
             $D = 100, N = 300$ the span from 1 to 64 neighbours is a 13%
             change in radius, and at $D = 1000$ a 3.5% one. Same information,
@@ -1502,12 +1503,19 @@ def esa(
     # In k-NN mode it only scales the force law and `NEIGHBOUR_TARGET` is
     # calibrated for that; in radius mode it *is* the search cutoff, where
     # that value leaves one point in eight without a neighbour at all.
+    # Two modes, two defaults, because the radius does two different jobs.
+    # In k-NN mode it only scales the force law and `NEIGHBOUR_TARGET` is
+    # calibrated for that. In radius mode it *is* the search cutoff, and the
+    # right count scales with the dimension -- a fixed value is either
+    # starved at high D or global at low D. `radius_target_for` is what makes
+    # radius mode parameter-free.
+    n_total = samples.shape[0] + n
     target = radius_target if radius_target is not None else (
-        geometry.RADIUS_TARGET if search_mode == "radius"
+        geometry.radius_target_for(dim, n_total) if search_mode == "radius"
         else geometry.NEIGHBOUR_TARGET
     )
     final_radius = (
-        geometry.l1_radius_for_count(dim, samples.shape[0] + n, target)
+        geometry.l1_radius_for_count(dim, n_total, target)
         if not radius
         else geometry.radius_from_normalized(float(radius), dim)
     )

@@ -10,6 +10,7 @@ heuristic.
 import inspect
 import itertools
 import math
+import typing
 import unittest
 
 import numpy as np
@@ -27,6 +28,7 @@ from ess.geometry import (
     l1_radius_for_count,
     radius_for_target,
     radius_from_normalized,
+    radius_target_for,
 )
 
 
@@ -505,3 +507,99 @@ class TestNormalizedRadius(unittest.TestCase):
         band = [radius_for_target(d, 400) for d in (2, 10, 100, 1000)]
         self.assertTrue(all(x < y for x, y in itertools.pairwise(band)), band)
         self.assertLess(abs(band[-1] - 0.5), abs(band[0] - 0.5))
+
+
+class TestRadiusTargetHeuristic(unittest.TestCase):
+    """`radius_target_for` — what makes radius mode parameter-free.
+
+    The measured optima it is fitted to, and the property that the law it is
+    built on (`2D`) does not have on its own: boundedness.
+    """
+
+    #: Sweep optima at ``force_weight=1``, stage g. Below D=10 k-NN wins and
+    #: the "optimum" is noise among saturated ties, so those are not pinned.
+    MEASURED: typing.ClassVar[dict[int, int]] = {10: 16, 20: 40, 40: 96}
+
+    @staticmethod
+    def _pool(dim):
+        """The 3N pool a population-sized caller actually brings."""
+        return 3 * round(10 * math.sqrt(dim))
+
+    def test_it_tracks_the_measured_optima(self):
+        """Within a factor of 1.5 -- the grid itself only resolves powers of
+        two, so pinning tighter would be pinning noise."""
+        for dim, best in self.MEASURED.items():
+            with self.subTest(dim=dim):
+                got = radius_target_for(dim, self._pool(dim))
+                self.assertLess(max(got, best) / min(got, best), 1.5,
+                                f"D={dim}: got {got}, measured {best}")
+
+    def test_it_is_bounded_where_2d_is_not(self):
+        """The defect this function exists to fix. At D=1000 the bare rule
+        asks for 2000 neighbours from a design of 948."""
+        for dim in (225, 500, 1000, 5000):
+            with self.subTest(dim=dim):
+                n = self._pool(dim)
+                got = radius_target_for(dim, n)
+                self.assertLess(got, 2 * dim)
+                self.assertLessEqual(got, n // 2)
+
+    def test_it_never_asks_for_more_than_half_the_design(self):
+        """Past half, the radius is large enough that every d_hat compresses
+        and the force law flattens toward uniform -- which is why the optima
+        are interior rather than 'more is better'."""
+        for dim in (1, 2, 10, 100, 1000):
+            for n in (4, 10, 96, 300, 948):
+                with self.subTest(dim=dim, n=n):
+                    self.assertLessEqual(radius_target_for(dim, n), max(1, n // 2))
+
+    def test_a_design_too_small_for_the_floor_yields_what_it_has(self):
+        """The cap wins over the floor: a neighbourhood cannot contain points
+        the design does not hold."""
+        self.assertEqual(radius_target_for(100, 6), 3)
+        self.assertGreaterEqual(radius_target_for(100, 0), 1)
+
+    def test_it_is_monotone_in_dimension(self):
+        n = 10_000  # large enough that the cap never binds
+        vals = [radius_target_for(d, n) for d in (1, 2, 5, 10, 50, 200, 1000)]
+        self.assertTrue(all(a <= b for a, b in itertools.pairwise(vals)), vals)
+
+    def test_the_cap_takes_over_where_demand_crosses_supply(self):
+        """Demand grows like D, the pool like sqrt(D), so they cross -- at
+        D=225 for a population-sized design. Below it the rule is 2D; above
+        it the rule is the design's own size."""
+        below = 100
+        self.assertEqual(radius_target_for(below, 10_000), 2 * below)
+        above = 400
+        self.assertLess(radius_target_for(above, self._pool(above)), 2 * above)
+
+
+class TestRadiusTargetReachesEsa(unittest.TestCase):
+    def test_radius_mode_derives_its_target_without_being_told(self):
+        """The parameter-free path: no `radius`, no `radius_target`, and the
+        radius that comes out is the one the heuristic asks for."""
+        rng = np.random.default_rng(0)
+        for dim in (10, 40, 100):
+            with self.subTest(dim=dim):
+                n = round(10 * math.sqrt(dim))
+                bounds = np.tile([0.0, 1.0], (dim, 1))
+                stats = {}
+                esa(rng.random((2 * n, dim)), bounds, n=n, epochs=5,
+                    search_mode="radius", seed=1, stats=stats)
+                want = l1_radius_for_count(
+                    dim, 3 * n, radius_target_for(dim, 3 * n))
+                self.assertAlmostEqual(stats["radius"], want, places=12)
+
+    def test_k_nn_mode_is_untouched_by_it(self):
+        """The heuristic is radius mode's. k-NN keeps `NEIGHBOUR_TARGET`,
+        which is calibrated for scaling the force law rather than selecting
+        neighbours."""
+        rng = np.random.default_rng(0)
+        dim, n = 40, 63
+        bounds = np.tile([0.0, 1.0], (dim, 1))
+        stats = {}
+        esa(rng.random((2 * n, dim)), bounds, n=n, epochs=5, seed=1,
+            stats=stats)
+        self.assertAlmostEqual(
+            stats["radius"],
+            l1_radius_for_count(dim, 3 * n, NEIGHBOUR_TARGET), places=12)
