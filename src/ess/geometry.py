@@ -16,7 +16,20 @@ from __future__ import annotations
 import math
 import statistics
 
+#: Dimension from which radius mode is worth choosing at all.
+#:
+#: Not a knob inside the target law -- a statement about *which mode* to run.
+#: Below it k-NN wins on optimizer outcome at every dimension measured
+#: (`cs`: -0.167 against radius's -0.160 at D=2, -0.182 against -0.159 at
+#: D=3, -0.124 against -0.096 at D=5) and is cheaper besides. From D=10
+#: radius wins on quality, and from D=40 on cost as well.
+#:
+#: Passed to `radius_target_for` as `low_dim` so it can be moved, and
+#: measured rather than assumed -- stage g put the crossover here.
+LOW_DIM = 10
+
 __all__ = [
+    "LOW_DIM",
     "NEIGHBOUR_TARGET",
     "RADIUS_TARGET",
     "l1_radius_for_count",
@@ -132,7 +145,13 @@ def l1_radius_for_count(
     return min(max(dim / 4.0 + z * math.sqrt(dim / 48.0), 1e-6), dim / 2.0)
 
 
-def radius_target_for(dim: int, n_points: int) -> int:
+def radius_target_for(
+    dim: int,
+    n_points: int,
+    *,
+    low_dim: int = LOW_DIM,
+    low_target: int = RADIUS_TARGET,
+) -> int:
     r"""Neighbours radius mode should aim for, from the dimension and the
     design size. This is what makes radius mode parameter-free.
 
@@ -179,10 +198,29 @@ def radius_target_for(dim: int, n_points: int) -> int:
         k-NN is both better and cheaper, above it radius wins on quality from
         $D=10$ and on cost from $D=40$.
 
+    **Below `low_dim`.** Radius mode is not the mode to be running there --
+    k-NN wins on optimizer outcome at every dimension measured below the
+    crossover -- so this returns a flat `low_target` rather than pretending
+    the law extends down. It is flat rather than tuned because tuning it buys
+    nothing: measured on projection discrepancy, a fixed 5 is 9% worse than
+    $2D$ at $D=3$ and 33% worse at $D=5$, and **not faster** at either (15.7
+    ms against 12.8 at $D=3$), because a pool of 51 points has no work for a
+    smaller neighbourhood to save. The saving only appears at $D=10$, which
+    is the far side of the crossover.
+
+    So `low_dim` marks where the *mode* stops being the right choice, and
+    both it and `low_target` are arguments rather than constants in the body
+    because both are measurements and measurements move.
+
     Args:
         dim (int): Dimensionality $D$.
         n_points (int): Points the neighbourhood is drawn from (static +
             generated) -- the pool, not the population.
+        low_dim (int): Dimension below which the flat `low_target` is used
+            instead of the law. Defaults to `LOW_DIM` (10), the measured
+            crossover.
+        low_target (int): The flat count used below `low_dim`, and the floor
+            everywhere else. Defaults to `RADIUS_TARGET` (5).
 
     Returns:
         int: Neighbours to target, at least `RADIUS_TARGET` unless the design
@@ -194,7 +232,7 @@ def radius_target_for(dim: int, n_points: int) -> int:
         >>> radius_target_for(1000, 948)    # 2D = 2000; the cap binds
         474
     """
-    want = max(2 * dim, RADIUS_TARGET)
+    want = low_target if dim < low_dim else max(2 * dim, low_target)
     cap = max(1, n_points // 2)
     return int(min(want, cap))
 

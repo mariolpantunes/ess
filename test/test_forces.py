@@ -24,7 +24,9 @@ from ess.ess import (
     softened_inverse_force,
 )
 from ess.geometry import (
+    LOW_DIM,
     NEIGHBOUR_TARGET,
+    RADIUS_TARGET,
     l1_radius_for_count,
     radius_for_target,
     radius_from_normalized,
@@ -563,6 +565,26 @@ class TestRadiusTargetHeuristic(unittest.TestCase):
         n = 10_000  # large enough that the cap never binds
         vals = [radius_target_for(d, n) for d in (1, 2, 5, 10, 50, 200, 1000)]
         self.assertTrue(all(a <= b for a, b in itertools.pairwise(vals)), vals)
+
+    def test_below_the_crossover_it_is_flat(self):
+        """Radius mode is not the mode to run below `LOW_DIM` -- k-NN wins
+        there on optimizer outcome -- so the law is not extended down, it is
+        replaced by a flat count."""
+        for dim in (1, 2, 3, 5, 9):
+            with self.subTest(dim=dim):
+                self.assertEqual(radius_target_for(dim, 10_000), RADIUS_TARGET)
+        self.assertEqual(radius_target_for(LOW_DIM, 10_000), 2 * LOW_DIM)
+
+    def test_the_crossover_and_the_flat_count_are_arguments(self):
+        """Both are measurements, and measurements move. Neither is welded
+        into the body."""
+        self.assertEqual(radius_target_for(5, 10_000, low_dim=1), 10)
+        self.assertEqual(radius_target_for(15, 10_000, low_dim=20), 5)
+        self.assertEqual(radius_target_for(3, 10_000, low_target=7), 7)
+
+    def test_the_cap_still_binds_below_the_crossover(self):
+        """A tiny design cannot supply the flat count either."""
+        self.assertEqual(radius_target_for(2, 6), 3)
 
     def test_the_cap_takes_over_where_demand_crosses_supply(self):
         """Demand grows like D, the pool like sqrt(D), so they cross -- at
