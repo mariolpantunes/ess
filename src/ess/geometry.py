@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 import statistics
+from typing import Literal, NamedTuple, get_args
 
 #: Dimension from which radius mode is worth choosing at all.
 #:
@@ -32,7 +33,12 @@ __all__ = [
     "LOW_DIM",
     "NEIGHBOUR_TARGET",
     "RADIUS_TARGET",
+    "SEARCH_MODES",
+    "Neighbourhood",
+    "ResolvedMode",
+    "SearchMode",
     "l1_radius_for_count",
+    "neighbourhood_for",
     "radius_for_target",
     "radius_target_for",
 ]
@@ -80,6 +86,31 @@ default is likely higher and probably dimension-dependent. Five is where the
 dead-point problem is largely gone and the two modes are comparable; the
 sweep that settles the rest is running.
 """
+
+
+type SearchMode = Literal["auto", "k_nn", "radius"]
+"""What a caller may ask for: a mode, or ``"auto"`` to be told one."""
+
+type ResolvedMode = Literal["k_nn", "radius"]
+""""What a run actually does: ``"auto"`` is answered here, never forwarded."""
+
+#: The accepted spellings, read off `SearchMode` rather than repeated, so the
+#: validation and the annotation cannot drift apart.
+SEARCH_MODES: tuple[str, ...] = get_args(SearchMode.__value__)
+
+
+class Neighbourhood(NamedTuple):
+    """A resolved neighbourhood: which query to run, and how wide.
+
+    One value rather than two, because it is one decision. The count means
+    different things in the two modes -- in ``"radius"`` it *is* the search
+    cutoff, in ``"k_nn"`` it only sets the scale the force law is evaluated
+    on -- so a mode and a target that were not resolved together are a bug
+    waiting to happen. It unpacks like the pair it replaces.
+    """
+
+    mode: ResolvedMode
+    target: int
 
 
 #: Largest possible toroidal-L1 distance, per dimension. Each axis
@@ -235,6 +266,94 @@ def radius_target_for(
     want = low_target if dim < low_dim else max(2 * dim, low_target)
     cap = max(1, n_points // 2)
     return int(min(want, cap))
+
+
+
+def neighbourhood_for(
+    dim: int,
+    n_points: int,
+    mode: SearchMode = "auto",
+    target: int | None = None,
+    *,
+    low_dim: int = LOW_DIM,
+    low_target: int = RADIUS_TARGET,
+) -> Neighbourhood:
+    r"""Which neighbour query to run here, and how wide -- the whole of the
+    ``"auto"`` policy, in one place.
+
+    `radius_target_for` answers *how many* neighbours radius mode should
+    aim for. This answers the question before it: whether radius mode is
+    the mode to be running at all. Both are needed for the default path to
+    be parameter-free, and both are measurements.
+
+    **The rule.** Below `low_dim`, k-NN; from `low_dim` up, radius with the
+    target the law gives. Radius mode loses on optimizer outcome at every
+    dimension measured below the crossover -- `cs` reaches $-0.167$ against
+    radius's $-0.160$ at $D=2$, $-0.182$ against $-0.159$ at $D=3$,
+    $-0.124$ against $-0.096$ at $D=5$ -- and is not cheaper there either,
+    because a 51-point pool has no work for a smaller neighbourhood to
+    save. From $D=10$ radius wins on quality, and from $D=40$ on cost as
+    well (0.90x the k-NN time at $D=40$, 0.73x at $D=100$), which is the
+    regime that matters: it is the *high*-dimensional runs that are
+    expensive.
+
+    So ``"auto"`` is not a compromise between the two modes. It runs each
+    one where that one is both better and cheaper, and the crossover
+    between those regimes is a single dimension.
+
+    **Passing a mode still means it.** An explicit ``"radius"`` at $D=3$
+    gets radius mode; the flat `low_target` in `radius_target_for` is what
+    keeps that sensible. ``"auto"`` is a default, not a policy imposed on a
+    caller who has decided.
+
+    Note:
+        Measured on the repulsion, which is what `search_mode` governs. The
+        attraction estimate is a separate use of the index with its own
+        argument (`ess.esa`'s ``att_search_mode``) and its own neighbour
+        count, and this crossover is not evidence about it.
+
+    Args:
+        dim (int): Dimensionality $D$.
+        n_points (int): Points the neighbourhood is drawn from (static +
+            generated) -- the pool, not the population.
+        mode (SearchMode): ``"auto"``, ``"k_nn"`` or ``"radius"``.
+        target (int | None): Neighbours to aim for. ``None`` takes the
+            default for whichever mode is chosen: `NEIGHBOUR_TARGET` for
+            k-NN, where the radius only scales the force law, and
+            `radius_target_for` for radius, where it is the search cutoff.
+        low_dim (int): Dimension from which ``"auto"`` chooses radius mode.
+            Defaults to `LOW_DIM` (10), the measured crossover.
+        low_target (int): Floor on the radius target, and the flat count
+            `radius_target_for` uses below `low_dim`. Defaults to
+            `RADIUS_TARGET` (5).
+
+    Returns:
+        Neighbourhood: The mode to run and the neighbour count to aim for.
+
+    Raises:
+        ValueError: If `mode` is not one of `SEARCH_MODES`.
+
+    Example:
+        >>> neighbourhood_for(3, 51)        # below the crossover
+        Neighbourhood(mode='k_nn', target=2)
+        >>> neighbourhood_for(40, 189)      # above it, 2D = 80
+        Neighbourhood(mode='radius', target=80)
+        >>> neighbourhood_for(40, 189, "k_nn")
+        Neighbourhood(mode='k_nn', target=2)
+    """
+    if mode not in SEARCH_MODES:
+        raise ValueError(
+            f"search_mode must be one of {SEARCH_MODES}, got {mode!r}")
+
+    chosen: ResolvedMode = (
+        ("k_nn" if dim < low_dim else "radius") if mode == "auto" else mode
+    )
+    if target is not None:
+        return Neighbourhood(chosen, int(target))
+    if chosen == "k_nn":
+        return Neighbourhood(chosen, NEIGHBOUR_TARGET)
+    return Neighbourhood(chosen, radius_target_for(
+        dim, n_points, low_dim=low_dim, low_target=low_target))
 
 
 def radius_from_normalized(value: float, dim: int) -> float:

@@ -27,7 +27,10 @@ from ess.geometry import (
     LOW_DIM,
     NEIGHBOUR_TARGET,
     RADIUS_TARGET,
+    SEARCH_MODES,
+    Neighbourhood,
     l1_radius_for_count,
+    neighbourhood_for,
     radius_for_target,
     radius_from_normalized,
     radius_target_for,
@@ -621,7 +624,96 @@ class TestRadiusTargetReachesEsa(unittest.TestCase):
         bounds = np.tile([0.0, 1.0], (dim, 1))
         stats = {}
         esa(rng.random((2 * n, dim)), bounds, n=n, epochs=5, seed=1,
-            stats=stats)
+            search_mode="k_nn", stats=stats)
         self.assertAlmostEqual(
             stats["radius"],
             l1_radius_for_count(dim, 3 * n, NEIGHBOUR_TARGET), places=12)
+
+
+class TestNeighbourhoodPolicy(unittest.TestCase):
+    """`neighbourhood_for` is the whole of the ``"auto"`` policy: which query
+    to run, and how wide. Both halves, one call, because they are one
+    decision."""
+
+    def test_auto_switches_mode_at_the_crossover(self):
+        for dim in (2, 3, 5, 9):
+            with self.subTest(dim=dim):
+                self.assertEqual(neighbourhood_for(dim, 51).mode, "k_nn")
+        for dim in (LOW_DIM, 20, 40, 100):
+            with self.subTest(dim=dim):
+                self.assertEqual(neighbourhood_for(dim, 300).mode, "radius")
+
+    def test_naming_a_mode_is_obeyed_at_every_dimension(self):
+        """``"auto"`` is a default, not a policy imposed on a caller who has
+        decided: radius at d=3 and k-NN at d=100 are both legitimate asks."""
+        self.assertEqual(neighbourhood_for(3, 51, "radius").mode, "radius")
+        self.assertEqual(neighbourhood_for(100, 300, "k_nn").mode, "k_nn")
+
+    def test_the_target_follows_the_mode_that_was_chosen(self):
+        """The count means different things in the two modes, so it has to be
+        resolved with the mode rather than beside it."""
+        self.assertEqual(neighbourhood_for(3, 51),
+                         Neighbourhood("k_nn", NEIGHBOUR_TARGET))
+        self.assertEqual(neighbourhood_for(40, 189),
+                         Neighbourhood("radius", radius_target_for(40, 189)))
+
+    def test_an_explicit_target_wins_in_either_mode(self):
+        for mode in ("auto", "k_nn", "radius"):
+            with self.subTest(mode=mode):
+                self.assertEqual(neighbourhood_for(40, 189, mode, 7).target, 7)
+
+    def test_the_crossover_is_an_argument(self):
+        self.assertEqual(neighbourhood_for(5, 300, low_dim=2).mode, "radius")
+        self.assertEqual(neighbourhood_for(40, 300, low_dim=64).mode, "k_nn")
+
+    def test_it_unpacks_like_the_pair_it_replaces(self):
+        mode, target = neighbourhood_for(40, 189)
+        self.assertEqual((mode, target), ("radius", 80))
+
+    def test_an_unknown_mode_is_refused(self):
+        for mode in ("knn", "K_NN", "ball", ""):
+            with self.subTest(mode=mode), self.assertRaises(ValueError):
+                neighbourhood_for(40, 189, mode)  # pyright: ignore[reportArgumentType]
+
+    def test_the_accepted_spellings_are_read_off_the_annotation(self):
+        """Not repeated: the validation and the type cannot drift apart."""
+        self.assertEqual(SEARCH_MODES, ("auto", "k_nn", "radius"))
+
+
+class TestAutoReachesEsa(unittest.TestCase):
+    def test_auto_is_the_default(self):
+        self.assertEqual(
+            inspect.signature(esa).parameters["search_mode"].default, "auto")
+
+    def test_the_default_run_picks_the_mode_from_the_dimension(self):
+        """End to end, with nothing passed: the radius that comes out is the
+        one the chosen mode asks for, and `stats` reports which mode ran."""
+        rng = np.random.default_rng(0)
+        for dim, want in ((3, "k_nn"), (40, "radius")):
+            with self.subTest(dim=dim):
+                n = round(10 * math.sqrt(dim))
+                bounds = np.tile([0.0, 1.0], (dim, 1))
+                stats = {}
+                esa(rng.random((2 * n, dim)), bounds, n=n, epochs=5, seed=1,
+                    stats=stats)
+                mode, target = neighbourhood_for(dim, 3 * n)
+                self.assertEqual(stats["search_mode"], want)
+                self.assertEqual(stats["search_mode"], mode)
+                self.assertAlmostEqual(
+                    stats["radius"],
+                    l1_radius_for_count(dim, 3 * n, target), places=12)
+
+    def test_auto_below_the_crossover_matches_the_old_default(self):
+        """The k-NN path is unchanged where `auto` chooses it -- same mode,
+        same radius as before this argument existed."""
+        rng = np.random.default_rng(0)
+        dim, n = 5, 22
+        bounds = np.tile([0.0, 1.0], (dim, 1))
+        points = rng.random((2 * n, dim))
+        auto, explicit = {}, {}
+        a = esa(points, bounds, n=n, epochs=20, seed=1, stats=auto)
+        b = esa(points, bounds, n=n, epochs=20, seed=1, search_mode="k_nn",
+                stats=explicit)
+        self.assertEqual(auto["search_mode"], "k_nn")
+        self.assertEqual(auto["radius"], explicit["radius"])
+        np.testing.assert_allclose(a, b)
