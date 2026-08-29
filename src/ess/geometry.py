@@ -46,18 +46,71 @@ __all__ = [
 NEIGHBOUR_TARGET = 2
 r"""int: Neighbours the interaction radius should contain in **k-NN mode**.
 
-Here the radius never selects anything -- `k` does that -- and this only
-sets the scale the force law is evaluated on, $\hat{d} = d_{L1}/R$. The
-target is inert above 2 for dispersion (1.469 vs 1.477 at $d=8$, 1.299 vs
-1.296 at $d=32$ for targets 2 and 3), so the cheapest safe value wins; 1 is
-too tight in low dimension (2D toroidal Clark-Evans 1.86 versus 2.08).
+Here the radius selects nothing -- `k` does that -- so this is not really a
+neighbour count at all. It is the *unit of length* the run is expressed in:
+$\hat{d} = d_{L1}/R$ feeds every force law, the step is $\eta F R$, and
+`ess.STEP_CAP` bounds travel to a fraction of $R$. A count is simply how
+that length is specified, because a count inverts the distance law and so
+scales correctly with $d$ and $N$, which a raw length cannot.
 
-It is *not* inert for the attraction balance, which is why this stayed at 2
-when `RADIUS_TARGET` moved: raising it enlarges $R$, shrinks every
-$\hat{d}$, and shifts where on the force curve a given
-`attraction_weight` lands. At 5 a weight of 0.2 stops clearing the margin
-a test pins it to. Two jobs, two constants.
+**Two is a knee, not an optimum.** It is best on neither axis; it is where
+the two cross, and the two pull in opposite directions.
+
+*Dispersion* wants it larger in low dimension. Wrap-around discrepancy from
+scratch, normalised so 1.0 is random, median of 12 seeds:
+
+| target | $d=2$ | $d=3$ | $d=5$ | $d=8$ | $d=20$ |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0.0793 | 0.1309 | 0.2139 | 0.2805 | 0.6111 |
+| **2** | 0.0579 | 0.1113 | 0.2104 | 0.2935 | 0.6123 |
+| 3 | **0.0504** | 0.1039 | 0.2134 | 0.2815 | 0.6077 |
+| 5 | 0.0521 | **0.0963** | 0.2083 | 0.2841 | 0.6089 |
+| 16 | 0.0853 | 0.1005 | **0.2023** | 0.2884 | 0.6130 |
+
+Paired per seed over 30 seeds, 3 against 2 wins 24/30 at $d=2$ (median
+$-9.9\%$) and 5 against 2 wins 22/30 at $d=3$ ($-7.0\%$); at $d=5$ and
+$d=8$ neither direction wins more than 15/30 and the median change is
+inside $\pm 5\%$. So the target is genuinely inert from $d=5$ up -- but
+**not** below it, where 2 gives up 5-10%. That regime is no longer
+hypothetical: `neighbourhood_for` makes k-NN the default under `LOW_DIM`.
+
+*The attraction* wants it smaller, monotonically. How far the placement is
+dragged toward the good region at $d=8$ (repulsion-only mean $\lVert x
+\rVert$ minus the composite's; larger means the attraction wins more):
+
+| target | $w=0.2$ | $w=0.5$ | $w=1.0$ |
+| --- | --- | --- | --- |
+| 1 | 0.680 | 1.675 | 2.673 |
+| **2** | 0.329 | 1.364 | 2.395 |
+| 3 | 0.178 | 1.061 | 2.209 |
+| 5 | 0.193 | 0.700 | 1.862 |
+| 8 | 0.153 | 0.393 | 1.559 |
+
+Going 2 to 3 costs 22% of the pull at $w=0.5$, and 2 to 5 costs 49%. The
+mechanism is the same one that makes the target matter at all: a larger $R$
+shrinks every $\hat{d}$, the repulsion is capped near zero by its softening
+$\epsilon$ and the attraction's longer tail is not, so the balance moves
+against the attraction. At 5 a weight of 0.2 stops clearing the margin a
+test pins it to -- which is why this stayed at 2 when `RADIUS_TARGET` moved
+to 5. Two jobs, two constants.
+
+So 2 is the largest value that leaves the attraction essentially intact and
+the smallest that is not visibly bad on dispersion (1 costs 37% at $d=2$).
+The attraction axis is weighted the more heavily of the two deliberately:
+extra OBLESA rounds buy nothing with the attraction off and improve
+monotonically with it on, so it is the half that carries the method.
+
+Note:
+    Both tables come from ``examples/benchmark_neighbour_target.py``, which
+    is where they are reproduced and extended. They are measured with the
+    default force law on ESS's own metrics, which is one benchmark family;
+    the numbers here are replaced as more of them land. The version of
+    this paragraph they replaced argued from toroidal Clark-Evans -- a
+    metric `ess.utils` has since dropped as blunt -- and claimed the
+    target was inert above 2 at every dimension, which it is not below
+    $d=5$.
 """
+
 
 RADIUS_TARGET = 5
 r"""int: Floor on the neighbour count in **radius mode**.

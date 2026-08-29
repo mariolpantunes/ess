@@ -39,6 +39,9 @@ SMALLEST = {
                              "--tune-seeds", "1"],
     "benchmark_reexploration": ["--dims", "2", "--anchors", "20",
                                 "--new", "10", "--seeds", "1"],
+    "benchmark_neighbour_target": ["--dims", "2", "--targets", "2", "3",
+                                   "--seeds", "1", "--paired-seeds", "2",
+                                   "--weights", "0.5"],
     "profile_esa": ["--n", "100"],
     "profile_torann": ["--sizes", "200", "--dims", "4", "--epochs", "1"],
     "evaluate_esa": [],          # no CLI; it is small enough as it stands
