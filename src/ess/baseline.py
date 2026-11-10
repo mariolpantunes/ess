@@ -56,11 +56,11 @@ def dart(
     over everything already present, $P$ — the existing samples plus, when
     `sequential`, the points placed so far in this call.
 
-    **`sequential` is the difference between this and `esa`'s
-    `_smart_init`**, and the two are not ranked the way the names suggest.
-    Sequential adds each point to $P$ before choosing the next — Mitchell's
-    algorithm as defined. Batch picks every slot at once against a fixed
-    reference, so two slots cannot see each other's choice.
+    **`sequential` mirrors `esa`'s `init_sequential`**, and the two are not
+    ranked the way the names suggest. Sequential adds each point to $P$
+    before choosing the next — Mitchell's algorithm as defined. Batch picks
+    every slot at once against a fixed reference, so two slots cannot see
+    each other's choice.
 
     Batch is cheaper ($O(1)$ index queries against $O(n)$) *and* more uniform.
     Measured on a $1N$ sample + $1N$ quasi-opposite + $1N$ probe pool, 15
@@ -77,6 +77,12 @@ def dart(
     **minimum separation among the placed points**, since batch can put two
     slots on top of each other. If a design is being judged on its worst
     pair rather than on uniformity, that is the one to use.
+
+    **That ranking holds for the shape it was measured on** — as many
+    points added as there were to begin with, $d \ge 8$. Adding many more
+    points than exist, in low dimension, batch collapses: every slot picks
+    the same few voids (20% grid coverage against 100% extending clustered
+    2-D data fivefold). See `esa`'s `init_sequential`.
 
     Args:
         samples (np.ndarray): Points already present, shape $(M, D)$. May be

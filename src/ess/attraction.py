@@ -143,8 +143,8 @@ class InverseDistance(AttractionModel):
     identifiable. Do not drop this model on the concentration argument alone.
 
     **The neighbour search is `torann`, not a second implementation.** The
-    library already delegates every toroidal-L1 query to `ToroidalNN`, and
-    this model's estimate is a toroidal-L1 k-NN like any other, so it uses an
+    library already delegates every toroidal query to `ToroidalNN`, and
+    this model's estimate is a toroidal k-NN like any other, so it uses an
     index rather than scanning. That index is separate from the relaxation's
     on purpose: the relaxation's holds the moving candidates as well, and an
     estimate must average over *sources* -- points whose objective was paid
@@ -243,12 +243,14 @@ class InverseDistance(AttractionModel):
             # Resolved here, not in `at`: the radius is a property of the
             # source set, which is fixed at fit time, and `at` runs on every
             # refresh.
-            self._r = (
-                geometry.radius_for_count(dim, n, min(self.k, n), self.p)
-                if not self.radius
-                else geometry.radius_from_normalized(
-                    float(self.radius), dim, self.p)
-            )
+            # Only radius mode reads it, and below p = 1 it is not free.
+            if self.search_mode == "radius":
+                self._r = (
+                    geometry.radius_for_count(dim, n, min(self.k, n), self.p)
+                    if not self.radius
+                    else geometry.radius_from_normalized(
+                        float(self.radius), dim, self.p)
+                )
             # Under the run's exponent, not L1: "nearest" has to mean the
             # same thing to the estimate as to the repulsion it balances.
             # Seeded: above torann's crossover the search is LSH, whose hash

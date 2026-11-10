@@ -10,6 +10,7 @@ heuristic.
 import inspect
 import itertools
 import math
+import sys
 import typing
 import unittest
 
@@ -861,3 +862,89 @@ class TestLpThroughEsa(unittest.TestCase):
             in_lp = esa(empty, self.bounds, n=150, seed=seed, p=0.5)
             wins += lp_sep(in_lp, 0.5) > lp_sep(in_l1, 0.5)
         self.assertGreaterEqual(wins, 5)
+
+
+class TestLpGuards(unittest.TestCase):
+    """What an exponent may be, and who is told about it."""
+
+    def setUp(self):
+        self.bounds = np.array([[0.0, 1.0]] * 4)
+        self.static = np.random.default_rng(0).random((60, 4))
+        self.values = np.random.default_rng(1).random(60)
+
+    def test_exponents_too_small_to_compute_are_refused(self):
+        """Below `P_MIN` the quasi-norm's scale overflows a double: the
+        diameter raised OverflowError, and just above that the step cap
+        went to infinity and froze the relaxation without a word."""
+        for bad in (0.005, 0.012, geometry.P_MIN / 2):
+            with self.subTest(p=bad), self.assertRaises(ValueError):
+                esa(self.static, self.bounds, n=10, seed=0, p=bad)
+        out = esa(self.static, self.bounds, n=10, seed=0, p=geometry.P_MIN)
+        self.assertTrue(np.isfinite(out).all())
+
+    def test_a_float32_exponent_matches_its_index(self):
+        import torann
+        out = esa(self.static, self.bounds, n=10, seed=0,
+                  p=np.float32(0.3), index=torann.ToroidalNN(seed=0, p=0.3))
+        self.assertEqual(out.shape, (10, 4))
+
+    def test_a_model_built_under_another_exponent_is_refused(self):
+        from ess import attraction
+        kw = {"n": 10, "seed": 0, "attractiveness": self.values,
+              "attraction_metric": "cauchy",
+              "attraction_kwargs": {"power": 1.0}}
+        with self.assertRaises(ValueError):
+            esa(self.static, self.bounds, p=0.5,
+                att_model=attraction.InverseDistance(k=4), **kw)
+        model = attraction.InverseDistance(k=4, p=0.5)
+        esa(self.static, self.bounds, p=0.5, att_model=model, **kw)
+        self.assertEqual(model._index.p, 0.5)
+
+    def test_lp_norm_is_the_quasi_norm(self):
+        v = np.array([[0.04, -0.01, 0.0]])
+        self.assertAlmostEqual(float(geometry.lp_norm(v, 1.0)[0]), 0.05)
+        self.assertAlmostEqual(
+            float(geometry.lp_norm(v, 0.5)[0]), (0.2 + 0.1) ** 2)
+
+    def test_one_epoch_never_crosses_the_local_spacing(self):
+        """The quasi-norm cap alone let a point move 19% of a half-period
+        along one axis in one epoch at p=0.1; the L1 cap of the same
+        neighbour count bounds it as at p=1."""
+        empty = np.empty((0, 4))
+        for p in (1.0, 0.25, 0.1):
+            with self.subTest(p=p):
+                start = esa(empty, self.bounds, n=200, seed=2, p=p, epochs=0)
+                moved = esa(empty, self.bounds, n=200, seed=2, p=p, epochs=1)
+                gap = np.abs(moved - start)
+                np.minimum(gap, 1.0 - gap, out=gap)
+                l1_radius = geometry.radius_for_count(4, 200, NEIGHBOUR_TARGET)
+                self.assertLessEqual(
+                    gap.sum(axis=1).max(), sys.modules["ess.ess"].STEP_CAP * l1_radius * 1.001)
+
+
+class TestPlacementChoice(unittest.TestCase):
+    """`init_sequential` chooses between Mitchell's algorithm and the batch
+    placement `esa` had through 0.7.2."""
+
+    def test_batch_placement_is_still_reachable_and_differs(self):
+        bounds = np.array([[0.0, 1.0]] * 6)
+        static = np.random.default_rng(0).random((80, 6))
+        a = esa(static, bounds, n=40, seed=1)
+        b = esa(static, bounds, n=40, seed=1, init_sequential=False)
+        self.assertEqual(a.shape, b.shape)
+        self.assertFalse(np.allclose(a, b))
+
+    def test_batch_placement_races_where_sequential_does_not(self):
+        rng = np.random.default_rng(0)
+        centres = rng.uniform(0.2, 0.8, size=(6, 2))
+        static = np.clip(centres[rng.integers(6, size=1000)]
+                         + rng.normal(0.0, 0.06, size=(1000, 2)), 0.0, 1.0)
+        bounds = np.array([[0.0, 1.0]] * 2)
+
+        def cells(out):
+            return np.unique(np.minimum((out * 10).astype(int), 9),
+                             axis=0).shape[0]
+
+        raced = esa(static, bounds, n=1000, seed=1, init_sequential=False)
+        self.assertLess(cells(raced), 50)
+        self.assertGreaterEqual(cells(esa(static, bounds, n=1000, seed=1)), 85)

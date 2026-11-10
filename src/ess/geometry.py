@@ -36,6 +36,7 @@ LOW_DIM = 10
 __all__ = [
     "LOW_DIM",
     "NEIGHBOUR_TARGET",
+    "P_MIN",
     "RADIUS_TARGET",
     "SEARCH_MODES",
     "Neighbourhood",
@@ -44,6 +45,7 @@ __all__ = [
     "check_p",
     "diameter",
     "l1_radius_for_count",
+    "lp_norm",
     "neighbourhood_for",
     "radius_for_count",
     "radius_for_target",
@@ -180,11 +182,33 @@ class Neighbourhood(NamedTuple):
 _AXIS_MAX = 0.5
 
 
+#: Smallest metric exponent accepted.
+#:
+#: The quasi-norm takes a $1/p$ power of a sum, so its scale grows like
+#: $d^{1/p}$: at $p = 0.005$ the diameter of a 40-dimensional torus already
+#: overflows a double, and a little above that the step cap overflows to
+#: infinity and freezes the relaxation without an error. Twenty is the
+#: largest $1/p$ that stays finite at every dimension this library is run
+#: at ($d^{20} < 10^{80}$ for $d \le 10^4$).
+P_MIN = 0.05
+
+
 def check_p(p: float) -> float:
     """The exponent as a float, refusing what the geometry does not cover."""
-    if isinstance(p, bool) or not 0.0 < float(p) <= 1.0:
-        raise ValueError(f"p must be in (0, 1], got {p!r}")
+    if isinstance(p, bool) or not P_MIN <= float(p) <= 1.0:
+        raise ValueError(f"p must be in [{P_MIN}, 1], got {p!r}")
     return float(p)
+
+
+def lp_norm(values: np.ndarray, p: float, axis: int = -1) -> np.ndarray:
+    r"""$(\sum_l \lvert v_l\rvert^p)^{1/p}$ along `axis`.
+
+    The one place the quasi-norm is written out, with $p = 1$ kept as the
+    plain absolute sum so the default path does no powers at all.
+    """
+    if p == 1.0:
+        return np.abs(values).sum(axis=axis)
+    return (np.abs(values) ** p).sum(axis=axis) ** (1.0 / p)
 
 
 def diameter(dim: int, p: float = 1.0) -> float:
@@ -207,7 +231,7 @@ def radius_for_count(
     dim: int, n_points: int, target: int = NEIGHBOUR_TARGET, p: float = 1.0
 ) -> float:
     r"""Radius expected to contain `target` neighbours, from the exact
-    toroidal $L^p$ distance law, $0 < p \le 1$.
+    toroidal $L^p$ distance law, `P_MIN` $\le p \le 1$.
 
     Per dimension the toroidal distance between two uniform points is
     $u = \min(\delta,\, 1-\delta)$ with $\delta$ uniform, so
@@ -280,9 +304,7 @@ def radius_for_count(
     # Compared in log space: at small p the dense expression overflows long
     # before it is the answer.
     if log_r <= 0.0:
-        dense = 0.5 * math.exp(log_r)
-        if dense <= 0.5:
-            return dense  # exact: the ball is inside one period
+        return 0.5 * math.exp(log_r)  # exact: the ball is inside one period
 
     if p == 1.0:
         z = statistics.NormalDist().inv_cdf(count / n)
@@ -291,19 +313,18 @@ def radius_for_count(
     return min(max(total ** (1.0 / p), 1e-6), diameter(dim, p))
 
 
-@functools.lru_cache(maxsize=256)
-def _power_sum_quantile(dim: int, p: float, q: float) -> float:
-    r"""Quantile `q` of $S = \sum_{l=1}^{d} u_l^p$, $u_l \sim \mathrm{U}(0, 1/2)$.
+@functools.lru_cache(maxsize=4)
+def _power_sum_law(dim: int, p: float) -> tuple[np.ndarray, float]:
+    r"""Cumulative law of $S = \sum_{l=1}^{d} u_l^p$, $u_l \sim \mathrm{U}(0, 1/2)$.
 
-    The sparse branch of `radius_for_count` for $p < 1$. The central limit
-    theorem is the wrong tool there in low dimension: $u^p$ is skewed, and a
-    neighbour count is a *lower-tail* probability, where a normal
-    approximation to a skewed sum is at its worst -- at $p = 1/4$, $d = 5$ it
-    returned a radius holding 19.5 neighbours for a target of 8. So the
-    distribution is computed instead: the exact law of one term,
-    $P(u^p \le v) = 2 v^{1/p}$, binned, and convolved with itself $d$ times
-    in one FFT. The normal approximation remains the fallback where the
-    tail is below what double precision resolves.
+    The exact law of one term, $P(u^p \le v) = 2 v^{1/p}$, binned and
+    convolved with itself $d$ times in one FFT. Cached per `(dim, p)` and
+    not per quantile: a run asks for several quantiles of one law (the
+    repulsion's count over all points, the estimate's over the sources),
+    and the transform is the whole cost -- half a second at $d = 1000$.
+
+    Returns:
+        tuple: The normalised CDF over the grid, and the grid step.
     """
     top = 0.5 ** p
     bins = max(256, min(4096, (1 << 22) // dim))
@@ -312,10 +333,27 @@ def _power_sum_quantile(dim: int, p: float, q: float) -> float:
     size = dim * bins
     law = np.fft.irfft(np.fft.rfft(pmf, size) ** dim, size)
     cdf = np.cumsum(np.maximum(law, 0.0))
-    if q > 1e-9 and cdf[-1] > 0.0:
-        at = int(np.searchsorted(cdf / cdf[-1], q))
+    return cdf / cdf[-1], top / bins
+
+
+def _power_sum_quantile(dim: int, p: float, q: float) -> float:
+    r"""Quantile `q` of $S = \sum_l u_l^p$: the sparse branch of
+    `radius_for_count` for $p < 1$.
+
+    The central limit theorem is the wrong tool there in low dimension:
+    $u^p$ is skewed, and a neighbour count is a *lower-tail* probability,
+    where a normal approximation to a skewed sum is at its worst -- at
+    $p = 1/4$, $d = 5$ it returned a radius holding 19.5 neighbours for a
+    target of 8. So the law is computed (`_power_sum_law`). The normal
+    approximation remains the fallback where the tail is below what double
+    precision resolves.
+    """
+    if q > 1e-9:
+        cdf, step = _power_sum_law(dim, p)
+        at = min(int(np.searchsorted(cdf, q)), cdf.size - 1)
         # Entry k is the sum of d bin indices; each term sits mid-bin.
-        return float((min(at, size - 1) + 0.5 * dim) * top / bins)
+        return float((at + 0.5 * dim) * step)
+    top = 0.5 ** p
     mean = dim * top / (p + 1.0)
     var = dim * top * top * (1.0 / (2.0 * p + 1.0) - 1.0 / (p + 1.0) ** 2)
     return max(mean + statistics.NormalDist().inv_cdf(q) * math.sqrt(var), 0.0)
