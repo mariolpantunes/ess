@@ -906,20 +906,20 @@ class TestLpGuards(unittest.TestCase):
         self.assertAlmostEqual(
             float(geometry.lp_norm(v, 0.5)[0]), (0.2 + 0.1) ** 2)
 
-    def test_one_epoch_never_crosses_the_local_spacing(self):
-        """The quasi-norm cap alone let a point move 19% of a half-period
-        along one axis in one epoch at p=0.1; the L1 cap of the same
-        neighbour count bounds it as at p=1."""
+    def test_one_epoch_is_capped_in_the_runs_own_metric(self):
+        """One cap, in the run's L^p: a step is at most `STEP_CAP` of the
+        interaction radius, whatever the exponent."""
         empty = np.empty((0, 4))
-        for p in (1.0, 0.25, 0.1):
+        for p in (1.0, 0.5, 0.25):
             with self.subTest(p=p):
                 start = esa(empty, self.bounds, n=200, seed=2, p=p, epochs=0)
                 moved = esa(empty, self.bounds, n=200, seed=2, p=p, epochs=1)
                 gap = np.abs(moved - start)
                 np.minimum(gap, 1.0 - gap, out=gap)
-                l1_radius = geometry.radius_for_count(4, 200, NEIGHBOUR_TARGET)
+                radius = geometry.radius_for_count(4, 200, NEIGHBOUR_TARGET, p)
                 self.assertLessEqual(
-                    gap.sum(axis=1).max(), sys.modules["ess.ess"].STEP_CAP * l1_radius * 1.001)
+                    float(geometry.lp_norm(gap, p, axis=1).max()),
+                    sys.modules["ess.ess"].STEP_CAP * radius * 1.001)
 
 
 class TestBounds(unittest.TestCase):

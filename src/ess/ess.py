@@ -965,7 +965,6 @@ def _esa(
     init_sampler: samplers.Sampler,
     init_pool: int = 64,
     p: float = 1.0,
-    step_radius: float | None = None,
     attract: np.ndarray | None = None,
     attraction_weight: float = 1.0,
     attraction_fn: collections.abc.Callable | None = None,
@@ -1035,9 +1034,6 @@ def _esa(
         init_pool (int): Candidates per slot for `_smart_init`; see `esa`.
         p (float): Exponent of the toroidal $L^p$ metric the index ranks
             by; `radius` is in its units.
-        step_radius (float | None): The $L^1$ radius holding the same
-            neighbour count as `radius`, for the second travel cap below
-            $p = 1$. ``None`` (and $p = 1$) applies the one cap.
         attract (np.ndarray | None): Normalised attractiveness over
             `all_data`; see `_compute_forces`.
         attraction_weight (float): Balance against repulsion.
@@ -1189,27 +1185,14 @@ def _esa(
             # dimensionless (they see d/R), and a step of lr*R is the same
             # fraction of the local spacing at every density.
             step = forces * (current_lr * radius)
-            # Cap travel in the metric the radius is expressed in: an L1
-            # budget of a quarter of the local spacing. Capping the L2
+            # Cap travel in the metric the radius is expressed in, the
+            # run's L^p: one budget, a fraction of the radius. Capping the L2
             # norm instead lets each coordinate move by R/sqrt(d) rather
             # than R/d, which in 32 dimensions is a quarter of the domain
             # per epoch and destroys the packing.
             step_norm = geometry.lp_norm(step, p, axis=1)[:, None]
             scale = np.minimum(
                 1.0, STEP_CAP * radius / np.maximum(step_norm, 1e-12))
-            if step_radius is not None and p != 1.0:
-                # Below p = 1 the quasi-norm is never smaller than L1, so
-                # the cap above only tightens for a step spread over many
-                # axes -- capping in L1 against the L^p radius instead cost
-                # a quarter of the separation at p = 1/2, d = 16. But a step
-                # along *one* axis is as long in L^p as in L1 while the L^p
-                # radius is far longer, so that cap alone let a point cross
-                # 19% of a half-period in one epoch at p = 0.1. The L1 cap
-                # of the same neighbour count closes that.
-                l1_norm = np.abs(step).sum(axis=1, keepdims=True)
-                np.minimum(
-                    scale, STEP_CAP * step_radius / np.maximum(l1_norm, 1e-12),
-                    out=scale)
             step *= scale
             active += step
             np.mod(active, 1.0, out=active)
@@ -1745,14 +1728,6 @@ def esa(
     )
     logger.debug("Interaction radius (toroidal L^%g): %.4f",
                  exponent, final_radius)
-    # The same neighbourhood expressed in L1, for the second travel cap.
-    step_radius = None
-    if exponent != 1.0:
-        step_radius = (
-            geometry.radius_for_count(dim, n_total, target, 1.0)
-            if not radius
-            else geometry.radius_from_normalized(float(radius), dim, 1.0)
-        )
 
     if index is None:
         index = ToroidalNN(seed=int(rng.integers(2**31)), p=exponent)
@@ -1776,7 +1751,6 @@ def esa(
         init_sampler=samplers.check_sampler(init_sampler, default_random_state=rng),
         init_pool=int(init_pool),
         p=exponent,
-        step_radius=step_radius,
         attract=attract,
         attraction_weight=float(attraction_weight),
         attraction_fn=attraction_fn,
