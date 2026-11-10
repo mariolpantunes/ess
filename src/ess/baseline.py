@@ -56,7 +56,7 @@ def dart(
     over everything already present, $P$ — the existing samples plus, when
     `sequential`, the points placed so far in this call.
 
-    **`sequential` mirrors `esa`'s `init_sequential`**, and the two are not
+    **`esa` places sequentially**, and the two modes here are not
     ranked the way the names suggest. Sequential adds each point to $P$
     before choosing the next — Mitchell's algorithm as defined. Batch picks
     every slot at once against a fixed reference, so two slots cannot see
@@ -82,7 +82,8 @@ def dart(
     points added as there were to begin with, $d \ge 8$. Adding many more
     points than exist, in low dimension, batch collapses: every slot picks
     the same few voids (20% grid coverage against 100% extending clustered
-    2-D data fivefold). See `esa`'s `init_sequential`.
+    2-D data fivefold), and the relaxation cannot undo it, which is why
+    `esa` offers only the sequential placement.
 
     Args:
         samples (np.ndarray): Points already present, shape $(M, D)$. May be

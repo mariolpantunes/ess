@@ -562,7 +562,6 @@ def _smart_init(
     field: "_AttractionField | None" = None,
     attraction_weight: float = 0.0,
     p: float = 1.0,
-    sequential: bool = True,
 ) -> np.ndarray:
     r"""Initializes new points by Best Candidate Sampling against the index.
 
@@ -618,10 +617,6 @@ def _smart_init(
         p (float): Exponent of the metric the index ranks by, so that the
             distance to an earlier slot is the same distance as the one to
             an indexed point.
-        sequential (bool): Score each slot against the slots picked before
-            it. ``False`` scores every slot against the index alone -- the
-            placement up to 0.7.2; see `esa`'s `init_sequential` for when
-            that is the better one.
 
     Returns:
         np.ndarray: Initial positions, shape $(n_{new}, D)$, in $[0, 1)$.
@@ -653,7 +648,7 @@ def _smart_init(
             # would drift over the batch.
             best[i] = (_zscore(novelty[i])
                        + attraction_weight * _zscore(a_hat[i])).argmax()
-        if pool == 1 or i + 1 == n_new or not sequential:
+        if pool == 1 or i + 1 == n_new:
             continue  # nothing to choose between, or nobody to tell
         # The slots still to be picked now have one more point to be far
         # from. Toroidal gap in the metric the index ranks by, so the two
@@ -969,7 +964,6 @@ def _esa(
     rng: np.random.Generator,
     init_sampler: samplers.Sampler,
     init_pool: int = 64,
-    init_sequential: bool = True,
     p: float = 1.0,
     step_radius: float | None = None,
     attract: np.ndarray | None = None,
@@ -1039,7 +1033,6 @@ def _esa(
         rng (np.random.Generator): Random number generator.
         init_sampler (samplers.Sampler): Sampler for initial positions.
         init_pool (int): Candidates per slot for `_smart_init`; see `esa`.
-        init_sequential (bool): See `esa`.
         p (float): Exponent of the toroidal $L^p$ metric the index ranks
             by; `radius` is in its units.
         step_radius (float | None): The $L^1$ radius holding the same
@@ -1111,14 +1104,13 @@ def _esa(
             # does the same thing exactly.
             weight = (attraction_weight if placement_weight is None
                       else placement_weight)
-            rounds = PLACEMENT_ROUND if init_sequential else current_n
+            rounds = PLACEMENT_ROUND
             init = np.empty((current_n, dim))
             for lo in range(0, current_n, rounds):
                 hi = min(lo + rounds, current_n)
                 init[lo:hi] = _smart_init(
                     index, hi - lo, dim, rng, init_sampler, pool=init_pool,
                     field=field, attraction_weight=weight, p=p,
-                    sequential=init_sequential,
                 )
                 if hi < current_n:
                     index.promote(init[lo:hi])
@@ -1280,7 +1272,6 @@ def esa(
     seed: int | np.random.Generator | None = None,
     init_sampler: samplers.Sampler | int | None = None,
     init_pool: int = 64,
-    init_sequential: bool = True,
     p: float | None = None,
     attractiveness: np.ndarray | None = None,
     attraction_weight: float = 0.5,
@@ -1450,7 +1441,7 @@ def esa(
             static set and the race was mild; read it as the case for
             having a selection, not as a tuning of the current one.
 
-**The selection earns its place; the pool size is a small,
+            **The selection earns its place; the pool size is a small,
             dimension-fading tuning.** Measured on a $1N$ sample + $1N$
             quasi-opposite + $1N$ probe pool, 20 seeds, paired per seed
             against the old hardcoded 15, on normalised 2-D projection
@@ -1477,36 +1468,6 @@ def esa(
             discriminating. 64 is the default because it takes most of the
             low-$d$ gain at 1.7x the cost of 15 and does no harm above;
             1024 buys another 2% at $d = 8$ for roughly 15x the cost.
-        init_sequential (bool): Score each slot against the slots already
-            placed in its batch as well as against the existing points
-            (Mitchell's algorithm as defined). ``False`` scores every slot
-            against the existing points only, which is what `esa` did
-            through 0.7.2.
-
-            **Neither dominates, and which is better is decided by how
-            many points are being added.** Union-scored wrap-around
-            discrepancy and largest hole, sequential relative to batch:
-
-            | shape | $d$ | discrepancy | largest hole |
-            | --- | --- | --- | --- |
-            | extend 500 clustered by 2500 | 2 | 1041 to 1.7 | 0.237 to 0.017 |
-            | extend 500 clustered by 2500 | 5 | 4.2 to 9.1 | 0.255 to 0.246 |
-            | extend 500 clustered by 2500 | 8 | 6.2 to 11.7 | 0.550 to 0.548 |
-            | $2N$ existing, $N = 128$ added | 8 | +5.2% (1/15) | 0.0% |
-            | $2N$ existing, $N = 128$ added | 16 | -0.5% (8/15) | -0.3% |
-
-            Batch fails outright in low dimension when the batch is large:
-            every slot races for the same voids and the relaxation, whose
-            travel is capped at a fraction of the local spacing, cannot
-            undo it. Sequential cannot fail that way, which is why it is
-            the default. Where batch does not collapse it scores better on
-            *discrepancy*, because the clump it starts from relaxes outward
-            and stops short of the existing points, leaving them a wider
-            margin; the holes it leaves are the same size. A caller adding
-            few points to many, in $d \ge 8$ -- an optimiser's population
-            step -- loses about 5% of discrepancy to the default at
-            $d = 8$ and nothing from $d = 16$, and can pass ``False`` to
-            keep the earlier placement bit for bit.
         p (float | None): Exponent of the toroidal $L^p$ metric,
             `geometry.P_MIN` $\le p \le 1$. ``None`` takes it from `index` when one is
             supplied and is $1$ (toroidal $L^1$) otherwise; an explicit
@@ -1660,6 +1621,13 @@ def esa(
         np.ndarray: The generated points, shape $(n, D)$, in the original
         coordinate system.
     """
+    bounds = np.asarray(bounds, dtype=np.float64)
+    if bounds.ndim != 2 or bounds.shape[1] != 2:
+        raise ValueError(
+            f"`bounds` must have shape (D, 2), got {bounds.shape}")
+    if not np.all(np.isfinite(bounds)) or np.any(bounds[:, 0] > bounds[:, 1]):
+        raise ValueError(
+            "`bounds` must be finite with lower <= upper on every axis")
     samples = np.asarray(samples, dtype=np.float64)
     if samples.ndim != 2:
         samples = samples.reshape(-1, bounds.shape[0])
@@ -1807,7 +1775,6 @@ def esa(
         rng=rng,
         init_sampler=samplers.check_sampler(init_sampler, default_random_state=rng),
         init_pool=int(init_pool),
-        init_sequential=bool(init_sequential),
         p=exponent,
         step_radius=step_radius,
         attract=attract,
@@ -1855,7 +1822,7 @@ def ess(
     """
     samples = np.asarray(samples, dtype=np.float64)
     if samples.ndim != 2:
-        samples = samples.reshape(-1, bounds.shape[0])
+        samples = samples.reshape(-1, np.asarray(bounds).shape[0])
 
     new_points = esa(samples, bounds, n=n, **kwargs)
     return np.concatenate((samples, new_points), axis=0)

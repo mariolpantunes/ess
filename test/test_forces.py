@@ -922,29 +922,18 @@ class TestLpGuards(unittest.TestCase):
                     gap.sum(axis=1).max(), sys.modules["ess.ess"].STEP_CAP * l1_radius * 1.001)
 
 
-class TestPlacementChoice(unittest.TestCase):
-    """`init_sequential` chooses between Mitchell's algorithm and the batch
-    placement `esa` had through 0.7.2."""
+class TestBounds(unittest.TestCase):
+    """`bounds` is taken as given by a caller, so it is checked."""
 
-    def test_batch_placement_is_still_reachable_and_differs(self):
-        bounds = np.array([[0.0, 1.0]] * 6)
-        static = np.random.default_rng(0).random((80, 6))
-        a = esa(static, bounds, n=40, seed=1)
-        b = esa(static, bounds, n=40, seed=1, init_sequential=False)
-        self.assertEqual(a.shape, b.shape)
-        self.assertFalse(np.allclose(a, b))
+    def test_a_list_is_accepted(self):
+        static = np.random.default_rng(0).random((30, 2))
+        a = esa(static, [[0.0, 1.0], [0.0, 1.0]], n=10, seed=1)
+        b = esa(static, np.array([[0.0, 1.0]] * 2), n=10, seed=1)
+        np.testing.assert_array_equal(a, b)
 
-    def test_batch_placement_races_where_sequential_does_not(self):
-        rng = np.random.default_rng(0)
-        centres = rng.uniform(0.2, 0.8, size=(6, 2))
-        static = np.clip(centres[rng.integers(6, size=1000)]
-                         + rng.normal(0.0, 0.06, size=(1000, 2)), 0.0, 1.0)
-        bounds = np.array([[0.0, 1.0]] * 2)
-
-        def cells(out):
-            return np.unique(np.minimum((out * 10).astype(int), 9),
-                             axis=0).shape[0]
-
-        raced = esa(static, bounds, n=1000, seed=1, init_sequential=False)
-        self.assertLess(cells(raced), 50)
-        self.assertGreaterEqual(cells(esa(static, bounds, n=1000, seed=1)), 85)
+    def test_reversed_or_misshapen_bounds_are_refused(self):
+        static = np.random.default_rng(0).random((30, 2))
+        for bad in ([[1.0, 0.0], [0.0, 1.0]], [0.0, 1.0],
+                    [[0.0, np.inf], [0.0, 1.0]]):
+            with self.assertRaises(ValueError):
+                esa(static, bad, n=10, seed=1)
