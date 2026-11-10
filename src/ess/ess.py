@@ -1460,13 +1460,22 @@ def esa(
             interaction radius (`geometry.radius_for_count`), the step cap,
             the placement and the attractiveness estimate (an `att_model`
             instance built under another exponent is refused, as an index
-            is). Below $1$ a point counts as near the
-            points that agree with it on most axes, and the force separates
-            points that agree with it on most axes. The push itself still
-            points along $\operatorname{sign}$ of the displacement at every
-            exponent (see `_compute_forces` for the measurement behind
-            that), so the exponent decides *who* interacts and how hard,
-            not which way.
+            is). Below $1$ a point counts as near the points that agree
+            with it on most axes, so those are the points the forces act
+            between.
+
+            **The exponent sets who interacts and how strongly, not the
+            direction of the push.** Repulsion and attraction both act
+            along $\operatorname{sign}(r_l)$ of the toroidal displacement,
+            on every axis equally, at every exponent. At $p = 1$ that is
+            the exact gradient of the distance. Below $1$ it is not: the
+            $L^p$ gradient weights axis $l$ by $\lvert r_l\rvert^{p-1}$,
+            which is unbounded at a shared coordinate and puts nearly the
+            whole push on the smallest gap (95% of it for a displacement
+            of $(0.001, 0.3)$ at $p = 1/2$). Measured on separation in the
+            run's own metric it was worse than
+            $\operatorname{sign}$ in all six cells tried, so it is not
+            used; the table is in `_compute_forces`.
 
             Measured against $L^1$ from scratch, a run under $p$ separates
             better in its own metric from $d = 4$ up and about equally at
