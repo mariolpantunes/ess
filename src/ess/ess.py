@@ -57,6 +57,18 @@ settles (1.14 versus 1.30 here).
 
 
 
+#: Slots placed per round of the best-candidate initialisation.
+#:
+#: A slot must be far from the slots placed before it, not only from what
+#: was indexed when the batch began (see `_smart_init`). Inside a round that
+#: is an exact running minimum, quadratic in the round; between rounds it is
+#: the index, which costs a `promote`. Measured at 16 to 256 on clustered
+#: static data ($n = 20000$ at $d = 2, 5$; $n = 5000$ at $d = 16$) the
+#: placement is the same quality at every size and cheapest here: at 256 the
+#: running minimum costs more than the neighbour queries it sits beside, and
+#: below 32 the per-round overhead starts to show.
+PLACEMENT_ROUND = 32
+
 K_LOCAL = 5
 r"""int: Cap on the number of interacting neighbours per point.
 
@@ -534,11 +546,25 @@ def _smart_init(
     r"""Initializes new points by Best Candidate Sampling against the index.
 
     For each of the $n$ slots, a pool of candidate positions is drawn with
-    the space-filling sampler and the one farthest (toroidal L1) from every
-    already-indexed point wins:
+    the space-filling sampler and the one farthest (toroidal, in the index's
+    metric) from every already-indexed point **and from every slot picked
+    before it in this call** wins:
 
-    $$ c^* = \arg\max_{c \in \text{pool}} \;
-       \min_{p \in \text{index}} d_{L1}^{tor}(c, p) $$
+    $$ c_i^* = \arg\max_{c \in \text{pool}_i} \;
+       \min_{p \,\in\, \text{index} \,\cup\, \{c_1^*, \dots, c_{i-1}^*\}}
+       d^{tor}(c, p) $$
+
+    **The second term is what makes this Mitchell's algorithm rather than a
+    race.** Scored against the index alone, every slot of a call sees the
+    same voids and none of them sees the others, so they all pick the same
+    few emptiest pockets -- and the larger the pool, the more reliably they
+    find them. With clustered static data in 2-D and $n = 5000$ that put the
+    whole batch in the corners: 20% grid coverage where the raw sampler
+    (``pool=1``) reaches 100%, and a largest hole that did not shrink with
+    $n$. The relaxation cannot repair it, because `STEP_CAP` bounds travel to
+    a fraction of the *local* spacing and the imbalance is global. The cost
+    of seeing the earlier slots is quadratic in the slots of one call, which
+    is why `_esa` calls this in rounds of `PLACEMENT_ROUND`.
 
     A small jitter $\xi \sim U(-10^{-3}, 10^{-3})$ breaks exact overlaps;
     the result is reduced mod 1 (no clipping — the torus has no edge to
@@ -574,30 +600,46 @@ def _smart_init(
     """
     candidates = init_sampler.sample(n_new * pool, dim, rng).astype(np.float64)
     _, dists = index.query(k=1, queries=candidates)
-    novelty = dists.reshape(n_new, pool)
+    # A copy: it is lowered in place as slots are picked, and the index owns
+    # what it returned.
+    novelty = np.array(dists, dtype=np.float64).reshape(n_new, pool)
+    slots = candidates.reshape(n_new, pool, dim)
 
-    if field is None or attraction_weight == 0.0:
-        # Repulsive ESS: placement is repulsive too. Bit-identical to the
-        # behaviour before the composite mode existed, so a run without
-        # `attractiveness` is unchanged and the composite path is an ablation
-        # rather than a different algorithm.
-        best = novelty.argmax(axis=1)
-    else:
-        # Composite ESS: placement is composite too. Scoring on novelty alone
-        # puts every candidate as far from everything as possible -- including
-        # as far from the good regions -- and then asks the relaxation's
-        # attraction to drag it back. That is the attraction spending its
-        # budget undoing the placement instead of refining it.
+    # Repulsive ESS places on novelty alone; composite ESS places on a blend.
+    # Scoring on novelty alone in the composite mode puts every candidate as
+    # far from everything as possible -- including as far from the good
+    # regions -- and then asks the relaxation's attraction to drag it back.
+    # That is the attraction spending its budget undoing the placement
+    # instead of refining it.
+    a_hat = None
+    if field is not None and attraction_weight != 0.0:
         a_hat = field.at(candidates).reshape(n_new, pool)
-        score = np.empty_like(novelty)
-        for i in range(n_new):
+    exponent = float(getattr(index, "p", 1.0))
+
+    best = np.empty(n_new, dtype=np.intp)
+    for i in range(n_new):
+        if a_hat is None:
+            best[i] = novelty[i].argmax()
+        else:
             # Standardised per slot, so `attraction_weight` is scale-free:
             # novelty shrinks as the space fills, and without this the balance
             # would drift over the batch.
-            score[i] = _zscore(novelty[i]) + attraction_weight * _zscore(a_hat[i])
-        best = score.argmax(axis=1)
+            best[i] = (_zscore(novelty[i])
+                       + attraction_weight * _zscore(a_hat[i])).argmax()
+        if pool == 1 or i + 1 == n_new:
+            continue  # nothing to choose between, or nobody left to tell
+        # The slots still to be picked now have one more point to be far
+        # from. Toroidal gap in the metric the index ranks by, so the two
+        # halves of the min are the same distance.
+        gap = np.abs(slots[i + 1:] - slots[i, best[i]])
+        np.minimum(gap, 1.0 - gap, out=gap)
+        if exponent == 1.0:
+            taken = gap.sum(axis=2)
+        else:
+            taken = (gap ** exponent).sum(axis=2) ** (1.0 / exponent)
+        np.minimum(novelty[i + 1:], taken, out=novelty[i + 1:])
 
-    picked = candidates.reshape(n_new, pool, dim)[np.arange(n_new), best]
+    picked = slots[np.arange(n_new), best]
     jitter = rng.uniform(-1e-3, 1e-3, size=picked.shape)
     return np.mod(picked + jitter, 1.0)
 
@@ -1001,14 +1043,29 @@ def _esa(
 
         started = time.perf_counter()
         if fitted:
-            init = _smart_init(
-                index, current_n, dim, rng, init_sampler, pool=init_pool,
-                field=field,
-                attraction_weight=(attraction_weight
-                                   if placement_weight is None
-                                   else placement_weight),
-            )
-            index.promote(init)
+            # Placed in rounds, each one indexed before the next is drawn, so
+            # that a slot is far from the whole batch placed so far and not
+            # only from the batches before it. Within a round `_smart_init`
+            # does the same thing exactly.
+            init = np.empty((current_n, dim))
+            for lo in range(0, current_n, PLACEMENT_ROUND):
+                hi = min(lo + PLACEMENT_ROUND, current_n)
+                init[lo:hi] = _smart_init(
+                    index, hi - lo, dim, rng, init_sampler, pool=init_pool,
+                    field=field,
+                    attraction_weight=(attraction_weight
+                                       if placement_weight is None
+                                       else placement_weight),
+                )
+                if hi < current_n:
+                    index.promote(init[lo:hi])
+            if current_n > PLACEMENT_ROUND:
+                # The earlier rounds went into the static tier to be seen;
+                # the relaxation needs the whole batch back in the candidate
+                # tier, and a refit is the only way to say that.
+                index.fit(all_data[:cursor], init, k=k, radius=radius_hint)
+            else:
+                index.promote(init)
         else:
             # From scratch: nothing to anchor against — the first batch
             # starts straight from the space-filling sampler.
@@ -1304,6 +1361,18 @@ def esa(
         init_pool (int): Candidates per slot for that selection, i.e. the
             $k$ of Mitchell's best-candidate. ``1`` disables the selection
             and uses the sampler's raw output.
+
+            **Each slot is scored against the slots placed before it as
+            well as the existing points.** It was not always: through 0.7.2
+            the slots of a batch were scored against the index alone, so
+            with `batch_size` left at its default every new point competed
+            for the same few voids. Extending a clustered 2-D dataset by
+            $n = 5000$ covered 20% of a $10 \times 10$ grid at the default
+            pool against 100% at ``1``; it now covers 100% with a largest
+            hole of 0.013 against 0.018. The table below was measured
+            before that change, on a shape where $n$ is no larger than the
+            static set and the race was mild; read it as the case for
+            having a selection, not as a tuning of the current one.
 
 **The selection earns its place; the pool size is a small,
             dimension-fading tuning.** Measured on a $1N$ sample + $1N$

@@ -776,6 +776,35 @@ class TestInitPool(unittest.TestCase):
             self.assertTrue((out >= 0.0).all() and (out <= 1.0).all(), p)
             self.assertTrue(np.isfinite(out).all(), p)
 
+    def test_slots_of_one_batch_do_not_race_for_the_same_voids(self):
+        """Extending clustered data by many more points than it holds.
+
+        Scored against the index alone, every slot of the batch picks the
+        same few emptiest pockets and the batch lands in the corners: this
+        configuration covered 30% of the grid. Each slot has to be far from
+        the slots placed before it too.
+        """
+        rng = np.random.default_rng(0)
+        centres = rng.uniform(0.2, 0.8, size=(6, 2))
+        static = np.clip(
+            centres[rng.integers(6, size=1000)]
+            + rng.normal(0.0, 0.06, size=(1000, 2)), 0.0, 1.0)
+        bounds = np.array([[0.0, 1.0]] * 2)
+        out = ess.esa(static, bounds, n=1000, seed=1)
+        cells = np.unique(np.minimum((out * 10).astype(int), 9), axis=0)
+        self.assertGreaterEqual(cells.shape[0], 85)
+
+    def test_placement_rounds_keep_the_whole_batch_active(self):
+        """A batch larger than one placement round is indexed in rounds and
+        then refitted; every point of it must still come back, relaxed."""
+        n = 3 * ess_core.PLACEMENT_ROUND + 7
+        stats = {}
+        out = ess.esa(self.static, self.bounds, n=n, seed=4, stats=stats)
+        self.assertEqual(out.shape, (n, 6))
+        self.assertTrue(np.isfinite(out).all())
+        self.assertEqual(np.unique(out, axis=0).shape[0], n)
+        self.assertEqual(len(stats["batch_epochs"]), 1)
+
     def test_empty_start_ignores_the_pool(self):
         """With no static points there is nothing to be far from, so the
         sampler's output is used as drawn and the pool cannot matter."""
