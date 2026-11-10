@@ -94,7 +94,7 @@ def score(static: np.ndarray, new: np.ndarray, probes: np.ndarray, p: float, uti
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("--src", help="source tree of the arm; omit for the random baseline")
     ap.add_argument("--out", required=True)
     ap.add_argument("--scenario", required=True, choices=("scratch", "uniform", "clustered"))
