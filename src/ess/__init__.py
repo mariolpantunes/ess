@@ -25,7 +25,9 @@ Architecture
 ------------
 The simulation runs on the unit torus $[0, 1)^d$ under the toroidal L1
 metric — opposite faces are identified, so the relaxation has no walls
-and no edge artifacts. Neighbour search is a single engine,
+and no edge artifacts. `esa(p=...)` selects a toroidal $L^p$ quasi-norm,
+$0 < p \le 1$, in its place; the exponent governs the search, the radius,
+the step cap, the placement and the attractiveness estimate together. Neighbour search is a single engine,
 `torann.ToroidalNN`: exact brute force at small $n$, toroidal LSH above
 its threshold, chosen internally by size.
 

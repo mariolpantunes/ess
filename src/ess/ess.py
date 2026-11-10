@@ -479,6 +479,8 @@ class _AttractionField:
         power (float): Its inverse-distance exponent.
         decay (float): Confidence multiplier applied to inferred sources.
         model: Name, class or instance; see `attraction.get_model`.
+        p (float): Exponent of the toroidal $L^p$ metric; forwarded to a
+            model that takes one.
     """
 
     __slots__ = ("_conf", "_pos", "_val", "decay", "model", "n_measured")
@@ -486,7 +488,7 @@ class _AttractionField:
     def __init__(self, positions, values, k=8, power=2.0, decay=0.5,
                  model: "str | type | attraction.AttractionModel" = "idw",
                  search_mode: geometry.ResolvedMode = "k_nn",
-                 radius: float | None = None):
+                 radius: float | None = None, p: float = 1.0):
         self._pos = np.asarray(positions, dtype=np.float64)
         self._val = np.asarray(values, dtype=np.float64)
         self._conf = np.ones(self._val.shape[0], dtype=np.float64)
@@ -496,7 +498,8 @@ class _AttractionField:
         # that has no notion of a search mode simply does not receive one --
         # the same capability protocol OBLESA forwards its keywords under.
         self.model = attraction.get_model(
-            model, k=k, power=power, search_mode=search_mode, radius=radius)
+            model, k=k, power=power, search_mode=search_mode, radius=radius,
+            p=p)
         self.model.fit(self._pos, self._val, self._conf)
 
     def at(self, positions: np.ndarray) -> np.ndarray:
@@ -724,9 +727,9 @@ def _compute_forces(
     same missing-neighbour convention. For active point $x_i$ with
     neighbours $y_j$:
 
-    $$ \vec{F}_i = \sum_{j} \frac{\vec{u}_{ij}}{\lVert\vec{u}_{ij}\rVert_2}
-       \, f\!\left(\frac{d_{L1}(x_i, y_j)}{R}\right), \qquad
-       u_{ij,l} \;=\; \lvert r_{ij,l}\rvert^{\,p-1}\operatorname{sign}(r_{ij,l}) $$
+    $$ \vec{F}_i = \sum_{j} \frac{\vec{u}_{ij}}{\lVert\vec{u}_{ij}\rVert_1}
+       \, f\!\left(\frac{d_{L^p}(x_i, y_j)}{R}\right), \qquad
+       u_{ij,l} \;=\; \operatorname{sign}(r_{ij,l}) $$
 
     where $\vec{r}_{ij}$ is the **toroidal** displacement — each component
     wrapped into $[-1/2, 1/2)$ by $r \leftarrow r - \operatorname{round}(r)$
@@ -758,6 +761,31 @@ def _compute_forces(
     $\operatorname{sign}(0) = 0$, which is the symmetric subgradient and
     the only choice that does not invent a direction.
 
+    **Below $p = 1$ the direction stays $\operatorname{sign}(r_l)$, and
+    that is a measurement, not an omission.** The gradient of the $L^p$
+    distance is $\lvert r_l\rvert^{p-1}\operatorname{sign}(r_l)$: singular
+    at a shared coordinate, and concentrated on whichever gap is smallest.
+    A quasi-norm is concave along each axis, so that is exactly where a
+    step stops paying soonest. $\operatorname{sign}(r)$ widens every gap at
+    once and therefore increases the distance under *every* exponent; it is
+    the one ascent direction they share. Relaxed from scratch and scored on
+    nearest-neighbour separation in the run's own $L^p$, relative to an
+    $L^1$ run (median of 8 seeds, median / minimum separation):
+
+    | $p$ | $d$ | $L^p$ gradient | $\operatorname{sign}$ |
+    | --- | --- | --- | --- |
+    | 0.75 | 2 | 0.94 / 0.94 | 0.98 / 0.99 |
+    | 0.75 | 4 | 0.95 / 0.92 | 1.04 / 1.07 |
+    | 0.75 | 16 | 0.97 / 0.94 | 1.00 / 1.00 |
+    | 0.5 | 2 | 0.92 / 1.00 | 0.95 / 1.11 |
+    | 0.5 | 4 | 0.98 / 1.08 | 1.13 / 1.34 |
+    | 0.5 | 16 | 0.95 / 0.90 | 1.04 / 1.04 |
+
+    The gradient loses in every cell. What the exponent changes is
+    therefore which points interact and how strongly -- the neighbour list
+    and $\hat d$ are $L^p$ -- and how far a step may go, not where the push
+    points. It also means the compiled kernel serves every exponent.
+
     Numerics: $f$ is evaluated in log-space, the per-point maximum
     $M_i$ is subtracted before exponentiation (log-sum-exp trick), and the
     restored scale $e^{M_i}$ is capped at $10^3$. Exactly coincident
@@ -769,7 +797,7 @@ def _compute_forces(
         all_data (np.ndarray): All positions (static + active), indexed by
             the global ids in `ids`.
         ids (np.ndarray): Neighbour ids, shape $(M, m)$; ``-1`` = missing.
-        dists (np.ndarray): Toroidal L1 distances, shape $(M, m)$;
+        dists (np.ndarray): Toroidal $L^p$ distances, shape $(M, m)$;
             ``inf`` = missing.
         radius (float): Interaction radius $R$ used to normalise distances.
         metric_fn (Callable): Log-space force law $\log f(\hat{d})$.
@@ -916,6 +944,7 @@ def _esa(
     rng: np.random.Generator,
     init_sampler: samplers.Sampler,
     init_pool: int = 64,
+    p: float = 1.0,
     attract: np.ndarray | None = None,
     attraction_weight: float = 1.0,
     attraction_fn: collections.abc.Callable | None = None,
@@ -983,6 +1012,8 @@ def _esa(
         rng (np.random.Generator): Random number generator.
         init_sampler (samplers.Sampler): Sampler for initial positions.
         init_pool (int): Candidates per slot for `_smart_init`; see `esa`.
+        p (float): Exponent of the toroidal $L^p$ metric the index ranks
+            by; `radius` is in its units.
         attract (np.ndarray | None): Normalised attractiveness over
             `all_data`; see `_compute_forces`.
         attraction_weight (float): Balance against repulsion.
@@ -1024,7 +1055,7 @@ def _esa(
         field = _AttractionField(all_data[:n_static], attract[:n_static],
                                  k=k_att, power=att_power, model=att_model,
                                  search_mode=att_search_mode,
-                                 radius=att_radius)
+                                 radius=att_radius, p=p)
     if fitted:
         index.fit(all_data[:n_static], k=k, radius=radius_hint)
 
@@ -1139,7 +1170,16 @@ def _esa(
             # norm instead lets each coordinate move by R/sqrt(d) rather
             # than R/d, which in 32 dimensions is a quarter of the domain
             # per epoch and destroys the packing.
-            step_norm = np.abs(step).sum(axis=1, keepdims=True)
+            # Below p = 1 that metric is the quasi-norm itself, which is
+            # never smaller than L1 -- so the cap only tightens, and a step
+            # along one axis is budgeted exactly as in L1. Capping in L1
+            # there instead cost a quarter of the separation at p = 1/2,
+            # d = 16.
+            if p == 1.0:
+                step_norm = np.abs(step).sum(axis=1, keepdims=True)
+            else:
+                step_norm = (np.abs(step) ** p).sum(
+                    axis=1, keepdims=True) ** (1.0 / p)
             np.multiply(
                 step,
                 np.minimum(1.0, STEP_CAP * radius / np.maximum(step_norm, 1e-12)),
@@ -1206,6 +1246,7 @@ def esa(
     seed: int | np.random.Generator | None = None,
     init_sampler: samplers.Sampler | int | None = None,
     init_pool: int = 64,
+    p: float | None = None,
     attractiveness: np.ndarray | None = None,
     attraction_weight: float = 0.5,
     attraction_metric: str | collections.abc.Callable | None = None,
@@ -1401,6 +1442,29 @@ def esa(
             discriminating. 64 is the default because it takes most of the
             low-$d$ gain at 1.7x the cost of 15 and does no harm above;
             1024 buys another 2% at $d = 8$ for roughly 15x the cost.
+        p (float | None): Exponent of the toroidal $L^p$ metric,
+            $0 < p \le 1$. ``None`` takes it from `index` when one is
+            supplied and is $1$ (toroidal $L^1$) otherwise; an explicit
+            value that disagrees with a supplied index raises.
+
+            One exponent governs the whole run: the neighbour search, the
+            interaction radius (`geometry.radius_for_count`), the direction
+            of every force, the step cap, the placement and the
+            attractiveness estimate. Below $1$ a point counts as near the
+            points that agree with it on most axes, and the force separates
+            points that agree with it on most axes. The push itself still
+            points along $\operatorname{sign}$ of the displacement at every
+            exponent (see `_compute_forces` for the measurement behind
+            that), so the exponent decides *who* interacts and how hard,
+            not which way.
+
+            Measured against $L^1$ from scratch, a run under $p$ separates
+            better in its own metric from $d = 4$ up and about equally at
+            $d = 2$, and gives up a little wrap-around discrepancy and
+            Euclidean separation (at $d = 8$, $n = 1000$: discrepancy 0.26
+            to 0.34 of random, separation 0.41 to 0.32, going from $p = 1$
+            to $1/2$). Choose it for the neighbourhood it defines, not as
+            a free improvement.
         attractiveness (np.ndarray | None): One value per row of `samples`,
             **higher = more attractive**. ``None`` (default) is pure
             repulsion and evaluates no second term at all -- not a term
@@ -1598,18 +1662,34 @@ def esa(
     # a mode and a target resolved apart can be paired wrongly. `search_mode`
     # is `"auto"` by default, which is what makes the default path
     # parameter-free at every dimension rather than only above the crossover.
+    # One exponent for the whole run. The index ranks by it, so the radius,
+    # the force direction, the step cap and the attraction estimate have to
+    # be in it too; an index built under another one is refused rather than
+    # quietly relaxed in a geometry it does not search.
+    index_p = None if index is None else float(getattr(index, "p", 1.0))
+    if p is None:
+        exponent = 1.0 if index_p is None else index_p
+    else:
+        exponent = geometry.check_p(p)
+        if index_p is not None and index_p != exponent:
+            raise ValueError(
+                f"p={exponent} but the supplied index was built with "
+                f"p={index_p}. Pass one of them, or make them agree.")
+    geometry.check_p(exponent)
+
     n_total = samples.shape[0] + n
     mode, target = geometry.neighbourhood_for(
         dim, n_total, search_mode, radius_target)
     final_radius = (
-        geometry.l1_radius_for_count(dim, n_total, target)
+        geometry.radius_for_count(dim, n_total, target, exponent)
         if not radius
-        else geometry.radius_from_normalized(float(radius), dim)
+        else geometry.radius_from_normalized(float(radius), dim, exponent)
     )
-    logger.debug("Interaction radius (toroidal L1): %.4f", final_radius)
+    logger.debug("Interaction radius (toroidal L^%g): %.4f",
+                 exponent, final_radius)
 
     if index is None:
-        index = ToroidalNN(seed=int(rng.integers(2**31)))
+        index = ToroidalNN(seed=int(rng.integers(2**31)), p=exponent)
 
     generated = _esa(
         scaled_samples,
@@ -1629,6 +1709,7 @@ def esa(
         rng=rng,
         init_sampler=samplers.check_sampler(init_sampler, default_random_state=rng),
         init_pool=int(init_pool),
+        p=exponent,
         attract=attract,
         attraction_weight=float(attraction_weight),
         attraction_fn=attraction_fn,
