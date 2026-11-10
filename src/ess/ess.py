@@ -743,9 +743,12 @@ def _compute_forces(
 
     where $a_j \in [0, 1]$ is the neighbour's normalised attractiveness. Both
     terms share the neighbour list and the direction $\hat u$; only the
-    magnitude law and the sign differ. Static points carry $a_j$; points this
-    call is placing carry zero, because they have no evaluated quality and
-    inventing one would be fabrication.
+    magnitude law and the sign differ. Static points carry their measured
+    $a_j$. What the points being placed carry is the caller's decision, made
+    through `attract`: `_esa` writes the field's *estimate* at each one's
+    current position, so candidates in a promising region pull on one
+    another; a caller that leaves those rows at zero gets attraction toward
+    measured points only.
 
     Note this is a *pairwise* pull, not the gradient of an interpolated
     field, so a weight tuned against a Shepard-style surrogate does not
@@ -1614,7 +1617,7 @@ def esa(
                 f"have no evaluated quality yet, so they carry none."
             )
         # Laid out over `all_data`, which is [static | placed]; the placed
-        # rows stay zero and so exert no pull.
+        # rows start at zero and `_esa` fills them with the field's estimate.
         attract = np.zeros(samples.shape[0] + n, dtype=np.float64)
         attract[: samples.shape[0]] = a
 

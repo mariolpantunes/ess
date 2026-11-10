@@ -209,11 +209,15 @@ class InverseDistance(AttractionModel):
             differ only in which of count and volume is held fixed.
         p (float): Exponent of the toroidal $L^p$ metric the neighbours are
             ranked and weighted by, in $(0, 1]$.
+        seed (int | None): Seed of the index's hash functions. Fixed by
+            default so that a seeded run is reproducible whatever the
+            number of sources; ``None`` draws fresh ones on every fit.
     """
 
     def __init__(self, k: int = 8, power: float = 2.0, backend: str = "auto",
                  search_mode: geometry.ResolvedMode = "k_nn",
-                 radius: float | None = None, p: float = 1.0):
+                 radius: float | None = None, p: float = 1.0,
+                 seed: int | None = 0):
         if search_mode not in ("k_nn", "radius"):
             raise ValueError(
                 f"search_mode must be 'k_nn' or 'radius', got {search_mode!r}")
@@ -223,6 +227,7 @@ class InverseDistance(AttractionModel):
         self.search_mode = str(search_mode)
         self.radius = radius
         self.p = geometry.check_p(p)
+        self.seed = seed
         self._val = np.empty(0)
         self._conf = np.empty(0)
         self._index: ToroidalNN | None = None
@@ -246,7 +251,12 @@ class InverseDistance(AttractionModel):
             )
             # Under the run's exponent, not L1: "nearest" has to mean the
             # same thing to the estimate as to the repulsion it balances.
-            self._index = ToroidalNN(backend=self.backend, p=self.p).fit(
+            # Seeded: above torann's crossover the search is LSH, whose hash
+            # functions are drawn at fit. Unseeded, two runs of `esa` with
+            # one seed estimated two different fields and placed two
+            # different designs -- from about 3000 sources at d = 8.
+            self._index = ToroidalNN(
+                seed=self.seed, backend=self.backend, p=self.p).fit(
                 np.mod(pos, 1.0), k=min(self.k, n))
         return self
 
