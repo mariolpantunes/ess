@@ -1,0 +1,1302 @@
+clustered_d5_n1024_r1_head_p05_c02 head --scenario clustered --d 5 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d8_n1024_r1_head_pool256 head --scenario clustered --d 8 --n0 1024 --ratio 1 --cap 0.01 --pool 256
+clustered_d2_n256_r1_head_p025_c02 head --scenario clustered --d 2 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+scratch_d16_n256_r1_head_c04 head --scenario scratch --d 16 --n0 256 --ratio 1 --cap 0.04
+clustered_d8_n1024_r1_head_p05_c01 head --scenario clustered --d 8 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+uniform_d2_n1024_r5_head_pool256 head --scenario uniform --d 2 --n0 1024 --ratio 5 --cap 0.01 --pool 256
+uniform_d3_n256_r1_batch_c01 batch --scenario uniform --d 3 --n0 256 --ratio 1 --cap 0.01
+uniform_d2_n256_r0.5_head_p05_c01 head --scenario uniform --d 2 --n0 256 --ratio 0.5 --p 0.5 --cap 0.01
+clustered_d32_n1024_r5_head_c04 head --scenario clustered --d 32 --n0 1024 --ratio 5 --cap 0.04
+uniform_d5_n256_r0.5_batch_c01 batch --scenario uniform --d 5 --n0 256 --ratio 0.5 --cap 0.01
+uniform_d32_n256_r0.5_l1cap_p05 l1cap --scenario uniform --d 32 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d16_n256_r0.5_l1cap_p05 l1cap --scenario uniform --d 16 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d2_n1024_r1_head_c005 head --scenario uniform --d 2 --n0 1024 --ratio 1 --cap 0.005
+scratch_d2_n1024_r1_head_p05_c02 head --scenario scratch --d 2 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d5_n1024_r1_head_c01 head --scenario clustered --d 5 --n0 1024 --ratio 1 --cap 0.01
+uniform_d5_n256_r0.5_head_c005 head --scenario uniform --d 5 --n0 256 --ratio 0.5 --cap 0.005
+clustered_d5_n1024_r5_l1cap_p05 l1cap --scenario clustered --d 5 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+clustered_d3_n1024_r1_head_pool16 head --scenario clustered --d 3 --n0 1024 --ratio 1 --cap 0.01 --pool 16
+clustered_d2_n256_r5_head_pool256 head --scenario clustered --d 2 --n0 256 --ratio 5 --cap 0.01 --pool 256
+scratch_d16_n256_r1_l1cap_p025 l1cap --scenario scratch --d 16 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d32_n256_r5_head_p05_c02 head --scenario clustered --d 32 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+uniform_d16_n1024_r5_batch_place batch --scenario uniform --d 16 --n0 1024 --ratio 5 --epochs 0
+scratch_d16_n1024_r1_random random --scenario scratch --d 16 --n0 1024 --ratio 1
+uniform_d16_n256_r1_batch_place batch --scenario uniform --d 16 --n0 256 --ratio 1 --epochs 0
+uniform_d32_n256_r5_random random --scenario uniform --d 32 --n0 256 --ratio 5
+uniform_d32_n1024_r0.5_batch_place batch --scenario uniform --d 32 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d16_n1024_r1_head_place head --scenario clustered --d 16 --n0 1024 --ratio 1 --epochs 0
+clustered_d32_n1024_r1_head_p05_c02 head --scenario clustered --d 32 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d32_n256_r0.5_batch_c01 batch --scenario clustered --d 32 --n0 256 --ratio 0.5 --cap 0.01
+clustered_d32_n256_r0.5_head_c005 head --scenario clustered --d 32 --n0 256 --ratio 0.5 --cap 0.005
+clustered_d3_n1024_r0.5_head_c04 head --scenario clustered --d 3 --n0 1024 --ratio 0.5 --cap 0.04
+clustered_d3_n256_r1_head_p05_c01 head --scenario clustered --d 3 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+clustered_d8_n256_r5_head_pool256 head --scenario clustered --d 8 --n0 256 --ratio 5 --cap 0.01 --pool 256
+uniform_d5_n1024_r1_head_p05_c01 head --scenario uniform --d 5 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+uniform_d5_n256_r1_l1cap_p05 l1cap --scenario uniform --d 5 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d3_n256_r0.5_head_p05_c02 head --scenario clustered --d 3 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d5_n256_r5_batch_c02 batch --scenario uniform --d 5 --n0 256 --ratio 5 --cap 0.02
+clustered_d2_n1024_r1_random random --scenario clustered --d 2 --n0 1024 --ratio 1
+clustered_d8_n256_r0.5_l1cap_p025 l1cap --scenario clustered --d 8 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d32_n256_r5_l1cap_p025 l1cap --scenario uniform --d 32 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d32_n256_r5_random random --scenario clustered --d 32 --n0 256 --ratio 5
+uniform_d32_n256_r1_head_p025_c02 head --scenario uniform --d 32 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d8_n256_r0.5_head_p025_c02 head --scenario clustered --d 8 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d5_n1024_r5_batch_place batch --scenario uniform --d 5 --n0 1024 --ratio 5 --epochs 0
+scratch_d3_n1024_r1_head_p05_c02 head --scenario scratch --d 3 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+uniform_d32_n256_r1_head_c01 head --scenario uniform --d 32 --n0 256 --ratio 1 --cap 0.01
+uniform_d2_n1024_r0.5_random random --scenario uniform --d 2 --n0 1024 --ratio 0.5
+uniform_d3_n1024_r5_head_c01 head --scenario uniform --d 3 --n0 1024 --ratio 5 --cap 0.01
+uniform_d16_n256_r0.5_batch_place batch --scenario uniform --d 16 --n0 256 --ratio 0.5 --epochs 0
+uniform_d16_n1024_r5_head_pool16 head --scenario uniform --d 16 --n0 1024 --ratio 5 --cap 0.01 --pool 16
+uniform_d2_n1024_r5_l1cap_p05 l1cap --scenario uniform --d 2 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+uniform_d8_n1024_r0.5_head_pool1 head --scenario uniform --d 8 --n0 1024 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d5_n1024_r1_head_p05_c02 head --scenario uniform --d 5 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+scratch_d5_n256_r1_head_p025_c02 head --scenario scratch --d 5 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d32_n256_r5_head_pool16 head --scenario clustered --d 32 --n0 256 --ratio 5 --cap 0.01 --pool 16
+uniform_d3_n1024_r0.5_random random --scenario uniform --d 3 --n0 1024 --ratio 0.5
+uniform_d2_n256_r0.5_head_c005 head --scenario uniform --d 2 --n0 256 --ratio 0.5 --cap 0.005
+uniform_d2_n1024_r1_head_pool16 head --scenario uniform --d 2 --n0 1024 --ratio 1 --cap 0.01 --pool 16
+clustered_d3_n256_r5_batch_place batch --scenario clustered --d 3 --n0 256 --ratio 5 --epochs 0
+uniform_d3_n256_r5_head_pool1 head --scenario uniform --d 3 --n0 256 --ratio 5 --cap 0.01 --pool 1
+clustered_d8_n256_r5_l1cap_p025 l1cap --scenario clustered --d 8 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d2_n1024_r1_head_c01 head --scenario clustered --d 2 --n0 1024 --ratio 1 --cap 0.01
+clustered_d3_n1024_r0.5_random random --scenario clustered --d 3 --n0 1024 --ratio 0.5
+uniform_d32_n256_r5_batch_c01 batch --scenario uniform --d 32 --n0 256 --ratio 5 --cap 0.01
+scratch_d8_n256_r1_l1cap_p05 l1cap --scenario scratch --d 8 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d32_n256_r0.5_head_p025_c01 head --scenario clustered --d 32 --n0 256 --ratio 0.5 --p 0.25 --cap 0.01
+uniform_d16_n256_r5_random random --scenario uniform --d 16 --n0 256 --ratio 5
+uniform_d5_n1024_r1_l1cap_p05 l1cap --scenario uniform --d 5 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d5_n1024_r1_batch_place batch --scenario clustered --d 5 --n0 1024 --ratio 1 --epochs 0
+clustered_d2_n256_r0.5_batch_place batch --scenario clustered --d 2 --n0 256 --ratio 0.5 --epochs 0
+clustered_d3_n256_r1_head_p025_c01 head --scenario clustered --d 3 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+clustered_d8_n256_r5_head_p05_c01 head --scenario clustered --d 8 --n0 256 --ratio 5 --p 0.5 --cap 0.01
+uniform_d16_n1024_r1_batch_c02 batch --scenario uniform --d 16 --n0 1024 --ratio 1 --cap 0.02
+uniform_d32_n256_r1_head_pool256 head --scenario uniform --d 32 --n0 256 --ratio 1 --cap 0.01 --pool 256
+clustered_d32_n256_r5_head_c04 head --scenario clustered --d 32 --n0 256 --ratio 5 --cap 0.04
+uniform_d16_n1024_r0.5_batch_place batch --scenario uniform --d 16 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d16_n1024_r1_head_pool256 head --scenario clustered --d 16 --n0 1024 --ratio 1 --cap 0.01 --pool 256
+clustered_d16_n256_r5_head_p025_c02 head --scenario clustered --d 16 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+scratch_d32_n256_r1_head_c005 head --scenario scratch --d 32 --n0 256 --ratio 1 --cap 0.005
+clustered_d32_n256_r1_l1cap_p05 l1cap --scenario clustered --d 32 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d5_n1024_r5_head_p05_c01 head --scenario clustered --d 5 --n0 1024 --ratio 5 --p 0.5 --cap 0.01
+uniform_d5_n256_r5_random random --scenario uniform --d 5 --n0 256 --ratio 5
+uniform_d32_n256_r0.5_l1cap_p025 l1cap --scenario uniform --d 32 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d32_n256_r0.5_head_p05_c01 head --scenario uniform --d 32 --n0 256 --ratio 0.5 --p 0.5 --cap 0.01
+uniform_d2_n256_r0.5_head_pool256 head --scenario uniform --d 2 --n0 256 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d5_n256_r5_head_c02 head --scenario uniform --d 5 --n0 256 --ratio 5 --cap 0.02
+uniform_d2_n256_r5_batch_c01 batch --scenario uniform --d 2 --n0 256 --ratio 5 --cap 0.01
+uniform_d3_n1024_r1_head_p05_c01 head --scenario uniform --d 3 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+uniform_d32_n1024_r0.5_random random --scenario uniform --d 32 --n0 1024 --ratio 0.5
+clustered_d8_n256_r5_head_c005 head --scenario clustered --d 8 --n0 256 --ratio 5 --cap 0.005
+scratch_d3_n256_r1_head_c01 head --scenario scratch --d 3 --n0 256 --ratio 1 --cap 0.01
+clustered_d2_n1024_r5_l1cap_p05 l1cap --scenario clustered --d 2 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+uniform_d3_n256_r5_head_place head --scenario uniform --d 3 --n0 256 --ratio 5 --epochs 0
+uniform_d5_n1024_r5_head_c01 head --scenario uniform --d 5 --n0 1024 --ratio 5 --cap 0.01
+clustered_d16_n256_r0.5_head_place head --scenario clustered --d 16 --n0 256 --ratio 0.5 --epochs 0
+clustered_d5_n1024_r1_head_c02 head --scenario clustered --d 5 --n0 1024 --ratio 1 --cap 0.02
+uniform_d8_n1024_r0.5_head_p05_c01 head --scenario uniform --d 8 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.01
+clustered_d5_n256_r5_head_place head --scenario clustered --d 5 --n0 256 --ratio 5 --epochs 0
+clustered_d16_n1024_r1_head_pool16 head --scenario clustered --d 16 --n0 1024 --ratio 1 --cap 0.01 --pool 16
+uniform_d32_n1024_r5_head_pool16 head --scenario uniform --d 32 --n0 1024 --ratio 5 --cap 0.01 --pool 16
+uniform_d8_n256_r5_head_pool256 head --scenario uniform --d 8 --n0 256 --ratio 5 --cap 0.01 --pool 256
+clustered_d3_n256_r1_l1cap_p05 l1cap --scenario clustered --d 3 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d2_n1024_r0.5_head_pool16 head --scenario uniform --d 2 --n0 1024 --ratio 0.5 --cap 0.01 --pool 16
+uniform_d5_n1024_r1_head_pool1 head --scenario uniform --d 5 --n0 1024 --ratio 1 --cap 0.01 --pool 1
+clustered_d8_n256_r0.5_head_pool16 head --scenario clustered --d 8 --n0 256 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d2_n1024_r1_head_c04 head --scenario clustered --d 2 --n0 1024 --ratio 1 --cap 0.04
+scratch_d5_n1024_r1_head_p05_c02 head --scenario scratch --d 5 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+scratch_d32_n256_r1_head_p025_c02 head --scenario scratch --d 32 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d2_n1024_r1_l1cap_p05 l1cap --scenario clustered --d 2 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d16_n256_r0.5_head_c04 head --scenario clustered --d 16 --n0 256 --ratio 0.5 --cap 0.04
+uniform_d5_n256_r1_head_c04 head --scenario uniform --d 5 --n0 256 --ratio 1 --cap 0.04
+uniform_d3_n1024_r1_batch_c01 batch --scenario uniform --d 3 --n0 1024 --ratio 1 --cap 0.01
+clustered_d32_n256_r5_head_p025_c01 head --scenario clustered --d 32 --n0 256 --ratio 5 --p 0.25 --cap 0.01
+clustered_d32_n1024_r0.5_head_c005 head --scenario clustered --d 32 --n0 1024 --ratio 0.5 --cap 0.005
+clustered_d5_n256_r0.5_l1cap_p025 l1cap --scenario clustered --d 5 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d5_n256_r1_head_p05_c01 head --scenario uniform --d 5 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+clustered_d5_n256_r0.5_head_p025_c02 head --scenario clustered --d 5 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+clustered_d3_n1024_r0.5_head_c005 head --scenario clustered --d 3 --n0 1024 --ratio 0.5 --cap 0.005
+clustered_d8_n1024_r1_head_c04 head --scenario clustered --d 8 --n0 1024 --ratio 1 --cap 0.04
+uniform_d32_n256_r1_head_pool16 head --scenario uniform --d 32 --n0 256 --ratio 1 --cap 0.01 --pool 16
+uniform_d16_n256_r1_head_pool16 head --scenario uniform --d 16 --n0 256 --ratio 1 --cap 0.01 --pool 16
+clustered_d2_n256_r1_head_c01 head --scenario clustered --d 2 --n0 256 --ratio 1 --cap 0.01
+uniform_d3_n1024_r1_l1cap_p05 l1cap --scenario uniform --d 3 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d16_n1024_r5_head_pool256 head --scenario clustered --d 16 --n0 1024 --ratio 5 --cap 0.01 --pool 256
+uniform_d32_n1024_r0.5_batch_c01 batch --scenario uniform --d 32 --n0 1024 --ratio 0.5 --cap 0.01
+scratch_d8_n1024_r1_l1cap_p05 l1cap --scenario scratch --d 8 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d3_n256_r0.5_head_c01 head --scenario clustered --d 3 --n0 256 --ratio 0.5 --cap 0.01
+clustered_d8_n256_r5_batch_c01 batch --scenario clustered --d 8 --n0 256 --ratio 5 --cap 0.01
+uniform_d3_n256_r0.5_batch_c01 batch --scenario uniform --d 3 --n0 256 --ratio 0.5 --cap 0.01
+uniform_d3_n1024_r5_batch_c02 batch --scenario uniform --d 3 --n0 1024 --ratio 5 --cap 0.02
+uniform_d8_n256_r5_head_pool1 head --scenario uniform --d 8 --n0 256 --ratio 5 --cap 0.01 --pool 1
+uniform_d3_n1024_r0.5_head_place head --scenario uniform --d 3 --n0 1024 --ratio 0.5 --epochs 0
+uniform_d2_n1024_r0.5_batch_c01 batch --scenario uniform --d 2 --n0 1024 --ratio 0.5 --cap 0.01
+uniform_d3_n1024_r1_batch_c02 batch --scenario uniform --d 3 --n0 1024 --ratio 1 --cap 0.02
+clustered_d2_n256_r0.5_head_p025_c02 head --scenario clustered --d 2 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d2_n1024_r1_head_p05_c01 head --scenario uniform --d 2 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d8_n1024_r0.5_batch_c02 batch --scenario clustered --d 8 --n0 1024 --ratio 0.5 --cap 0.02
+clustered_d32_n256_r0.5_head_p05_c02 head --scenario clustered --d 32 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d16_n256_r5_batch_place batch --scenario uniform --d 16 --n0 256 --ratio 5 --epochs 0
+uniform_d5_n256_r5_batch_c01 batch --scenario uniform --d 5 --n0 256 --ratio 5 --cap 0.01
+clustered_d8_n256_r5_head_p025_c02 head --scenario clustered --d 8 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d8_n1024_r5_l1cap_p05 l1cap --scenario clustered --d 8 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+uniform_d16_n1024_r0.5_head_pool1 head --scenario uniform --d 16 --n0 1024 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d2_n1024_r1_head_c04 head --scenario uniform --d 2 --n0 1024 --ratio 1 --cap 0.04
+clustered_d32_n256_r0.5_head_c02 head --scenario clustered --d 32 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d16_n256_r1_head_place head --scenario clustered --d 16 --n0 256 --ratio 1 --epochs 0
+uniform_d16_n1024_r5_batch_c02 batch --scenario uniform --d 16 --n0 1024 --ratio 5 --cap 0.02
+clustered_d3_n256_r1_head_c02 head --scenario clustered --d 3 --n0 256 --ratio 1 --cap 0.02
+clustered_d5_n1024_r5_head_place head --scenario clustered --d 5 --n0 1024 --ratio 5 --epochs 0
+clustered_d16_n1024_r1_head_pool1 head --scenario clustered --d 16 --n0 1024 --ratio 1 --cap 0.01 --pool 1
+uniform_d16_n1024_r1_l1cap_p05 l1cap --scenario uniform --d 16 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+uniform_d16_n1024_r5_head_place head --scenario uniform --d 16 --n0 1024 --ratio 5 --epochs 0
+uniform_d2_n1024_r5_random random --scenario uniform --d 2 --n0 1024 --ratio 5
+uniform_d3_n256_r0.5_random random --scenario uniform --d 3 --n0 256 --ratio 0.5
+uniform_d32_n1024_r5_random random --scenario uniform --d 32 --n0 1024 --ratio 5
+clustered_d3_n1024_r5_head_pool256 head --scenario clustered --d 3 --n0 1024 --ratio 5 --cap 0.01 --pool 256
+clustered_d8_n1024_r1_head_p05_c02 head --scenario clustered --d 8 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d8_n256_r1_head_p05_c02 head --scenario clustered --d 8 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d8_n1024_r0.5_head_place head --scenario clustered --d 8 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d3_n1024_r5_head_place head --scenario clustered --d 3 --n0 1024 --ratio 5 --epochs 0
+clustered_d2_n256_r1_head_pool256 head --scenario clustered --d 2 --n0 256 --ratio 1 --cap 0.01 --pool 256
+uniform_d2_n1024_r0.5_head_c04 head --scenario uniform --d 2 --n0 1024 --ratio 0.5 --cap 0.04
+uniform_d16_n1024_r0.5_random random --scenario uniform --d 16 --n0 1024 --ratio 0.5
+uniform_d3_n256_r5_batch_c02 batch --scenario uniform --d 3 --n0 256 --ratio 5 --cap 0.02
+uniform_d16_n256_r5_head_pool16 head --scenario uniform --d 16 --n0 256 --ratio 5 --cap 0.01 --pool 16
+clustered_d16_n1024_r0.5_head_p05_c01 head --scenario clustered --d 16 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.01
+scratch_d8_n256_r1_head_c005 head --scenario scratch --d 8 --n0 256 --ratio 1 --cap 0.005
+clustered_d32_n256_r1_head_c02 head --scenario clustered --d 32 --n0 256 --ratio 1 --cap 0.02
+clustered_d16_n256_r1_head_c01 head --scenario clustered --d 16 --n0 256 --ratio 1 --cap 0.01
+clustered_d8_n256_r0.5_head_p05_c02 head --scenario clustered --d 8 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d2_n256_r0.5_head_place head --scenario uniform --d 2 --n0 256 --ratio 0.5 --epochs 0
+uniform_d16_n1024_r5_l1cap_p05 l1cap --scenario uniform --d 16 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+uniform_d32_n1024_r1_batch_c02 batch --scenario uniform --d 32 --n0 1024 --ratio 1 --cap 0.02
+uniform_d16_n256_r5_l1cap_p025 l1cap --scenario uniform --d 16 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d32_n256_r0.5_l1cap_p05 l1cap --scenario clustered --d 32 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d2_n1024_r1_head_pool256 head --scenario uniform --d 2 --n0 1024 --ratio 1 --cap 0.01 --pool 256
+clustered_d8_n1024_r0.5_head_c005 head --scenario clustered --d 8 --n0 1024 --ratio 0.5 --cap 0.005
+clustered_d8_n1024_r0.5_batch_place batch --scenario clustered --d 8 --n0 1024 --ratio 0.5 --epochs 0
+uniform_d8_n256_r0.5_head_c005 head --scenario uniform --d 8 --n0 256 --ratio 0.5 --cap 0.005
+uniform_d8_n1024_r1_head_pool16 head --scenario uniform --d 8 --n0 1024 --ratio 1 --cap 0.01 --pool 16
+clustered_d3_n256_r0.5_head_place head --scenario clustered --d 3 --n0 256 --ratio 0.5 --epochs 0
+scratch_d3_n256_r1_l1cap_p025 l1cap --scenario scratch --d 3 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d8_n1024_r0.5_head_c02 head --scenario uniform --d 8 --n0 1024 --ratio 0.5 --cap 0.02
+uniform_d8_n256_r1_l1cap_p05 l1cap --scenario uniform --d 8 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d2_n256_r1_head_pool16 head --scenario uniform --d 2 --n0 256 --ratio 1 --cap 0.01 --pool 16
+uniform_d5_n256_r1_head_place head --scenario uniform --d 5 --n0 256 --ratio 1 --epochs 0
+clustered_d2_n1024_r0.5_head_p05_c01 head --scenario clustered --d 2 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.01
+uniform_d8_n256_r5_batch_c02 batch --scenario uniform --d 8 --n0 256 --ratio 5 --cap 0.02
+clustered_d5_n1024_r1_head_p05_c01 head --scenario clustered --d 5 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+scratch_d8_n1024_r1_head_p05_c01 head --scenario scratch --d 8 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d5_n1024_r5_head_pool16 head --scenario clustered --d 5 --n0 1024 --ratio 5 --cap 0.01 --pool 16
+uniform_d16_n256_r0.5_head_c005 head --scenario uniform --d 16 --n0 256 --ratio 0.5 --cap 0.005
+clustered_d5_n256_r1_l1cap_p05 l1cap --scenario clustered --d 5 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d2_n1024_r1_head_p05_c02 head --scenario uniform --d 2 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d3_n1024_r0.5_head_c01 head --scenario clustered --d 3 --n0 1024 --ratio 0.5 --cap 0.01
+clustered_d16_n1024_r5_head_c01 head --scenario clustered --d 16 --n0 1024 --ratio 5 --cap 0.01
+uniform_d2_n256_r0.5_head_pool1 head --scenario uniform --d 2 --n0 256 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d16_n256_r1_head_c01 head --scenario uniform --d 16 --n0 256 --ratio 1 --cap 0.01
+clustered_d16_n256_r1_l1cap_p025 l1cap --scenario clustered --d 16 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d2_n1024_r0.5_head_c01 head --scenario clustered --d 2 --n0 1024 --ratio 0.5 --cap 0.01
+clustered_d16_n256_r0.5_head_c02 head --scenario clustered --d 16 --n0 256 --ratio 0.5 --cap 0.02
+uniform_d8_n256_r1_head_p025_c02 head --scenario uniform --d 8 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d3_n256_r0.5_batch_c02 batch --scenario uniform --d 3 --n0 256 --ratio 0.5 --cap 0.02
+uniform_d5_n256_r0.5_head_place head --scenario uniform --d 5 --n0 256 --ratio 0.5 --epochs 0
+clustered_d5_n1024_r1_batch_c02 batch --scenario clustered --d 5 --n0 1024 --ratio 1 --cap 0.02
+clustered_d5_n256_r5_batch_place batch --scenario clustered --d 5 --n0 256 --ratio 5 --epochs 0
+uniform_d2_n256_r5_batch_place batch --scenario uniform --d 2 --n0 256 --ratio 5 --epochs 0
+clustered_d2_n256_r1_head_place head --scenario clustered --d 2 --n0 256 --ratio 1 --epochs 0
+clustered_d3_n1024_r0.5_l1cap_p05 l1cap --scenario clustered --d 3 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d32_n1024_r1_head_pool256 head --scenario uniform --d 32 --n0 1024 --ratio 1 --cap 0.01 --pool 256
+uniform_d8_n1024_r0.5_l1cap_p05 l1cap --scenario uniform --d 8 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d3_n1024_r0.5_batch_c01 batch --scenario clustered --d 3 --n0 1024 --ratio 0.5 --cap 0.01
+uniform_d16_n1024_r5_batch_c01 batch --scenario uniform --d 16 --n0 1024 --ratio 5 --cap 0.01
+scratch_d16_n256_r1_head_c005 head --scenario scratch --d 16 --n0 256 --ratio 1 --cap 0.005
+uniform_d3_n1024_r0.5_head_c01 head --scenario uniform --d 3 --n0 1024 --ratio 0.5 --cap 0.01
+uniform_d2_n256_r0.5_head_c01 head --scenario uniform --d 2 --n0 256 --ratio 0.5 --cap 0.01
+uniform_d16_n1024_r0.5_batch_c01 batch --scenario uniform --d 16 --n0 1024 --ratio 0.5 --cap 0.01
+clustered_d8_n256_r5_head_c02 head --scenario clustered --d 8 --n0 256 --ratio 5 --cap 0.02
+clustered_d8_n256_r5_batch_c02 batch --scenario clustered --d 8 --n0 256 --ratio 5 --cap 0.02
+uniform_d2_n1024_r0.5_l1cap_p05 l1cap --scenario uniform --d 2 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d8_n256_r1_batch_c01 batch --scenario clustered --d 8 --n0 256 --ratio 1 --cap 0.01
+clustered_d16_n1024_r5_random random --scenario clustered --d 16 --n0 1024 --ratio 5
+uniform_d16_n1024_r5_head_c01 head --scenario uniform --d 16 --n0 1024 --ratio 5 --cap 0.01
+uniform_d8_n256_r5_batch_c01 batch --scenario uniform --d 8 --n0 256 --ratio 5 --cap 0.01
+uniform_d2_n256_r5_head_place head --scenario uniform --d 2 --n0 256 --ratio 5 --epochs 0
+clustered_d16_n256_r0.5_random random --scenario clustered --d 16 --n0 256 --ratio 0.5
+clustered_d2_n1024_r1_head_c005 head --scenario clustered --d 2 --n0 1024 --ratio 1 --cap 0.005
+clustered_d16_n1024_r0.5_head_pool256 head --scenario clustered --d 16 --n0 1024 --ratio 0.5 --cap 0.01 --pool 256
+scratch_d8_n256_r1_head_c02 head --scenario scratch --d 8 --n0 256 --ratio 1 --cap 0.02
+uniform_d8_n256_r0.5_head_pool256 head --scenario uniform --d 8 --n0 256 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d5_n256_r5_head_pool256 head --scenario uniform --d 5 --n0 256 --ratio 5 --cap 0.01 --pool 256
+uniform_d8_n1024_r5_l1cap_p05 l1cap --scenario uniform --d 8 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+clustered_d16_n256_r1_head_pool16 head --scenario clustered --d 16 --n0 256 --ratio 1 --cap 0.01 --pool 16
+clustered_d8_n256_r1_batch_c02 batch --scenario clustered --d 8 --n0 256 --ratio 1 --cap 0.02
+uniform_d8_n256_r0.5_head_c04 head --scenario uniform --d 8 --n0 256 --ratio 0.5 --cap 0.04
+clustered_d8_n256_r0.5_head_c01 head --scenario clustered --d 8 --n0 256 --ratio 0.5 --cap 0.01
+clustered_d2_n256_r0.5_random random --scenario clustered --d 2 --n0 256 --ratio 0.5
+clustered_d5_n1024_r0.5_head_pool1 head --scenario clustered --d 5 --n0 1024 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d16_n1024_r5_head_pool1 head --scenario uniform --d 16 --n0 1024 --ratio 5 --cap 0.01 --pool 1
+uniform_d3_n256_r0.5_head_pool256 head --scenario uniform --d 3 --n0 256 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d16_n1024_r1_head_pool1 head --scenario uniform --d 16 --n0 1024 --ratio 1 --cap 0.01 --pool 1
+clustered_d32_n256_r5_head_place head --scenario clustered --d 32 --n0 256 --ratio 5 --epochs 0
+uniform_d3_n256_r0.5_head_c01 head --scenario uniform --d 3 --n0 256 --ratio 0.5 --cap 0.01
+uniform_d32_n256_r1_batch_c02 batch --scenario uniform --d 32 --n0 256 --ratio 1 --cap 0.02
+uniform_d8_n256_r0.5_head_p025_c01 head --scenario uniform --d 8 --n0 256 --ratio 0.5 --p 0.25 --cap 0.01
+uniform_d32_n1024_r5_head_c04 head --scenario uniform --d 32 --n0 1024 --ratio 5 --cap 0.04
+uniform_d32_n1024_r1_l1cap_p05 l1cap --scenario uniform --d 32 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+uniform_d2_n256_r5_random random --scenario uniform --d 2 --n0 256 --ratio 5
+uniform_d5_n256_r0.5_head_p025_c02 head --scenario uniform --d 5 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d8_n256_r5_head_p025_c02 head --scenario uniform --d 8 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+uniform_d5_n256_r5_head_c04 head --scenario uniform --d 5 --n0 256 --ratio 5 --cap 0.04
+clustered_d8_n256_r1_head_pool16 head --scenario clustered --d 8 --n0 256 --ratio 1 --cap 0.01 --pool 16
+uniform_d3_n1024_r0.5_head_p05_c01 head --scenario uniform --d 3 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.01
+uniform_d16_n256_r1_head_p025_c02 head --scenario uniform --d 16 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d32_n256_r5_head_p025_c01 head --scenario uniform --d 32 --n0 256 --ratio 5 --p 0.25 --cap 0.01
+uniform_d2_n1024_r5_head_c01 head --scenario uniform --d 2 --n0 1024 --ratio 5 --cap 0.01
+uniform_d32_n256_r0.5_batch_c02 batch --scenario uniform --d 32 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d8_n256_r5_l1cap_p05 l1cap --scenario clustered --d 8 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+uniform_d32_n1024_r1_head_c02 head --scenario uniform --d 32 --n0 1024 --ratio 1 --cap 0.02
+uniform_d32_n1024_r0.5_l1cap_p05 l1cap --scenario uniform --d 32 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d8_n256_r1_head_pool1 head --scenario clustered --d 8 --n0 256 --ratio 1 --cap 0.01 --pool 1
+clustered_d5_n256_r5_head_pool1 head --scenario clustered --d 5 --n0 256 --ratio 5 --cap 0.01 --pool 1
+uniform_d3_n1024_r5_head_pool256 head --scenario uniform --d 3 --n0 1024 --ratio 5 --cap 0.01 --pool 256
+uniform_d8_n1024_r5_head_c02 head --scenario uniform --d 8 --n0 1024 --ratio 5 --cap 0.02
+uniform_d2_n1024_r1_head_place head --scenario uniform --d 2 --n0 1024 --ratio 1 --epochs 0
+clustered_d3_n256_r0.5_l1cap_p025 l1cap --scenario clustered --d 3 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+clustered_d16_n256_r5_head_c04 head --scenario clustered --d 16 --n0 256 --ratio 5 --cap 0.04
+uniform_d32_n1024_r1_head_p05_c02 head --scenario uniform --d 32 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+uniform_d8_n1024_r0.5_head_c005 head --scenario uniform --d 8 --n0 1024 --ratio 0.5 --cap 0.005
+clustered_d2_n256_r5_head_place head --scenario clustered --d 2 --n0 256 --ratio 5 --epochs 0
+uniform_d16_n256_r1_head_pool256 head --scenario uniform --d 16 --n0 256 --ratio 1 --cap 0.01 --pool 256
+uniform_d5_n1024_r0.5_batch_c01 batch --scenario uniform --d 5 --n0 1024 --ratio 0.5 --cap 0.01
+uniform_d2_n256_r5_head_c04 head --scenario uniform --d 2 --n0 256 --ratio 5 --cap 0.04
+clustered_d2_n1024_r5_head_p05_c02 head --scenario clustered --d 2 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+clustered_d5_n256_r0.5_head_c01 head --scenario clustered --d 5 --n0 256 --ratio 0.5 --cap 0.01
+uniform_d8_n1024_r1_head_pool256 head --scenario uniform --d 8 --n0 1024 --ratio 1 --cap 0.01 --pool 256
+uniform_d2_n256_r5_head_p05_c02 head --scenario uniform --d 2 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+uniform_d5_n1024_r0.5_head_c02 head --scenario uniform --d 5 --n0 1024 --ratio 0.5 --cap 0.02
+uniform_d5_n256_r1_l1cap_p025 l1cap --scenario uniform --d 5 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+scratch_d16_n1024_r1_head_c02 head --scenario scratch --d 16 --n0 1024 --ratio 1 --cap 0.02
+clustered_d2_n1024_r5_head_pool16 head --scenario clustered --d 2 --n0 1024 --ratio 5 --cap 0.01 --pool 16
+uniform_d2_n256_r0.5_head_p05_c02 head --scenario uniform --d 2 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+scratch_d32_n256_r1_l1cap_p05 l1cap --scenario scratch --d 32 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d8_n256_r1_random random --scenario clustered --d 8 --n0 256 --ratio 1
+uniform_d8_n1024_r1_batch_place batch --scenario uniform --d 8 --n0 1024 --ratio 1 --epochs 0
+uniform_d8_n1024_r5_head_p05_c01 head --scenario uniform --d 8 --n0 1024 --ratio 5 --p 0.5 --cap 0.01
+uniform_d2_n256_r1_head_place head --scenario uniform --d 2 --n0 256 --ratio 1 --epochs 0
+uniform_d5_n256_r1_head_p025_c01 head --scenario uniform --d 5 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+uniform_d3_n256_r1_head_place head --scenario uniform --d 3 --n0 256 --ratio 1 --epochs 0
+clustered_d32_n1024_r5_head_place head --scenario clustered --d 32 --n0 1024 --ratio 5 --epochs 0
+scratch_d3_n256_r1_head_c04 head --scenario scratch --d 3 --n0 256 --ratio 1 --cap 0.04
+uniform_d3_n256_r5_batch_c01 batch --scenario uniform --d 3 --n0 256 --ratio 5 --cap 0.01
+scratch_d5_n256_r1_head_p025_c01 head --scenario scratch --d 5 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+clustered_d8_n256_r0.5_head_c005 head --scenario clustered --d 8 --n0 256 --ratio 0.5 --cap 0.005
+clustered_d5_n1024_r5_head_pool1 head --scenario clustered --d 5 --n0 1024 --ratio 5 --cap 0.01 --pool 1
+uniform_d8_n256_r1_head_p05_c02 head --scenario uniform --d 8 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d16_n256_r5_head_p025_c02 head --scenario uniform --d 16 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d3_n1024_r1_head_c02 head --scenario clustered --d 3 --n0 1024 --ratio 1 --cap 0.02
+uniform_d32_n256_r0.5_head_pool1 head --scenario uniform --d 32 --n0 256 --ratio 0.5 --cap 0.01 --pool 1
+clustered_d5_n1024_r1_l1cap_p05 l1cap --scenario clustered --d 5 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d2_n256_r1_head_p05_c02 head --scenario clustered --d 2 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d3_n256_r5_batch_place batch --scenario uniform --d 3 --n0 256 --ratio 5 --epochs 0
+clustered_d2_n1024_r0.5_batch_place batch --scenario clustered --d 2 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d16_n1024_r5_head_pool16 head --scenario clustered --d 16 --n0 1024 --ratio 5 --cap 0.01 --pool 16
+clustered_d8_n1024_r1_head_c01 head --scenario clustered --d 8 --n0 1024 --ratio 1 --cap 0.01
+scratch_d32_n256_r1_l1cap_p025 l1cap --scenario scratch --d 32 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d8_n256_r5_head_pool16 head --scenario uniform --d 8 --n0 256 --ratio 5 --cap 0.01 --pool 16
+clustered_d5_n256_r1_head_p025_c02 head --scenario clustered --d 5 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d32_n1024_r0.5_head_place head --scenario uniform --d 32 --n0 1024 --ratio 0.5 --epochs 0
+uniform_d2_n256_r0.5_head_c04 head --scenario uniform --d 2 --n0 256 --ratio 0.5 --cap 0.04
+uniform_d32_n256_r1_head_c04 head --scenario uniform --d 32 --n0 256 --ratio 1 --cap 0.04
+clustered_d32_n1024_r5_batch_c01 batch --scenario clustered --d 32 --n0 1024 --ratio 5 --cap 0.01
+clustered_d3_n256_r5_head_p05_c02 head --scenario clustered --d 3 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+uniform_d5_n256_r1_head_pool256 head --scenario uniform --d 5 --n0 256 --ratio 1 --cap 0.01 --pool 256
+clustered_d8_n1024_r5_head_pool16 head --scenario clustered --d 8 --n0 1024 --ratio 5 --cap 0.01 --pool 16
+uniform_d3_n256_r1_head_p025_c01 head --scenario uniform --d 3 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+uniform_d32_n256_r1_random random --scenario uniform --d 32 --n0 256 --ratio 1
+clustered_d2_n1024_r0.5_head_p05_c02 head --scenario clustered --d 2 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d2_n256_r5_head_pool1 head --scenario uniform --d 2 --n0 256 --ratio 5 --cap 0.01 --pool 1
+uniform_d8_n1024_r5_head_place head --scenario uniform --d 8 --n0 1024 --ratio 5 --epochs 0
+uniform_d3_n256_r5_head_pool256 head --scenario uniform --d 3 --n0 256 --ratio 5 --cap 0.01 --pool 256
+clustered_d2_n256_r1_head_p025_c01 head --scenario clustered --d 2 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+scratch_d5_n1024_r1_head_c005 head --scenario scratch --d 5 --n0 1024 --ratio 1 --cap 0.005
+uniform_d8_n256_r5_head_p025_c01 head --scenario uniform --d 8 --n0 256 --ratio 5 --p 0.25 --cap 0.01
+clustered_d32_n1024_r5_head_c01 head --scenario clustered --d 32 --n0 1024 --ratio 5 --cap 0.01
+clustered_d3_n256_r1_head_c01 head --scenario clustered --d 3 --n0 256 --ratio 1 --cap 0.01
+clustered_d5_n256_r0.5_head_place head --scenario clustered --d 5 --n0 256 --ratio 0.5 --epochs 0
+uniform_d2_n1024_r0.5_head_place head --scenario uniform --d 2 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d3_n256_r1_l1cap_p025 l1cap --scenario clustered --d 3 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d2_n256_r1_head_c04 head --scenario uniform --d 2 --n0 256 --ratio 1 --cap 0.04
+clustered_d32_n256_r5_batch_c02 batch --scenario clustered --d 32 --n0 256 --ratio 5 --cap 0.02
+clustered_d16_n256_r5_l1cap_p05 l1cap --scenario clustered --d 16 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+uniform_d5_n1024_r0.5_batch_place batch --scenario uniform --d 5 --n0 1024 --ratio 0.5 --epochs 0
+uniform_d2_n1024_r5_head_c04 head --scenario uniform --d 2 --n0 1024 --ratio 5 --cap 0.04
+uniform_d3_n256_r5_head_p05_c02 head --scenario uniform --d 3 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+uniform_d16_n256_r0.5_l1cap_p025 l1cap --scenario uniform --d 16 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+clustered_d8_n256_r1_head_c04 head --scenario clustered --d 8 --n0 256 --ratio 1 --cap 0.04
+clustered_d32_n256_r5_head_p025_c02 head --scenario clustered --d 32 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d5_n1024_r0.5_l1cap_p05 l1cap --scenario clustered --d 5 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d3_n256_r0.5_head_pool16 head --scenario uniform --d 3 --n0 256 --ratio 0.5 --cap 0.01 --pool 16
+uniform_d3_n256_r5_head_pool16 head --scenario uniform --d 3 --n0 256 --ratio 5 --cap 0.01 --pool 16
+clustered_d32_n256_r0.5_batch_c02 batch --scenario clustered --d 32 --n0 256 --ratio 0.5 --cap 0.02
+uniform_d8_n1024_r5_batch_c02 batch --scenario uniform --d 8 --n0 1024 --ratio 5 --cap 0.02
+uniform_d2_n1024_r0.5_head_pool1 head --scenario uniform --d 2 --n0 1024 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d16_n256_r5_head_c005 head --scenario uniform --d 16 --n0 256 --ratio 5 --cap 0.005
+clustered_d3_n256_r5_head_p05_c01 head --scenario clustered --d 3 --n0 256 --ratio 5 --p 0.5 --cap 0.01
+uniform_d5_n256_r5_head_p05_c01 head --scenario uniform --d 5 --n0 256 --ratio 5 --p 0.5 --cap 0.01
+clustered_d3_n256_r5_head_c005 head --scenario clustered --d 3 --n0 256 --ratio 5 --cap 0.005
+uniform_d5_n256_r1_head_p05_c02 head --scenario uniform --d 5 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d32_n256_r0.5_head_pool1 head --scenario clustered --d 32 --n0 256 --ratio 0.5 --cap 0.01 --pool 1
+clustered_d2_n1024_r1_head_c02 head --scenario clustered --d 2 --n0 1024 --ratio 1 --cap 0.02
+uniform_d2_n1024_r1_head_pool1 head --scenario uniform --d 2 --n0 1024 --ratio 1 --cap 0.01 --pool 1
+clustered_d8_n256_r5_head_c04 head --scenario clustered --d 8 --n0 256 --ratio 5 --cap 0.04
+scratch_d2_n1024_r1_head_c005 head --scenario scratch --d 2 --n0 1024 --ratio 1 --cap 0.005
+clustered_d3_n256_r5_l1cap_p05 l1cap --scenario clustered --d 3 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+clustered_d5_n1024_r0.5_head_c01 head --scenario clustered --d 5 --n0 1024 --ratio 0.5 --cap 0.01
+uniform_d3_n256_r5_l1cap_p05 l1cap --scenario uniform --d 3 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+clustered_d16_n256_r0.5_head_p05_c02 head --scenario clustered --d 16 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d16_n256_r5_head_c04 head --scenario uniform --d 16 --n0 256 --ratio 5 --cap 0.04
+uniform_d8_n1024_r5_head_c005 head --scenario uniform --d 8 --n0 1024 --ratio 5 --cap 0.005
+clustered_d5_n256_r0.5_batch_c01 batch --scenario clustered --d 5 --n0 256 --ratio 0.5 --cap 0.01
+clustered_d8_n1024_r0.5_head_c04 head --scenario clustered --d 8 --n0 1024 --ratio 0.5 --cap 0.04
+uniform_d16_n1024_r0.5_head_c01 head --scenario uniform --d 16 --n0 1024 --ratio 0.5 --cap 0.01
+uniform_d16_n1024_r1_head_c04 head --scenario uniform --d 16 --n0 1024 --ratio 1 --cap 0.04
+clustered_d16_n256_r0.5_batch_c01 batch --scenario clustered --d 16 --n0 256 --ratio 0.5 --cap 0.01
+scratch_d8_n1024_r1_head_c01 head --scenario scratch --d 8 --n0 1024 --ratio 1 --cap 0.01
+clustered_d5_n256_r1_head_pool1 head --scenario clustered --d 5 --n0 256 --ratio 1 --cap 0.01 --pool 1
+uniform_d8_n1024_r5_head_p05_c02 head --scenario uniform --d 8 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+clustered_d2_n1024_r1_head_pool256 head --scenario clustered --d 2 --n0 1024 --ratio 1 --cap 0.01 --pool 256
+clustered_d16_n1024_r1_l1cap_p05 l1cap --scenario clustered --d 16 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d3_n1024_r1_l1cap_p05 l1cap --scenario clustered --d 3 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+uniform_d32_n256_r1_batch_c01 batch --scenario uniform --d 32 --n0 256 --ratio 1 --cap 0.01
+scratch_d3_n256_r1_head_c005 head --scenario scratch --d 3 --n0 256 --ratio 1 --cap 0.005
+uniform_d2_n256_r0.5_head_pool16 head --scenario uniform --d 2 --n0 256 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d3_n256_r0.5_l1cap_p05 l1cap --scenario clustered --d 3 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d5_n1024_r5_head_c02 head --scenario uniform --d 5 --n0 1024 --ratio 5 --cap 0.02
+clustered_d16_n256_r0.5_head_p05_c01 head --scenario clustered --d 16 --n0 256 --ratio 0.5 --p 0.5 --cap 0.01
+clustered_d16_n256_r1_head_p05_c02 head --scenario clustered --d 16 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d16_n256_r1_l1cap_p025 l1cap --scenario uniform --d 16 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d3_n1024_r5_batch_c01 batch --scenario uniform --d 3 --n0 1024 --ratio 5 --cap 0.01
+uniform_d5_n1024_r1_head_c02 head --scenario uniform --d 5 --n0 1024 --ratio 1 --cap 0.02
+clustered_d2_n256_r5_batch_place batch --scenario clustered --d 2 --n0 256 --ratio 5 --epochs 0
+uniform_d8_n1024_r5_head_pool1 head --scenario uniform --d 8 --n0 1024 --ratio 5 --cap 0.01 --pool 1
+clustered_d16_n1024_r0.5_batch_c01 batch --scenario clustered --d 16 --n0 1024 --ratio 0.5 --cap 0.01
+uniform_d5_n256_r0.5_head_c02 head --scenario uniform --d 5 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d3_n256_r1_head_p025_c02 head --scenario clustered --d 3 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d32_n1024_r5_head_pool1 head --scenario clustered --d 32 --n0 1024 --ratio 5 --cap 0.01 --pool 1
+clustered_d3_n1024_r5_l1cap_p05 l1cap --scenario clustered --d 3 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+clustered_d16_n1024_r1_head_c01 head --scenario clustered --d 16 --n0 1024 --ratio 1 --cap 0.01
+clustered_d32_n256_r1_head_p05_c01 head --scenario clustered --d 32 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+clustered_d2_n256_r5_head_pool1 head --scenario clustered --d 2 --n0 256 --ratio 5 --cap 0.01 --pool 1
+clustered_d2_n256_r0.5_head_c01 head --scenario clustered --d 2 --n0 256 --ratio 0.5 --cap 0.01
+scratch_d16_n1024_r1_head_p05_c01 head --scenario scratch --d 16 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d32_n256_r1_batch_c01 batch --scenario clustered --d 32 --n0 256 --ratio 1 --cap 0.01
+clustered_d2_n1024_r5_head_c005 head --scenario clustered --d 2 --n0 1024 --ratio 5 --cap 0.005
+uniform_d32_n256_r0.5_head_c02 head --scenario uniform --d 32 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d3_n256_r5_batch_c02 batch --scenario clustered --d 3 --n0 256 --ratio 5 --cap 0.02
+clustered_d2_n256_r0.5_batch_c01 batch --scenario clustered --d 2 --n0 256 --ratio 0.5 --cap 0.01
+clustered_d16_n256_r5_head_p025_c01 head --scenario clustered --d 16 --n0 256 --ratio 5 --p 0.25 --cap 0.01
+uniform_d8_n1024_r0.5_batch_c02 batch --scenario uniform --d 8 --n0 1024 --ratio 0.5 --cap 0.02
+uniform_d2_n1024_r1_head_c02 head --scenario uniform --d 2 --n0 1024 --ratio 1 --cap 0.02
+clustered_d3_n256_r1_head_p05_c02 head --scenario clustered --d 3 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d16_n256_r5_head_c01 head --scenario uniform --d 16 --n0 256 --ratio 5 --cap 0.01
+clustered_d16_n256_r5_batch_c02 batch --scenario clustered --d 16 --n0 256 --ratio 5 --cap 0.02
+clustered_d8_n1024_r1_head_c02 head --scenario clustered --d 8 --n0 1024 --ratio 1 --cap 0.02
+uniform_d3_n256_r5_head_c04 head --scenario uniform --d 3 --n0 256 --ratio 5 --cap 0.04
+scratch_d8_n256_r1_head_p025_c02 head --scenario scratch --d 8 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d32_n256_r1_head_p05_c02 head --scenario clustered --d 32 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d5_n1024_r0.5_head_pool16 head --scenario uniform --d 5 --n0 1024 --ratio 0.5 --cap 0.01 --pool 16
+uniform_d32_n1024_r1_random random --scenario uniform --d 32 --n0 1024 --ratio 1
+clustered_d2_n256_r1_l1cap_p05 l1cap --scenario clustered --d 2 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d16_n1024_r5_random random --scenario uniform --d 16 --n0 1024 --ratio 5
+uniform_d16_n256_r0.5_batch_c02 batch --scenario uniform --d 16 --n0 256 --ratio 0.5 --cap 0.02
+uniform_d5_n1024_r5_head_c005 head --scenario uniform --d 5 --n0 1024 --ratio 5 --cap 0.005
+uniform_d16_n256_r1_batch_c01 batch --scenario uniform --d 16 --n0 256 --ratio 1 --cap 0.01
+clustered_d32_n256_r1_head_pool1 head --scenario clustered --d 32 --n0 256 --ratio 1 --cap 0.01 --pool 1
+uniform_d8_n256_r0.5_random random --scenario uniform --d 8 --n0 256 --ratio 0.5
+scratch_d16_n256_r1_random random --scenario scratch --d 16 --n0 256 --ratio 1
+clustered_d32_n1024_r0.5_random random --scenario clustered --d 32 --n0 1024 --ratio 0.5
+clustered_d8_n1024_r5_head_c02 head --scenario clustered --d 8 --n0 1024 --ratio 5 --cap 0.02
+uniform_d3_n256_r0.5_head_place head --scenario uniform --d 3 --n0 256 --ratio 0.5 --epochs 0
+clustered_d16_n256_r0.5_head_pool16 head --scenario clustered --d 16 --n0 256 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d5_n256_r0.5_l1cap_p05 l1cap --scenario clustered --d 5 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d16_n256_r5_random random --scenario clustered --d 16 --n0 256 --ratio 5
+uniform_d5_n1024_r0.5_head_c005 head --scenario uniform --d 5 --n0 1024 --ratio 0.5 --cap 0.005
+clustered_d3_n256_r0.5_head_c005 head --scenario clustered --d 3 --n0 256 --ratio 0.5 --cap 0.005
+uniform_d5_n1024_r5_head_pool256 head --scenario uniform --d 5 --n0 1024 --ratio 5 --cap 0.01 --pool 256
+clustered_d3_n1024_r1_head_place head --scenario clustered --d 3 --n0 1024 --ratio 1 --epochs 0
+clustered_d16_n256_r0.5_head_p025_c02 head --scenario clustered --d 16 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+clustered_d5_n1024_r0.5_head_place head --scenario clustered --d 5 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d8_n1024_r5_head_p05_c01 head --scenario clustered --d 8 --n0 1024 --ratio 5 --p 0.5 --cap 0.01
+uniform_d3_n1024_r1_head_c005 head --scenario uniform --d 3 --n0 1024 --ratio 1 --cap 0.005
+clustered_d32_n1024_r1_head_c04 head --scenario clustered --d 32 --n0 1024 --ratio 1 --cap 0.04
+uniform_d2_n1024_r5_batch_place batch --scenario uniform --d 2 --n0 1024 --ratio 5 --epochs 0
+uniform_d5_n256_r1_head_c02 head --scenario uniform --d 5 --n0 256 --ratio 1 --cap 0.02
+clustered_d3_n1024_r5_head_p05_c02 head --scenario clustered --d 3 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+scratch_d2_n256_r1_head_p05_c01 head --scenario scratch --d 2 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+uniform_d16_n256_r1_head_p05_c02 head --scenario uniform --d 16 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+scratch_d5_n256_r1_head_c04 head --scenario scratch --d 5 --n0 256 --ratio 1 --cap 0.04
+scratch_d16_n256_r1_l1cap_p05 l1cap --scenario scratch --d 16 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d2_n256_r0.5_head_c02 head --scenario uniform --d 2 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d2_n256_r5_batch_c02 batch --scenario clustered --d 2 --n0 256 --ratio 5 --cap 0.02
+clustered_d5_n256_r0.5_head_p025_c01 head --scenario clustered --d 5 --n0 256 --ratio 0.5 --p 0.25 --cap 0.01
+uniform_d2_n256_r0.5_head_p025_c01 head --scenario uniform --d 2 --n0 256 --ratio 0.5 --p 0.25 --cap 0.01
+clustered_d16_n256_r0.5_l1cap_p025 l1cap --scenario clustered --d 16 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+scratch_d32_n256_r1_head_p025_c01 head --scenario scratch --d 32 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+clustered_d2_n256_r0.5_head_place head --scenario clustered --d 2 --n0 256 --ratio 0.5 --epochs 0
+clustered_d8_n256_r5_head_pool1 head --scenario clustered --d 8 --n0 256 --ratio 5 --cap 0.01 --pool 1
+clustered_d3_n256_r5_head_pool256 head --scenario clustered --d 3 --n0 256 --ratio 5 --cap 0.01 --pool 256
+uniform_d32_n256_r5_head_p025_c02 head --scenario uniform --d 32 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d5_n256_r1_head_p05_c01 head --scenario clustered --d 5 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+uniform_d5_n256_r0.5_head_c04 head --scenario uniform --d 5 --n0 256 --ratio 0.5 --cap 0.04
+uniform_d3_n256_r1_l1cap_p05 l1cap --scenario uniform --d 3 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d5_n256_r0.5_head_pool256 head --scenario uniform --d 5 --n0 256 --ratio 0.5 --cap 0.01 --pool 256
+clustered_d5_n256_r5_head_p025_c02 head --scenario clustered --d 5 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+uniform_d5_n256_r0.5_head_c01 head --scenario uniform --d 5 --n0 256 --ratio 0.5 --cap 0.01
+clustered_d2_n1024_r5_head_pool256 head --scenario clustered --d 2 --n0 1024 --ratio 5 --cap 0.01 --pool 256
+clustered_d16_n256_r1_batch_c02 batch --scenario clustered --d 16 --n0 256 --ratio 1 --cap 0.02
+uniform_d5_n1024_r0.5_head_place head --scenario uniform --d 5 --n0 1024 --ratio 0.5 --epochs 0
+uniform_d8_n1024_r5_head_pool16 head --scenario uniform --d 8 --n0 1024 --ratio 5 --cap 0.01 --pool 16
+uniform_d32_n256_r0.5_head_c005 head --scenario uniform --d 32 --n0 256 --ratio 0.5 --cap 0.005
+uniform_d32_n256_r0.5_head_c04 head --scenario uniform --d 32 --n0 256 --ratio 0.5 --cap 0.04
+uniform_d3_n256_r5_head_p025_c01 head --scenario uniform --d 3 --n0 256 --ratio 5 --p 0.25 --cap 0.01
+uniform_d32_n1024_r1_head_p05_c01 head --scenario uniform --d 32 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d2_n1024_r0.5_head_c02 head --scenario clustered --d 2 --n0 1024 --ratio 0.5 --cap 0.02
+clustered_d3_n1024_r0.5_batch_c02 batch --scenario clustered --d 3 --n0 1024 --ratio 0.5 --cap 0.02
+clustered_d2_n256_r0.5_head_pool16 head --scenario clustered --d 2 --n0 256 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d8_n1024_r5_head_place head --scenario clustered --d 8 --n0 1024 --ratio 5 --epochs 0
+uniform_d5_n256_r5_l1cap_p025 l1cap --scenario uniform --d 5 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+uniform_d8_n1024_r5_random random --scenario uniform --d 8 --n0 1024 --ratio 5
+clustered_d32_n256_r5_batch_c01 batch --scenario clustered --d 32 --n0 256 --ratio 5 --cap 0.01
+uniform_d2_n1024_r0.5_head_pool256 head --scenario uniform --d 2 --n0 1024 --ratio 0.5 --cap 0.01 --pool 256
+clustered_d2_n1024_r0.5_head_pool256 head --scenario clustered --d 2 --n0 1024 --ratio 0.5 --cap 0.01 --pool 256
+clustered_d2_n1024_r5_head_p05_c01 head --scenario clustered --d 2 --n0 1024 --ratio 5 --p 0.5 --cap 0.01
+clustered_d32_n256_r0.5_head_c04 head --scenario clustered --d 32 --n0 256 --ratio 0.5 --cap 0.04
+clustered_d2_n256_r0.5_head_pool1 head --scenario clustered --d 2 --n0 256 --ratio 0.5 --cap 0.01 --pool 1
+clustered_d16_n256_r0.5_batch_c02 batch --scenario clustered --d 16 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d32_n256_r1_head_pool256 head --scenario clustered --d 32 --n0 256 --ratio 1 --cap 0.01 --pool 256
+clustered_d3_n256_r0.5_head_pool16 head --scenario clustered --d 3 --n0 256 --ratio 0.5 --cap 0.01 --pool 16
+uniform_d8_n1024_r0.5_batch_place batch --scenario uniform --d 8 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d3_n1024_r0.5_head_pool1 head --scenario clustered --d 3 --n0 1024 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d3_n256_r0.5_head_p05_c01 head --scenario uniform --d 3 --n0 256 --ratio 0.5 --p 0.5 --cap 0.01
+uniform_d8_n1024_r1_head_p05_c02 head --scenario uniform --d 8 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d3_n1024_r5_batch_c02 batch --scenario clustered --d 3 --n0 1024 --ratio 5 --cap 0.02
+clustered_d16_n1024_r0.5_head_c02 head --scenario clustered --d 16 --n0 1024 --ratio 0.5 --cap 0.02
+uniform_d8_n256_r0.5_batch_place batch --scenario uniform --d 8 --n0 256 --ratio 0.5 --epochs 0
+uniform_d3_n1024_r5_head_p05_c02 head --scenario uniform --d 3 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+uniform_d5_n256_r1_batch_place batch --scenario uniform --d 5 --n0 256 --ratio 1 --epochs 0
+uniform_d16_n1024_r1_head_c01 head --scenario uniform --d 16 --n0 1024 --ratio 1 --cap 0.01
+clustered_d5_n1024_r5_head_c005 head --scenario clustered --d 5 --n0 1024 --ratio 5 --cap 0.005
+clustered_d3_n256_r1_head_place head --scenario clustered --d 3 --n0 256 --ratio 1 --epochs 0
+uniform_d2_n256_r5_head_pool16 head --scenario uniform --d 2 --n0 256 --ratio 5 --cap 0.01 --pool 16
+uniform_d5_n256_r1_head_pool1 head --scenario uniform --d 5 --n0 256 --ratio 1 --cap 0.01 --pool 1
+clustered_d32_n256_r0.5_l1cap_p025 l1cap --scenario clustered --d 32 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+clustered_d5_n256_r1_head_c005 head --scenario clustered --d 5 --n0 256 --ratio 1 --cap 0.005
+uniform_d5_n1024_r0.5_head_c01 head --scenario uniform --d 5 --n0 1024 --ratio 0.5 --cap 0.01
+clustered_d2_n1024_r0.5_random random --scenario clustered --d 2 --n0 1024 --ratio 0.5
+clustered_d2_n256_r0.5_head_c04 head --scenario clustered --d 2 --n0 256 --ratio 0.5 --cap 0.04
+scratch_d32_n1024_r1_head_p05_c02 head --scenario scratch --d 32 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d2_n1024_r5_batch_c02 batch --scenario clustered --d 2 --n0 1024 --ratio 5 --cap 0.02
+uniform_d3_n256_r1_head_c005 head --scenario uniform --d 3 --n0 256 --ratio 1 --cap 0.005
+uniform_d3_n1024_r5_head_p05_c01 head --scenario uniform --d 3 --n0 1024 --ratio 5 --p 0.5 --cap 0.01
+uniform_d32_n256_r5_head_pool16 head --scenario uniform --d 32 --n0 256 --ratio 5 --cap 0.01 --pool 16
+scratch_d3_n1024_r1_head_c02 head --scenario scratch --d 3 --n0 1024 --ratio 1 --cap 0.02
+uniform_d2_n1024_r5_head_place head --scenario uniform --d 2 --n0 1024 --ratio 5 --epochs 0
+uniform_d8_n1024_r5_batch_c01 batch --scenario uniform --d 8 --n0 1024 --ratio 5 --cap 0.01
+uniform_d3_n1024_r0.5_head_c005 head --scenario uniform --d 3 --n0 1024 --ratio 0.5 --cap 0.005
+uniform_d32_n1024_r1_head_c01 head --scenario uniform --d 32 --n0 1024 --ratio 1 --cap 0.01
+clustered_d8_n1024_r5_head_p05_c02 head --scenario clustered --d 8 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+clustered_d16_n1024_r5_batch_place batch --scenario clustered --d 16 --n0 1024 --ratio 5 --epochs 0
+clustered_d8_n1024_r5_batch_c01 batch --scenario clustered --d 8 --n0 1024 --ratio 5 --cap 0.01
+clustered_d3_n1024_r5_head_pool1 head --scenario clustered --d 3 --n0 1024 --ratio 5 --cap 0.01 --pool 1
+clustered_d16_n256_r0.5_head_p025_c01 head --scenario clustered --d 16 --n0 256 --ratio 0.5 --p 0.25 --cap 0.01
+clustered_d16_n1024_r0.5_l1cap_p05 l1cap --scenario clustered --d 16 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d2_n1024_r0.5_l1cap_p05 l1cap --scenario clustered --d 2 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d32_n256_r5_batch_c02 batch --scenario uniform --d 32 --n0 256 --ratio 5 --cap 0.02
+uniform_d2_n1024_r5_head_c02 head --scenario uniform --d 2 --n0 1024 --ratio 5 --cap 0.02
+clustered_d2_n256_r1_random random --scenario clustered --d 2 --n0 256 --ratio 1
+uniform_d8_n1024_r5_batch_place batch --scenario uniform --d 8 --n0 1024 --ratio 5 --epochs 0
+uniform_d5_n256_r5_head_pool1 head --scenario uniform --d 5 --n0 256 --ratio 5 --cap 0.01 --pool 1
+scratch_d8_n256_r1_head_p05_c01 head --scenario scratch --d 8 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+uniform_d3_n1024_r1_head_pool256 head --scenario uniform --d 3 --n0 1024 --ratio 1 --cap 0.01 --pool 256
+clustered_d2_n256_r5_head_c04 head --scenario clustered --d 2 --n0 256 --ratio 5 --cap 0.04
+clustered_d16_n256_r5_head_pool256 head --scenario clustered --d 16 --n0 256 --ratio 5 --cap 0.01 --pool 256
+uniform_d8_n256_r5_head_c01 head --scenario uniform --d 8 --n0 256 --ratio 5 --cap 0.01
+clustered_d3_n1024_r5_head_c04 head --scenario clustered --d 3 --n0 1024 --ratio 5 --cap 0.04
+clustered_d3_n1024_r5_head_c02 head --scenario clustered --d 3 --n0 1024 --ratio 5 --cap 0.02
+clustered_d2_n1024_r1_batch_c02 batch --scenario clustered --d 2 --n0 1024 --ratio 1 --cap 0.02
+uniform_d3_n1024_r0.5_batch_c01 batch --scenario uniform --d 3 --n0 1024 --ratio 0.5 --cap 0.01
+clustered_d5_n1024_r5_batch_place batch --scenario clustered --d 5 --n0 1024 --ratio 5 --epochs 0
+scratch_d3_n256_r1_random random --scenario scratch --d 3 --n0 256 --ratio 1
+uniform_d2_n256_r0.5_batch_place batch --scenario uniform --d 2 --n0 256 --ratio 0.5 --epochs 0
+clustered_d32_n1024_r1_l1cap_p05 l1cap --scenario clustered --d 32 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d3_n1024_r0.5_batch_place batch --scenario clustered --d 3 --n0 1024 --ratio 0.5 --epochs 0
+uniform_d8_n1024_r1_head_p05_c01 head --scenario uniform --d 8 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d3_n1024_r5_random random --scenario clustered --d 3 --n0 1024 --ratio 5
+clustered_d2_n256_r1_batch_place batch --scenario clustered --d 2 --n0 256 --ratio 1 --epochs 0
+clustered_d16_n256_r1_head_p05_c01 head --scenario clustered --d 16 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+clustered_d8_n256_r0.5_head_p05_c01 head --scenario clustered --d 8 --n0 256 --ratio 0.5 --p 0.5 --cap 0.01
+clustered_d2_n1024_r1_batch_c01 batch --scenario clustered --d 2 --n0 1024 --ratio 1 --cap 0.01
+clustered_d5_n256_r0.5_head_pool1 head --scenario clustered --d 5 --n0 256 --ratio 0.5 --cap 0.01 --pool 1
+clustered_d8_n1024_r1_head_pool16 head --scenario clustered --d 8 --n0 1024 --ratio 1 --cap 0.01 --pool 16
+clustered_d16_n256_r5_batch_place batch --scenario clustered --d 16 --n0 256 --ratio 5 --epochs 0
+uniform_d32_n1024_r1_batch_place batch --scenario uniform --d 32 --n0 1024 --ratio 1 --epochs 0
+uniform_d16_n1024_r1_head_p05_c02 head --scenario uniform --d 16 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d16_n256_r0.5_batch_place batch --scenario clustered --d 16 --n0 256 --ratio 0.5 --epochs 0
+uniform_d3_n1024_r1_head_pool1 head --scenario uniform --d 3 --n0 1024 --ratio 1 --cap 0.01 --pool 1
+scratch_d2_n256_r1_head_c01 head --scenario scratch --d 2 --n0 256 --ratio 1 --cap 0.01
+uniform_d3_n1024_r1_head_place head --scenario uniform --d 3 --n0 1024 --ratio 1 --epochs 0
+uniform_d8_n1024_r5_head_c04 head --scenario uniform --d 8 --n0 1024 --ratio 5 --cap 0.04
+uniform_d16_n256_r0.5_head_pool256 head --scenario uniform --d 16 --n0 256 --ratio 0.5 --cap 0.01 --pool 256
+clustered_d2_n256_r1_head_pool1 head --scenario clustered --d 2 --n0 256 --ratio 1 --cap 0.01 --pool 1
+clustered_d8_n256_r5_head_p025_c01 head --scenario clustered --d 8 --n0 256 --ratio 5 --p 0.25 --cap 0.01
+scratch_d3_n1024_r1_head_c01 head --scenario scratch --d 3 --n0 1024 --ratio 1 --cap 0.01
+clustered_d16_n256_r5_head_p05_c02 head --scenario clustered --d 16 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+clustered_d5_n1024_r1_head_pool256 head --scenario clustered --d 5 --n0 1024 --ratio 1 --cap 0.01 --pool 256
+clustered_d16_n1024_r5_batch_c01 batch --scenario clustered --d 16 --n0 1024 --ratio 5 --cap 0.01
+scratch_d2_n1024_r1_head_p05_c01 head --scenario scratch --d 2 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d16_n1024_r0.5_head_c005 head --scenario clustered --d 16 --n0 1024 --ratio 0.5 --cap 0.005
+uniform_d3_n256_r5_head_p05_c01 head --scenario uniform --d 3 --n0 256 --ratio 5 --p 0.5 --cap 0.01
+clustered_d8_n256_r1_head_c02 head --scenario clustered --d 8 --n0 256 --ratio 1 --cap 0.02
+uniform_d16_n1024_r5_head_p05_c02 head --scenario uniform --d 16 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+uniform_d5_n1024_r1_head_c005 head --scenario uniform --d 5 --n0 1024 --ratio 1 --cap 0.005
+uniform_d16_n1024_r1_head_place head --scenario uniform --d 16 --n0 1024 --ratio 1 --epochs 0
+clustered_d8_n1024_r5_head_c005 head --scenario clustered --d 8 --n0 1024 --ratio 5 --cap 0.005
+uniform_d3_n256_r1_batch_c02 batch --scenario uniform --d 3 --n0 256 --ratio 1 --cap 0.02
+clustered_d2_n256_r5_head_p05_c02 head --scenario clustered --d 2 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+uniform_d5_n256_r1_head_p025_c02 head --scenario uniform --d 5 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d32_n1024_r1_head_p05_c01 head --scenario clustered --d 32 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d3_n256_r0.5_head_pool1 head --scenario clustered --d 3 --n0 256 --ratio 0.5 --cap 0.01 --pool 1
+scratch_d16_n1024_r1_head_c04 head --scenario scratch --d 16 --n0 1024 --ratio 1 --cap 0.04
+uniform_d2_n1024_r1_batch_c01 batch --scenario uniform --d 2 --n0 1024 --ratio 1 --cap 0.01
+uniform_d32_n256_r5_head_c01 head --scenario uniform --d 32 --n0 256 --ratio 5 --cap 0.01
+clustered_d32_n256_r5_batch_place batch --scenario clustered --d 32 --n0 256 --ratio 5 --epochs 0
+clustered_d3_n256_r1_head_pool16 head --scenario clustered --d 3 --n0 256 --ratio 1 --cap 0.01 --pool 16
+clustered_d16_n1024_r1_batch_c02 batch --scenario clustered --d 16 --n0 1024 --ratio 1 --cap 0.02
+clustered_d5_n256_r1_head_pool256 head --scenario clustered --d 5 --n0 256 --ratio 1 --cap 0.01 --pool 256
+clustered_d32_n256_r0.5_head_place head --scenario clustered --d 32 --n0 256 --ratio 0.5 --epochs 0
+uniform_d5_n1024_r1_head_c04 head --scenario uniform --d 5 --n0 1024 --ratio 1 --cap 0.04
+clustered_d32_n1024_r0.5_batch_place batch --scenario clustered --d 32 --n0 1024 --ratio 0.5 --epochs 0
+uniform_d32_n256_r0.5_head_pool256 head --scenario uniform --d 32 --n0 256 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d2_n256_r5_head_p05_c01 head --scenario uniform --d 2 --n0 256 --ratio 5 --p 0.5 --cap 0.01
+clustered_d16_n256_r0.5_head_c005 head --scenario clustered --d 16 --n0 256 --ratio 0.5 --cap 0.005
+clustered_d16_n1024_r0.5_head_c01 head --scenario clustered --d 16 --n0 1024 --ratio 0.5 --cap 0.01
+clustered_d32_n256_r5_head_p05_c01 head --scenario clustered --d 32 --n0 256 --ratio 5 --p 0.5 --cap 0.01
+clustered_d16_n1024_r0.5_batch_place batch --scenario clustered --d 16 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d32_n256_r1_head_c005 head --scenario clustered --d 32 --n0 256 --ratio 1 --cap 0.005
+scratch_d8_n256_r1_head_p05_c02 head --scenario scratch --d 8 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d5_n256_r0.5_head_c02 head --scenario clustered --d 5 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d32_n256_r1_head_c01 head --scenario clustered --d 32 --n0 256 --ratio 1 --cap 0.01
+uniform_d8_n1024_r0.5_batch_c01 batch --scenario uniform --d 8 --n0 1024 --ratio 0.5 --cap 0.01
+clustered_d8_n256_r0.5_random random --scenario clustered --d 8 --n0 256 --ratio 0.5
+clustered_d16_n1024_r5_head_place head --scenario clustered --d 16 --n0 1024 --ratio 5 --epochs 0
+clustered_d5_n1024_r1_head_c005 head --scenario clustered --d 5 --n0 1024 --ratio 1 --cap 0.005
+uniform_d3_n1024_r5_l1cap_p05 l1cap --scenario uniform --d 3 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+clustered_d32_n1024_r1_batch_c01 batch --scenario clustered --d 32 --n0 1024 --ratio 1 --cap 0.01
+clustered_d16_n1024_r0.5_random random --scenario clustered --d 16 --n0 1024 --ratio 0.5
+clustered_d8_n1024_r0.5_l1cap_p05 l1cap --scenario clustered --d 8 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d5_n1024_r1_head_c01 head --scenario uniform --d 5 --n0 1024 --ratio 1 --cap 0.01
+uniform_d2_n256_r0.5_batch_c01 batch --scenario uniform --d 2 --n0 256 --ratio 0.5 --cap 0.01
+uniform_d2_n1024_r1_random random --scenario uniform --d 2 --n0 1024 --ratio 1
+uniform_d2_n256_r5_head_c005 head --scenario uniform --d 2 --n0 256 --ratio 5 --cap 0.005
+clustered_d8_n256_r0.5_head_pool256 head --scenario clustered --d 8 --n0 256 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d8_n256_r0.5_head_p05_c02 head --scenario uniform --d 8 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d8_n1024_r0.5_random random --scenario uniform --d 8 --n0 1024 --ratio 0.5
+clustered_d32_n1024_r5_head_pool256 head --scenario clustered --d 32 --n0 1024 --ratio 5 --cap 0.01 --pool 256
+scratch_d5_n256_r1_random random --scenario scratch --d 5 --n0 256 --ratio 1
+scratch_d5_n256_r1_l1cap_p025 l1cap --scenario scratch --d 5 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d16_n256_r1_head_p025_c01 head --scenario uniform --d 16 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+clustered_d5_n256_r1_head_c02 head --scenario clustered --d 5 --n0 256 --ratio 1 --cap 0.02
+clustered_d3_n256_r5_head_place head --scenario clustered --d 3 --n0 256 --ratio 5 --epochs 0
+clustered_d32_n1024_r0.5_head_p05_c01 head --scenario clustered --d 32 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.01
+uniform_d3_n256_r1_head_c02 head --scenario uniform --d 3 --n0 256 --ratio 1 --cap 0.02
+clustered_d16_n1024_r5_head_p05_c02 head --scenario clustered --d 16 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+uniform_d3_n256_r1_head_p05_c01 head --scenario uniform --d 3 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+clustered_d5_n1024_r1_batch_c01 batch --scenario clustered --d 5 --n0 1024 --ratio 1 --cap 0.01
+uniform_d32_n1024_r0.5_head_pool256 head --scenario uniform --d 32 --n0 1024 --ratio 0.5 --cap 0.01 --pool 256
+clustered_d16_n256_r0.5_head_pool1 head --scenario clustered --d 16 --n0 256 --ratio 0.5 --cap 0.01 --pool 1
+clustered_d2_n256_r5_random random --scenario clustered --d 2 --n0 256 --ratio 5
+clustered_d32_n1024_r5_head_p05_c01 head --scenario clustered --d 32 --n0 1024 --ratio 5 --p 0.5 --cap 0.01
+uniform_d32_n256_r0.5_head_c01 head --scenario uniform --d 32 --n0 256 --ratio 0.5 --cap 0.01
+clustered_d3_n256_r0.5_random random --scenario clustered --d 3 --n0 256 --ratio 0.5
+clustered_d5_n256_r1_head_p05_c02 head --scenario clustered --d 5 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d16_n256_r1_head_pool256 head --scenario clustered --d 16 --n0 256 --ratio 1 --cap 0.01 --pool 256
+clustered_d3_n1024_r5_head_p05_c01 head --scenario clustered --d 3 --n0 1024 --ratio 5 --p 0.5 --cap 0.01
+clustered_d16_n1024_r1_head_c02 head --scenario clustered --d 16 --n0 1024 --ratio 1 --cap 0.02
+scratch_d16_n256_r1_head_p025_c01 head --scenario scratch --d 16 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+uniform_d5_n1024_r5_batch_c02 batch --scenario uniform --d 5 --n0 1024 --ratio 5 --cap 0.02
+clustered_d3_n1024_r1_head_pool1 head --scenario clustered --d 3 --n0 1024 --ratio 1 --cap 0.01 --pool 1
+clustered_d3_n256_r1_batch_place batch --scenario clustered --d 3 --n0 256 --ratio 1 --epochs 0
+clustered_d32_n1024_r0.5_head_place head --scenario clustered --d 32 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d5_n1024_r0.5_random random --scenario clustered --d 5 --n0 1024 --ratio 0.5
+uniform_d5_n256_r0.5_head_p025_c01 head --scenario uniform --d 5 --n0 256 --ratio 0.5 --p 0.25 --cap 0.01
+clustered_d5_n256_r5_head_p05_c02 head --scenario clustered --d 5 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+uniform_d32_n1024_r5_head_pool1 head --scenario uniform --d 32 --n0 1024 --ratio 5 --cap 0.01 --pool 1
+clustered_d2_n256_r5_l1cap_p05 l1cap --scenario clustered --d 2 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+clustered_d8_n256_r5_head_pool16 head --scenario clustered --d 8 --n0 256 --ratio 5 --cap 0.01 --pool 16
+clustered_d32_n1024_r0.5_head_c02 head --scenario clustered --d 32 --n0 1024 --ratio 0.5 --cap 0.02
+uniform_d3_n256_r0.5_head_p025_c01 head --scenario uniform --d 3 --n0 256 --ratio 0.5 --p 0.25 --cap 0.01
+scratch_d5_n256_r1_head_c005 head --scenario scratch --d 5 --n0 256 --ratio 1 --cap 0.005
+uniform_d8_n1024_r5_head_pool256 head --scenario uniform --d 8 --n0 1024 --ratio 5 --cap 0.01 --pool 256
+scratch_d16_n1024_r1_l1cap_p05 l1cap --scenario scratch --d 16 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+uniform_d5_n1024_r0.5_head_c04 head --scenario uniform --d 5 --n0 1024 --ratio 0.5 --cap 0.04
+clustered_d2_n1024_r1_head_place head --scenario clustered --d 2 --n0 1024 --ratio 1 --epochs 0
+scratch_d2_n256_r1_l1cap_p05 l1cap --scenario scratch --d 2 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+scratch_d3_n256_r1_l1cap_p05 l1cap --scenario scratch --d 3 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d3_n256_r1_head_pool256 head --scenario clustered --d 3 --n0 256 --ratio 1 --cap 0.01 --pool 256
+clustered_d8_n1024_r5_head_pool1 head --scenario clustered --d 8 --n0 1024 --ratio 5 --cap 0.01 --pool 1
+clustered_d3_n1024_r5_head_c01 head --scenario clustered --d 3 --n0 1024 --ratio 5 --cap 0.01
+uniform_d3_n256_r0.5_head_p025_c02 head --scenario uniform --d 3 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+clustered_d3_n1024_r1_head_c005 head --scenario clustered --d 3 --n0 1024 --ratio 1 --cap 0.005
+clustered_d32_n256_r0.5_head_c01 head --scenario clustered --d 32 --n0 256 --ratio 0.5 --cap 0.01
+uniform_d8_n256_r0.5_head_pool16 head --scenario uniform --d 8 --n0 256 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d16_n1024_r5_head_c02 head --scenario clustered --d 16 --n0 1024 --ratio 5 --cap 0.02
+scratch_d2_n256_r1_l1cap_p025 l1cap --scenario scratch --d 2 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d3_n256_r5_head_p025_c02 head --scenario uniform --d 3 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d5_n256_r5_l1cap_p025 l1cap --scenario clustered --d 5 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d5_n256_r5_l1cap_p05 l1cap --scenario clustered --d 5 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+clustered_d8_n1024_r0.5_head_p05_c01 head --scenario clustered --d 8 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.01
+scratch_d5_n1024_r1_head_c04 head --scenario scratch --d 5 --n0 1024 --ratio 1 --cap 0.04
+clustered_d32_n256_r5_l1cap_p025 l1cap --scenario clustered --d 32 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d5_n1024_r1_head_pool1 head --scenario clustered --d 5 --n0 1024 --ratio 1 --cap 0.01 --pool 1
+scratch_d8_n256_r1_head_c04 head --scenario scratch --d 8 --n0 256 --ratio 1 --cap 0.04
+uniform_d16_n1024_r1_batch_place batch --scenario uniform --d 16 --n0 1024 --ratio 1 --epochs 0
+uniform_d5_n256_r0.5_batch_c02 batch --scenario uniform --d 5 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d5_n256_r1_batch_place batch --scenario clustered --d 5 --n0 256 --ratio 1 --epochs 0
+uniform_d16_n256_r1_head_c04 head --scenario uniform --d 16 --n0 256 --ratio 1 --cap 0.04
+clustered_d8_n1024_r0.5_random random --scenario clustered --d 8 --n0 1024 --ratio 0.5
+uniform_d2_n1024_r5_head_p05_c02 head --scenario uniform --d 2 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+uniform_d5_n1024_r5_head_pool16 head --scenario uniform --d 5 --n0 1024 --ratio 5 --cap 0.01 --pool 16
+clustered_d8_n256_r1_l1cap_p025 l1cap --scenario clustered --d 8 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d2_n256_r1_head_c02 head --scenario uniform --d 2 --n0 256 --ratio 1 --cap 0.02
+clustered_d3_n1024_r1_head_c04 head --scenario clustered --d 3 --n0 1024 --ratio 1 --cap 0.04
+clustered_d32_n1024_r1_random random --scenario clustered --d 32 --n0 1024 --ratio 1
+uniform_d32_n1024_r0.5_head_c01 head --scenario uniform --d 32 --n0 1024 --ratio 0.5 --cap 0.01
+clustered_d8_n1024_r1_batch_place batch --scenario clustered --d 8 --n0 1024 --ratio 1 --epochs 0
+uniform_d8_n1024_r0.5_head_pool256 head --scenario uniform --d 8 --n0 1024 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d2_n1024_r1_head_c01 head --scenario uniform --d 2 --n0 1024 --ratio 1 --cap 0.01
+uniform_d3_n1024_r1_head_c01 head --scenario uniform --d 3 --n0 1024 --ratio 1 --cap 0.01
+clustered_d8_n256_r0.5_batch_c01 batch --scenario clustered --d 8 --n0 256 --ratio 0.5 --cap 0.01
+clustered_d16_n256_r5_head_c02 head --scenario clustered --d 16 --n0 256 --ratio 5 --cap 0.02
+clustered_d2_n1024_r5_head_place head --scenario clustered --d 2 --n0 1024 --ratio 5 --epochs 0
+clustered_d3_n1024_r1_batch_c01 batch --scenario clustered --d 3 --n0 1024 --ratio 1 --cap 0.01
+clustered_d2_n256_r5_head_p025_c01 head --scenario clustered --d 2 --n0 256 --ratio 5 --p 0.25 --cap 0.01
+clustered_d5_n256_r0.5_batch_c02 batch --scenario clustered --d 5 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d2_n1024_r1_head_pool1 head --scenario clustered --d 2 --n0 1024 --ratio 1 --cap 0.01 --pool 1
+clustered_d8_n256_r0.5_head_place head --scenario clustered --d 8 --n0 256 --ratio 0.5 --epochs 0
+uniform_d16_n256_r5_head_p05_c02 head --scenario uniform --d 16 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+scratch_d3_n1024_r1_head_c04 head --scenario scratch --d 3 --n0 1024 --ratio 1 --cap 0.04
+uniform_d32_n256_r5_head_c005 head --scenario uniform --d 32 --n0 256 --ratio 5 --cap 0.005
+uniform_d32_n1024_r5_head_p05_c02 head --scenario uniform --d 32 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+uniform_d8_n1024_r1_head_place head --scenario uniform --d 8 --n0 1024 --ratio 1 --epochs 0
+clustered_d3_n1024_r1_head_p05_c01 head --scenario clustered --d 3 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d16_n256_r5_head_place head --scenario clustered --d 16 --n0 256 --ratio 5 --epochs 0
+clustered_d16_n256_r5_head_pool1 head --scenario clustered --d 16 --n0 256 --ratio 5 --cap 0.01 --pool 1
+uniform_d32_n1024_r5_head_p05_c01 head --scenario uniform --d 32 --n0 1024 --ratio 5 --p 0.5 --cap 0.01
+uniform_d16_n1024_r1_head_pool256 head --scenario uniform --d 16 --n0 1024 --ratio 1 --cap 0.01 --pool 256
+uniform_d16_n1024_r0.5_head_place head --scenario uniform --d 16 --n0 1024 --ratio 0.5 --epochs 0
+uniform_d5_n256_r0.5_head_p05_c01 head --scenario uniform --d 5 --n0 256 --ratio 0.5 --p 0.5 --cap 0.01
+clustered_d16_n1024_r5_batch_c02 batch --scenario clustered --d 16 --n0 1024 --ratio 5 --cap 0.02
+uniform_d3_n1024_r0.5_l1cap_p05 l1cap --scenario uniform --d 3 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d2_n256_r1_head_p025_c02 head --scenario uniform --d 2 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d2_n256_r0.5_head_p05_c01 head --scenario clustered --d 2 --n0 256 --ratio 0.5 --p 0.5 --cap 0.01
+clustered_d32_n1024_r1_head_c005 head --scenario clustered --d 32 --n0 1024 --ratio 1 --cap 0.005
+uniform_d8_n1024_r0.5_head_place head --scenario uniform --d 8 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d8_n256_r5_head_place head --scenario clustered --d 8 --n0 256 --ratio 5 --epochs 0
+clustered_d3_n256_r0.5_batch_place batch --scenario clustered --d 3 --n0 256 --ratio 0.5 --epochs 0
+clustered_d8_n1024_r1_batch_c01 batch --scenario clustered --d 8 --n0 1024 --ratio 1 --cap 0.01
+clustered_d8_n256_r1_head_p025_c01 head --scenario clustered --d 8 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+uniform_d8_n256_r1_head_p025_c01 head --scenario uniform --d 8 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+uniform_d2_n256_r1_batch_c01 batch --scenario uniform --d 2 --n0 256 --ratio 1 --cap 0.01
+clustered_d3_n256_r0.5_batch_c02 batch --scenario clustered --d 3 --n0 256 --ratio 0.5 --cap 0.02
+uniform_d5_n1024_r0.5_l1cap_p05 l1cap --scenario uniform --d 5 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+scratch_d3_n256_r1_head_p05_c01 head --scenario scratch --d 3 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+clustered_d32_n256_r5_head_c01 head --scenario clustered --d 32 --n0 256 --ratio 5 --cap 0.01
+clustered_d32_n1024_r5_batch_c02 batch --scenario clustered --d 32 --n0 1024 --ratio 5 --cap 0.02
+uniform_d8_n256_r1_batch_c01 batch --scenario uniform --d 8 --n0 256 --ratio 1 --cap 0.01
+clustered_d2_n1024_r0.5_head_pool16 head --scenario clustered --d 2 --n0 1024 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d5_n256_r0.5_head_c005 head --scenario clustered --d 5 --n0 256 --ratio 0.5 --cap 0.005
+uniform_d32_n256_r1_head_p05_c01 head --scenario uniform --d 32 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+clustered_d32_n256_r5_head_c02 head --scenario clustered --d 32 --n0 256 --ratio 5 --cap 0.02
+uniform_d32_n1024_r1_head_pool16 head --scenario uniform --d 32 --n0 1024 --ratio 1 --cap 0.01 --pool 16
+uniform_d32_n1024_r5_batch_c01 batch --scenario uniform --d 32 --n0 1024 --ratio 5 --cap 0.01
+clustered_d5_n1024_r0.5_head_pool256 head --scenario clustered --d 5 --n0 1024 --ratio 0.5 --cap 0.01 --pool 256
+clustered_d8_n1024_r0.5_head_c01 head --scenario clustered --d 8 --n0 1024 --ratio 0.5 --cap 0.01
+uniform_d32_n256_r1_head_pool1 head --scenario uniform --d 32 --n0 256 --ratio 1 --cap 0.01 --pool 1
+scratch_d16_n256_r1_head_c02 head --scenario scratch --d 16 --n0 256 --ratio 1 --cap 0.02
+clustered_d32_n1024_r1_head_c02 head --scenario clustered --d 32 --n0 1024 --ratio 1 --cap 0.02
+clustered_d5_n1024_r0.5_head_pool16 head --scenario clustered --d 5 --n0 1024 --ratio 0.5 --cap 0.01 --pool 16
+uniform_d2_n256_r5_l1cap_p05 l1cap --scenario uniform --d 2 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+clustered_d2_n256_r5_head_p05_c01 head --scenario clustered --d 2 --n0 256 --ratio 5 --p 0.5 --cap 0.01
+uniform_d16_n256_r0.5_head_p025_c01 head --scenario uniform --d 16 --n0 256 --ratio 0.5 --p 0.25 --cap 0.01
+uniform_d5_n1024_r1_batch_c01 batch --scenario uniform --d 5 --n0 1024 --ratio 1 --cap 0.01
+clustered_d3_n256_r0.5_head_p025_c01 head --scenario clustered --d 3 --n0 256 --ratio 0.5 --p 0.25 --cap 0.01
+clustered_d5_n256_r5_head_p025_c01 head --scenario clustered --d 5 --n0 256 --ratio 5 --p 0.25 --cap 0.01
+clustered_d16_n1024_r5_head_c04 head --scenario clustered --d 16 --n0 1024 --ratio 5 --cap 0.04
+uniform_d8_n1024_r1_l1cap_p05 l1cap --scenario uniform --d 8 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+uniform_d5_n1024_r5_l1cap_p05 l1cap --scenario uniform --d 5 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+clustered_d3_n1024_r1_head_c01 head --scenario clustered --d 3 --n0 1024 --ratio 1 --cap 0.01
+uniform_d16_n1024_r1_head_c005 head --scenario uniform --d 16 --n0 1024 --ratio 1 --cap 0.005
+uniform_d32_n256_r5_head_c04 head --scenario uniform --d 32 --n0 256 --ratio 5 --cap 0.04
+uniform_d3_n256_r0.5_head_pool1 head --scenario uniform --d 3 --n0 256 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d32_n256_r1_head_place head --scenario uniform --d 32 --n0 256 --ratio 1 --epochs 0
+clustered_d2_n1024_r5_head_c04 head --scenario clustered --d 2 --n0 1024 --ratio 5 --cap 0.04
+clustered_d16_n1024_r1_head_p05_c01 head --scenario clustered --d 16 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d2_n1024_r1_batch_place batch --scenario clustered --d 2 --n0 1024 --ratio 1 --epochs 0
+uniform_d2_n1024_r5_head_pool1 head --scenario uniform --d 2 --n0 1024 --ratio 5 --cap 0.01 --pool 1
+clustered_d16_n1024_r5_head_p05_c01 head --scenario clustered --d 16 --n0 1024 --ratio 5 --p 0.5 --cap 0.01
+clustered_d2_n256_r5_head_c02 head --scenario clustered --d 2 --n0 256 --ratio 5 --cap 0.02
+uniform_d2_n256_r5_head_c01 head --scenario uniform --d 2 --n0 256 --ratio 5 --cap 0.01
+clustered_d3_n1024_r1_head_pool256 head --scenario clustered --d 3 --n0 1024 --ratio 1 --cap 0.01 --pool 256
+uniform_d8_n256_r1_batch_c02 batch --scenario uniform --d 8 --n0 256 --ratio 1 --cap 0.02
+scratch_d16_n256_r1_head_c01 head --scenario scratch --d 16 --n0 256 --ratio 1 --cap 0.01
+uniform_d32_n256_r1_head_c02 head --scenario uniform --d 32 --n0 256 --ratio 1 --cap 0.02
+uniform_d5_n1024_r1_head_pool256 head --scenario uniform --d 5 --n0 1024 --ratio 1 --cap 0.01 --pool 256
+clustered_d32_n1024_r5_head_c02 head --scenario clustered --d 32 --n0 1024 --ratio 5 --cap 0.02
+scratch_d8_n256_r1_random random --scenario scratch --d 8 --n0 256 --ratio 1
+uniform_d3_n256_r1_head_pool256 head --scenario uniform --d 3 --n0 256 --ratio 1 --cap 0.01 --pool 256
+scratch_d2_n1024_r1_head_c01 head --scenario scratch --d 2 --n0 1024 --ratio 1 --cap 0.01
+clustered_d32_n256_r1_batch_place batch --scenario clustered --d 32 --n0 256 --ratio 1 --epochs 0
+uniform_d8_n1024_r1_head_c04 head --scenario uniform --d 8 --n0 1024 --ratio 1 --cap 0.04
+uniform_d16_n1024_r1_head_pool16 head --scenario uniform --d 16 --n0 1024 --ratio 1 --cap 0.01 --pool 16
+uniform_d16_n1024_r5_head_c04 head --scenario uniform --d 16 --n0 1024 --ratio 5 --cap 0.04
+uniform_d16_n256_r0.5_head_p025_c02 head --scenario uniform --d 16 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d3_n256_r0.5_l1cap_p05 l1cap --scenario uniform --d 3 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d2_n1024_r5_head_c02 head --scenario clustered --d 2 --n0 1024 --ratio 5 --cap 0.02
+clustered_d5_n1024_r0.5_batch_c02 batch --scenario clustered --d 5 --n0 1024 --ratio 0.5 --cap 0.02
+uniform_d3_n1024_r5_head_c02 head --scenario uniform --d 3 --n0 1024 --ratio 5 --cap 0.02
+uniform_d2_n256_r5_batch_c02 batch --scenario uniform --d 2 --n0 256 --ratio 5 --cap 0.02
+clustered_d5_n256_r5_head_c04 head --scenario clustered --d 5 --n0 256 --ratio 5 --cap 0.04
+clustered_d5_n1024_r1_head_pool16 head --scenario clustered --d 5 --n0 1024 --ratio 1 --cap 0.01 --pool 16
+uniform_d5_n256_r5_head_place head --scenario uniform --d 5 --n0 256 --ratio 5 --epochs 0
+scratch_d5_n256_r1_head_p05_c02 head --scenario scratch --d 5 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d8_n1024_r1_head_pool1 head --scenario clustered --d 8 --n0 1024 --ratio 1 --cap 0.01 --pool 1
+clustered_d3_n1024_r5_head_c005 head --scenario clustered --d 3 --n0 1024 --ratio 5 --cap 0.005
+clustered_d5_n1024_r5_batch_c01 batch --scenario clustered --d 5 --n0 1024 --ratio 5 --cap 0.01
+uniform_d2_n256_r5_head_p025_c02 head --scenario uniform --d 2 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+uniform_d8_n256_r1_head_pool16 head --scenario uniform --d 8 --n0 256 --ratio 1 --cap 0.01 --pool 16
+clustered_d8_n1024_r5_random random --scenario clustered --d 8 --n0 1024 --ratio 5
+uniform_d8_n256_r5_head_p05_c02 head --scenario uniform --d 8 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+clustered_d5_n256_r0.5_head_pool256 head --scenario clustered --d 5 --n0 256 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d5_n256_r1_head_c01 head --scenario uniform --d 5 --n0 256 --ratio 1 --cap 0.01
+uniform_d16_n256_r1_head_c005 head --scenario uniform --d 16 --n0 256 --ratio 1 --cap 0.005
+uniform_d3_n1024_r0.5_head_p05_c02 head --scenario uniform --d 3 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d5_n256_r5_head_c01 head --scenario clustered --d 5 --n0 256 --ratio 5 --cap 0.01
+uniform_d5_n256_r0.5_batch_place batch --scenario uniform --d 5 --n0 256 --ratio 0.5 --epochs 0
+clustered_d16_n256_r5_head_pool16 head --scenario clustered --d 16 --n0 256 --ratio 5 --cap 0.01 --pool 16
+uniform_d16_n256_r1_l1cap_p05 l1cap --scenario uniform --d 16 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d5_n1024_r5_batch_c01 batch --scenario uniform --d 5 --n0 1024 --ratio 5 --cap 0.01
+uniform_d32_n1024_r5_head_c01 head --scenario uniform --d 32 --n0 1024 --ratio 5 --cap 0.01
+clustered_d16_n1024_r0.5_head_pool16 head --scenario clustered --d 16 --n0 1024 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d8_n1024_r1_head_c005 head --scenario clustered --d 8 --n0 1024 --ratio 1 --cap 0.005
+clustered_d32_n256_r0.5_head_p05_c01 head --scenario clustered --d 32 --n0 256 --ratio 0.5 --p 0.5 --cap 0.01
+uniform_d2_n256_r0.5_batch_c02 batch --scenario uniform --d 2 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d16_n1024_r1_batch_c01 batch --scenario clustered --d 16 --n0 1024 --ratio 1 --cap 0.01
+scratch_d32_n256_r1_head_p05_c01 head --scenario scratch --d 32 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+uniform_d32_n256_r0.5_head_p025_c02 head --scenario uniform --d 32 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d8_n256_r1_batch_place batch --scenario uniform --d 8 --n0 256 --ratio 1 --epochs 0
+uniform_d16_n256_r0.5_head_pool16 head --scenario uniform --d 16 --n0 256 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d8_n256_r0.5_head_pool1 head --scenario clustered --d 8 --n0 256 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d32_n256_r0.5_head_pool16 head --scenario uniform --d 32 --n0 256 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d16_n256_r0.5_head_pool256 head --scenario clustered --d 16 --n0 256 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d5_n1024_r0.5_head_p05_c02 head --scenario uniform --d 5 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d3_n256_r1_batch_c02 batch --scenario clustered --d 3 --n0 256 --ratio 1 --cap 0.02
+clustered_d2_n1024_r0.5_head_pool1 head --scenario clustered --d 2 --n0 1024 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d5_n1024_r5_head_p05_c01 head --scenario uniform --d 5 --n0 1024 --ratio 5 --p 0.5 --cap 0.01
+clustered_d8_n1024_r1_batch_c02 batch --scenario clustered --d 8 --n0 1024 --ratio 1 --cap 0.02
+clustered_d2_n256_r0.5_head_p05_c02 head --scenario clustered --d 2 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d32_n256_r0.5_head_place head --scenario uniform --d 32 --n0 256 --ratio 0.5 --epochs 0
+clustered_d2_n1024_r0.5_batch_c02 batch --scenario clustered --d 2 --n0 1024 --ratio 0.5 --cap 0.02
+clustered_d8_n1024_r1_random random --scenario clustered --d 8 --n0 1024 --ratio 1
+clustered_d32_n256_r1_head_p025_c02 head --scenario clustered --d 32 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d16_n1024_r1_head_c005 head --scenario clustered --d 16 --n0 1024 --ratio 1 --cap 0.005
+clustered_d16_n256_r5_batch_c01 batch --scenario clustered --d 16 --n0 256 --ratio 5 --cap 0.01
+uniform_d2_n256_r1_head_pool1 head --scenario uniform --d 2 --n0 256 --ratio 1 --cap 0.01 --pool 1
+uniform_d16_n256_r1_batch_c02 batch --scenario uniform --d 16 --n0 256 --ratio 1 --cap 0.02
+clustered_d16_n256_r0.5_head_c01 head --scenario clustered --d 16 --n0 256 --ratio 0.5 --cap 0.01
+uniform_d32_n1024_r5_head_place head --scenario uniform --d 32 --n0 1024 --ratio 5 --epochs 0
+uniform_d16_n256_r1_head_p05_c01 head --scenario uniform --d 16 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+uniform_d8_n256_r0.5_head_p05_c01 head --scenario uniform --d 8 --n0 256 --ratio 0.5 --p 0.5 --cap 0.01
+clustered_d8_n256_r5_head_p05_c02 head --scenario clustered --d 8 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+clustered_d32_n256_r0.5_batch_place batch --scenario clustered --d 32 --n0 256 --ratio 0.5 --epochs 0
+uniform_d3_n256_r1_random random --scenario uniform --d 3 --n0 256 --ratio 1
+uniform_d3_n1024_r5_random random --scenario uniform --d 3 --n0 1024 --ratio 5
+scratch_d32_n1024_r1_head_c04 head --scenario scratch --d 32 --n0 1024 --ratio 1 --cap 0.04
+clustered_d5_n256_r1_l1cap_p025 l1cap --scenario clustered --d 5 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d5_n1024_r0.5_batch_c01 batch --scenario clustered --d 5 --n0 1024 --ratio 0.5 --cap 0.01
+clustered_d2_n1024_r0.5_batch_c01 batch --scenario clustered --d 2 --n0 1024 --ratio 0.5 --cap 0.01
+uniform_d2_n256_r0.5_random random --scenario uniform --d 2 --n0 256 --ratio 0.5
+clustered_d5_n256_r0.5_random random --scenario clustered --d 5 --n0 256 --ratio 0.5
+uniform_d2_n256_r1_head_p05_c01 head --scenario uniform --d 2 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+uniform_d3_n256_r0.5_head_c04 head --scenario uniform --d 3 --n0 256 --ratio 0.5 --cap 0.04
+clustered_d3_n256_r5_batch_c01 batch --scenario clustered --d 3 --n0 256 --ratio 5 --cap 0.01
+uniform_d3_n1024_r1_head_c04 head --scenario uniform --d 3 --n0 1024 --ratio 1 --cap 0.04
+uniform_d2_n256_r1_batch_place batch --scenario uniform --d 2 --n0 256 --ratio 1 --epochs 0
+uniform_d16_n256_r5_head_pool1 head --scenario uniform --d 16 --n0 256 --ratio 5 --cap 0.01 --pool 1
+uniform_d5_n1024_r1_batch_c02 batch --scenario uniform --d 5 --n0 1024 --ratio 1 --cap 0.02
+scratch_d3_n1024_r1_l1cap_p05 l1cap --scenario scratch --d 3 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+uniform_d5_n1024_r1_batch_place batch --scenario uniform --d 5 --n0 1024 --ratio 1 --epochs 0
+scratch_d16_n256_r1_head_p05_c01 head --scenario scratch --d 16 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+uniform_d3_n1024_r0.5_head_pool16 head --scenario uniform --d 3 --n0 1024 --ratio 0.5 --cap 0.01 --pool 16
+uniform_d2_n1024_r0.5_head_c01 head --scenario uniform --d 2 --n0 1024 --ratio 0.5 --cap 0.01
+scratch_d8_n1024_r1_head_c04 head --scenario scratch --d 8 --n0 1024 --ratio 1 --cap 0.04
+uniform_d5_n256_r5_head_p025_c02 head --scenario uniform --d 5 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+uniform_d32_n1024_r1_head_place head --scenario uniform --d 32 --n0 1024 --ratio 1 --epochs 0
+uniform_d8_n256_r1_head_c02 head --scenario uniform --d 8 --n0 256 --ratio 1 --cap 0.02
+uniform_d5_n1024_r5_head_pool1 head --scenario uniform --d 5 --n0 1024 --ratio 5 --cap 0.01 --pool 1
+clustered_d2_n1024_r5_head_pool1 head --scenario clustered --d 2 --n0 1024 --ratio 5 --cap 0.01 --pool 1
+uniform_d32_n1024_r1_batch_c01 batch --scenario uniform --d 32 --n0 1024 --ratio 1 --cap 0.01
+uniform_d5_n256_r0.5_l1cap_p05 l1cap --scenario uniform --d 5 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d3_n1024_r0.5_head_p05_c02 head --scenario clustered --d 3 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d16_n256_r5_l1cap_p05 l1cap --scenario uniform --d 16 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+clustered_d5_n1024_r5_head_p05_c02 head --scenario clustered --d 5 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+clustered_d5_n256_r1_head_place head --scenario clustered --d 5 --n0 256 --ratio 1 --epochs 0
+uniform_d3_n1024_r1_head_c02 head --scenario uniform --d 3 --n0 1024 --ratio 1 --cap 0.02
+clustered_d5_n256_r1_random random --scenario clustered --d 5 --n0 256 --ratio 1
+uniform_d2_n1024_r5_head_p05_c01 head --scenario uniform --d 2 --n0 1024 --ratio 5 --p 0.5 --cap 0.01
+uniform_d2_n1024_r0.5_head_c005 head --scenario uniform --d 2 --n0 1024 --ratio 0.5 --cap 0.005
+clustered_d5_n256_r5_batch_c02 batch --scenario clustered --d 5 --n0 256 --ratio 5 --cap 0.02
+uniform_d8_n1024_r0.5_head_c04 head --scenario uniform --d 8 --n0 1024 --ratio 0.5 --cap 0.04
+clustered_d3_n256_r5_random random --scenario clustered --d 3 --n0 256 --ratio 5
+uniform_d32_n256_r1_head_c005 head --scenario uniform --d 32 --n0 256 --ratio 1 --cap 0.005
+clustered_d16_n1024_r1_batch_place batch --scenario clustered --d 16 --n0 1024 --ratio 1 --epochs 0
+clustered_d3_n1024_r5_head_pool16 head --scenario clustered --d 3 --n0 1024 --ratio 5 --cap 0.01 --pool 16
+clustered_d16_n1024_r5_head_c005 head --scenario clustered --d 16 --n0 1024 --ratio 5 --cap 0.005
+uniform_d32_n256_r5_head_place head --scenario uniform --d 32 --n0 256 --ratio 5 --epochs 0
+clustered_d3_n1024_r0.5_head_c02 head --scenario clustered --d 3 --n0 1024 --ratio 0.5 --cap 0.02
+uniform_d16_n256_r1_head_pool1 head --scenario uniform --d 16 --n0 256 --ratio 1 --cap 0.01 --pool 1
+uniform_d3_n1024_r5_head_c04 head --scenario uniform --d 3 --n0 1024 --ratio 5 --cap 0.04
+clustered_d5_n256_r1_batch_c02 batch --scenario clustered --d 5 --n0 256 --ratio 1 --cap 0.02
+uniform_d5_n1024_r0.5_head_pool256 head --scenario uniform --d 5 --n0 1024 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d16_n256_r1_head_c02 head --scenario uniform --d 16 --n0 256 --ratio 1 --cap 0.02
+clustered_d32_n1024_r0.5_head_pool16 head --scenario clustered --d 32 --n0 1024 --ratio 0.5 --cap 0.01 --pool 16
+uniform_d5_n1024_r0.5_head_pool1 head --scenario uniform --d 5 --n0 1024 --ratio 0.5 --cap 0.01 --pool 1
+clustered_d32_n256_r5_head_c005 head --scenario clustered --d 32 --n0 256 --ratio 5 --cap 0.005
+uniform_d32_n256_r5_batch_place batch --scenario uniform --d 32 --n0 256 --ratio 5 --epochs 0
+uniform_d8_n256_r5_batch_place batch --scenario uniform --d 8 --n0 256 --ratio 5 --epochs 0
+clustered_d32_n1024_r5_head_c005 head --scenario clustered --d 32 --n0 1024 --ratio 5 --cap 0.005
+clustered_d16_n1024_r0.5_head_p05_c02 head --scenario clustered --d 16 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d32_n1024_r5_l1cap_p05 l1cap --scenario uniform --d 32 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+uniform_d32_n256_r0.5_random random --scenario uniform --d 32 --n0 256 --ratio 0.5
+clustered_d32_n1024_r0.5_l1cap_p05 l1cap --scenario clustered --d 32 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d8_n1024_r0.5_head_c01 head --scenario uniform --d 8 --n0 1024 --ratio 0.5 --cap 0.01
+uniform_d3_n1024_r1_batch_place batch --scenario uniform --d 3 --n0 1024 --ratio 1 --epochs 0
+clustered_d16_n256_r1_head_c005 head --scenario clustered --d 16 --n0 256 --ratio 1 --cap 0.005
+uniform_d8_n256_r0.5_head_c02 head --scenario uniform --d 8 --n0 256 --ratio 0.5 --cap 0.02
+uniform_d32_n1024_r0.5_head_pool1 head --scenario uniform --d 32 --n0 1024 --ratio 0.5 --cap 0.01 --pool 1
+clustered_d8_n256_r5_batch_place batch --scenario clustered --d 8 --n0 256 --ratio 5 --epochs 0
+uniform_d5_n1024_r5_random random --scenario uniform --d 5 --n0 1024 --ratio 5
+clustered_d2_n256_r5_head_pool16 head --scenario clustered --d 2 --n0 256 --ratio 5 --cap 0.01 --pool 16
+uniform_d3_n256_r1_head_c01 head --scenario uniform --d 3 --n0 256 --ratio 1 --cap 0.01
+uniform_d32_n256_r1_l1cap_p05 l1cap --scenario uniform --d 32 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d3_n256_r5_head_c01 head --scenario clustered --d 3 --n0 256 --ratio 5 --cap 0.01
+clustered_d32_n1024_r0.5_head_c01 head --scenario clustered --d 32 --n0 1024 --ratio 0.5 --cap 0.01
+uniform_d2_n256_r1_l1cap_p05 l1cap --scenario uniform --d 2 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d32_n256_r5_l1cap_p05 l1cap --scenario uniform --d 32 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+clustered_d3_n256_r1_batch_c01 batch --scenario clustered --d 3 --n0 256 --ratio 1 --cap 0.01
+uniform_d5_n256_r0.5_head_p05_c02 head --scenario uniform --d 5 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d8_n256_r5_head_c04 head --scenario uniform --d 8 --n0 256 --ratio 5 --cap 0.04
+uniform_d5_n1024_r5_head_p05_c02 head --scenario uniform --d 5 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+scratch_d3_n256_r1_head_c02 head --scenario scratch --d 3 --n0 256 --ratio 1 --cap 0.02
+uniform_d16_n1024_r1_batch_c01 batch --scenario uniform --d 16 --n0 1024 --ratio 1 --cap 0.01
+clustered_d32_n256_r1_head_p025_c01 head --scenario clustered --d 32 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+clustered_d2_n1024_r0.5_head_c04 head --scenario clustered --d 2 --n0 1024 --ratio 0.5 --cap 0.04
+clustered_d8_n256_r5_random random --scenario clustered --d 8 --n0 256 --ratio 5
+uniform_d16_n256_r5_head_p025_c01 head --scenario uniform --d 16 --n0 256 --ratio 5 --p 0.25 --cap 0.01
+clustered_d32_n1024_r0.5_head_c04 head --scenario clustered --d 32 --n0 1024 --ratio 0.5 --cap 0.04
+scratch_d2_n1024_r1_random random --scenario scratch --d 2 --n0 1024 --ratio 1
+clustered_d3_n1024_r0.5_head_place head --scenario clustered --d 3 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d3_n1024_r1_random random --scenario clustered --d 3 --n0 1024 --ratio 1
+uniform_d3_n1024_r1_head_pool16 head --scenario uniform --d 3 --n0 1024 --ratio 1 --cap 0.01 --pool 16
+clustered_d2_n256_r0.5_head_c005 head --scenario clustered --d 2 --n0 256 --ratio 0.5 --cap 0.005
+clustered_d5_n1024_r5_head_c01 head --scenario clustered --d 5 --n0 1024 --ratio 5 --cap 0.01
+scratch_d8_n256_r1_l1cap_p025 l1cap --scenario scratch --d 8 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d3_n256_r0.5_head_p05_c01 head --scenario clustered --d 3 --n0 256 --ratio 0.5 --p 0.5 --cap 0.01
+clustered_d8_n256_r1_head_c01 head --scenario clustered --d 8 --n0 256 --ratio 1 --cap 0.01
+uniform_d5_n1024_r5_head_c04 head --scenario uniform --d 5 --n0 1024 --ratio 5 --cap 0.04
+uniform_d16_n1024_r0.5_head_c02 head --scenario uniform --d 16 --n0 1024 --ratio 0.5 --cap 0.02
+scratch_d32_n256_r1_random random --scenario scratch --d 32 --n0 256 --ratio 1
+clustered_d8_n1024_r0.5_head_pool1 head --scenario clustered --d 8 --n0 1024 --ratio 0.5 --cap 0.01 --pool 1
+clustered_d3_n256_r5_head_pool1 head --scenario clustered --d 3 --n0 256 --ratio 5 --cap 0.01 --pool 1
+uniform_d8_n256_r0.5_batch_c02 batch --scenario uniform --d 8 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d2_n256_r1_head_c02 head --scenario clustered --d 2 --n0 256 --ratio 1 --cap 0.02
+clustered_d8_n256_r0.5_batch_place batch --scenario clustered --d 8 --n0 256 --ratio 0.5 --epochs 0
+clustered_d3_n256_r5_head_c02 head --scenario clustered --d 3 --n0 256 --ratio 5 --cap 0.02
+clustered_d32_n256_r1_l1cap_p025 l1cap --scenario clustered --d 32 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d16_n1024_r0.5_head_c04 head --scenario uniform --d 16 --n0 1024 --ratio 0.5 --cap 0.04
+scratch_d32_n256_r1_head_c04 head --scenario scratch --d 32 --n0 256 --ratio 1 --cap 0.04
+clustered_d2_n1024_r5_batch_c01 batch --scenario clustered --d 2 --n0 1024 --ratio 5 --cap 0.01
+uniform_d16_n256_r0.5_head_p05_c02 head --scenario uniform --d 16 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d8_n256_r5_head_c01 head --scenario clustered --d 8 --n0 256 --ratio 5 --cap 0.01
+clustered_d5_n1024_r5_head_pool256 head --scenario clustered --d 5 --n0 1024 --ratio 5 --cap 0.01 --pool 256
+uniform_d8_n1024_r1_head_c01 head --scenario uniform --d 8 --n0 1024 --ratio 1 --cap 0.01
+clustered_d16_n256_r1_batch_c01 batch --scenario clustered --d 16 --n0 256 --ratio 1 --cap 0.01
+uniform_d8_n256_r1_l1cap_p025 l1cap --scenario uniform --d 8 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d2_n256_r1_l1cap_p025 l1cap --scenario clustered --d 2 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+scratch_d2_n256_r1_head_p025_c01 head --scenario scratch --d 2 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+uniform_d8_n256_r1_head_place head --scenario uniform --d 8 --n0 256 --ratio 1 --epochs 0
+uniform_d2_n256_r5_head_p025_c01 head --scenario uniform --d 2 --n0 256 --ratio 5 --p 0.25 --cap 0.01
+clustered_d3_n256_r5_head_pool16 head --scenario clustered --d 3 --n0 256 --ratio 5 --cap 0.01 --pool 16
+clustered_d2_n1024_r0.5_head_c005 head --scenario clustered --d 2 --n0 1024 --ratio 0.5 --cap 0.005
+clustered_d32_n1024_r1_head_pool16 head --scenario clustered --d 32 --n0 1024 --ratio 1 --cap 0.01 --pool 16
+uniform_d8_n1024_r0.5_head_p05_c02 head --scenario uniform --d 8 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d3_n1024_r0.5_head_pool256 head --scenario uniform --d 3 --n0 1024 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d32_n1024_r0.5_head_c04 head --scenario uniform --d 32 --n0 1024 --ratio 0.5 --cap 0.04
+clustered_d2_n256_r1_head_pool16 head --scenario clustered --d 2 --n0 256 --ratio 1 --cap 0.01 --pool 16
+uniform_d32_n256_r5_head_p05_c01 head --scenario uniform --d 32 --n0 256 --ratio 5 --p 0.5 --cap 0.01
+uniform_d3_n1024_r0.5_head_pool1 head --scenario uniform --d 3 --n0 1024 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d8_n1024_r0.5_head_pool16 head --scenario uniform --d 8 --n0 1024 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d16_n256_r5_head_c01 head --scenario clustered --d 16 --n0 256 --ratio 5 --cap 0.01
+uniform_d32_n256_r1_l1cap_p025 l1cap --scenario uniform --d 32 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d32_n1024_r0.5_head_pool256 head --scenario clustered --d 32 --n0 1024 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d5_n1024_r1_head_place head --scenario uniform --d 5 --n0 1024 --ratio 1 --epochs 0
+uniform_d3_n256_r1_batch_place batch --scenario uniform --d 3 --n0 256 --ratio 1 --epochs 0
+scratch_d5_n1024_r1_head_p05_c01 head --scenario scratch --d 5 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d32_n256_r5_head_pool256 head --scenario clustered --d 32 --n0 256 --ratio 5 --cap 0.01 --pool 256
+uniform_d2_n1024_r5_head_c005 head --scenario uniform --d 2 --n0 1024 --ratio 5 --cap 0.005
+clustered_d5_n256_r5_random random --scenario clustered --d 5 --n0 256 --ratio 5
+clustered_d5_n1024_r1_random random --scenario clustered --d 5 --n0 1024 --ratio 1
+uniform_d8_n1024_r1_head_pool1 head --scenario uniform --d 8 --n0 1024 --ratio 1 --cap 0.01 --pool 1
+clustered_d8_n256_r0.5_l1cap_p05 l1cap --scenario clustered --d 8 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d16_n256_r1_random random --scenario uniform --d 16 --n0 256 --ratio 1
+scratch_d2_n1024_r1_head_c02 head --scenario scratch --d 2 --n0 1024 --ratio 1 --cap 0.02
+clustered_d32_n1024_r0.5_batch_c01 batch --scenario clustered --d 32 --n0 1024 --ratio 0.5 --cap 0.01
+clustered_d8_n1024_r5_head_c01 head --scenario clustered --d 8 --n0 1024 --ratio 5 --cap 0.01
+uniform_d32_n1024_r0.5_head_p05_c01 head --scenario uniform --d 32 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.01
+clustered_d5_n256_r5_head_p05_c01 head --scenario clustered --d 5 --n0 256 --ratio 5 --p 0.5 --cap 0.01
+uniform_d3_n1024_r0.5_batch_place batch --scenario uniform --d 3 --n0 1024 --ratio 0.5 --epochs 0
+scratch_d3_n1024_r1_head_p05_c01 head --scenario scratch --d 3 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d32_n1024_r5_head_p05_c02 head --scenario clustered --d 32 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+scratch_d8_n1024_r1_head_p05_c02 head --scenario scratch --d 8 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+scratch_d16_n256_r1_head_p025_c02 head --scenario scratch --d 16 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d16_n256_r0.5_head_pool1 head --scenario uniform --d 16 --n0 256 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d5_n1024_r0.5_head_p05_c01 head --scenario uniform --d 5 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.01
+clustered_d16_n256_r1_head_p025_c01 head --scenario clustered --d 16 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+clustered_d2_n256_r5_head_c005 head --scenario clustered --d 2 --n0 256 --ratio 5 --cap 0.005
+clustered_d2_n256_r5_batch_c01 batch --scenario clustered --d 2 --n0 256 --ratio 5 --cap 0.01
+clustered_d8_n256_r0.5_head_c02 head --scenario clustered --d 8 --n0 256 --ratio 0.5 --cap 0.02
+scratch_d32_n1024_r1_head_p05_c01 head --scenario scratch --d 32 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d5_n256_r1_head_p025_c01 head --scenario clustered --d 5 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+clustered_d8_n1024_r0.5_head_c02 head --scenario clustered --d 8 --n0 1024 --ratio 0.5 --cap 0.02
+uniform_d8_n256_r5_head_place head --scenario uniform --d 8 --n0 256 --ratio 5 --epochs 0
+clustered_d5_n256_r0.5_head_pool16 head --scenario clustered --d 5 --n0 256 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d2_n256_r0.5_head_pool256 head --scenario clustered --d 2 --n0 256 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d2_n1024_r1_batch_c02 batch --scenario uniform --d 2 --n0 1024 --ratio 1 --cap 0.02
+uniform_d16_n256_r5_head_p05_c01 head --scenario uniform --d 16 --n0 256 --ratio 5 --p 0.5 --cap 0.01
+clustered_d3_n1024_r0.5_head_p05_c01 head --scenario clustered --d 3 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.01
+scratch_d32_n1024_r1_l1cap_p05 l1cap --scenario scratch --d 32 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d5_n256_r0.5_head_p05_c01 head --scenario clustered --d 5 --n0 256 --ratio 0.5 --p 0.5 --cap 0.01
+uniform_d2_n256_r5_head_c02 head --scenario uniform --d 2 --n0 256 --ratio 5 --cap 0.02
+clustered_d8_n1024_r0.5_batch_c01 batch --scenario clustered --d 8 --n0 1024 --ratio 0.5 --cap 0.01
+clustered_d16_n1024_r0.5_batch_c02 batch --scenario clustered --d 16 --n0 1024 --ratio 0.5 --cap 0.02
+uniform_d2_n1024_r1_batch_place batch --scenario uniform --d 2 --n0 1024 --ratio 1 --epochs 0
+uniform_d16_n256_r0.5_head_c02 head --scenario uniform --d 16 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d2_n256_r5_head_p025_c02 head --scenario clustered --d 2 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d32_n1024_r1_head_place head --scenario clustered --d 32 --n0 1024 --ratio 1 --epochs 0
+uniform_d3_n256_r0.5_head_c02 head --scenario uniform --d 3 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d16_n256_r1_head_c02 head --scenario clustered --d 16 --n0 256 --ratio 1 --cap 0.02
+uniform_d8_n256_r5_head_c005 head --scenario uniform --d 8 --n0 256 --ratio 5 --cap 0.005
+uniform_d16_n1024_r5_head_c005 head --scenario uniform --d 16 --n0 1024 --ratio 5 --cap 0.005
+uniform_d5_n256_r5_batch_place batch --scenario uniform --d 5 --n0 256 --ratio 5 --epochs 0
+scratch_d32_n256_r1_head_c02 head --scenario scratch --d 32 --n0 256 --ratio 1 --cap 0.02
+uniform_d3_n256_r1_head_pool1 head --scenario uniform --d 3 --n0 256 --ratio 1 --cap 0.01 --pool 1
+uniform_d3_n256_r5_head_c01 head --scenario uniform --d 3 --n0 256 --ratio 5 --cap 0.01
+scratch_d32_n1024_r1_head_c02 head --scenario scratch --d 32 --n0 1024 --ratio 1 --cap 0.02
+uniform_d2_n256_r1_head_p05_c02 head --scenario uniform --d 2 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d2_n256_r1_head_pool256 head --scenario uniform --d 2 --n0 256 --ratio 1 --cap 0.01 --pool 256
+clustered_d8_n1024_r5_batch_c02 batch --scenario clustered --d 8 --n0 1024 --ratio 5 --cap 0.02
+clustered_d2_n1024_r5_head_c01 head --scenario clustered --d 2 --n0 1024 --ratio 5 --cap 0.01
+uniform_d16_n1024_r1_random random --scenario uniform --d 16 --n0 1024 --ratio 1
+uniform_d16_n1024_r0.5_head_p05_c02 head --scenario uniform --d 16 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d8_n1024_r5_batch_place batch --scenario clustered --d 8 --n0 1024 --ratio 5 --epochs 0
+uniform_d32_n1024_r0.5_head_pool16 head --scenario uniform --d 32 --n0 1024 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d2_n1024_r5_batch_place batch --scenario clustered --d 2 --n0 1024 --ratio 5 --epochs 0
+clustered_d5_n256_r5_head_pool16 head --scenario clustered --d 5 --n0 256 --ratio 5 --cap 0.01 --pool 16
+clustered_d5_n256_r5_head_c02 head --scenario clustered --d 5 --n0 256 --ratio 5 --cap 0.02
+uniform_d5_n256_r1_batch_c01 batch --scenario uniform --d 5 --n0 256 --ratio 1 --cap 0.01
+uniform_d3_n256_r1_head_pool16 head --scenario uniform --d 3 --n0 256 --ratio 1 --cap 0.01 --pool 16
+uniform_d32_n1024_r0.5_head_c005 head --scenario uniform --d 32 --n0 1024 --ratio 0.5 --cap 0.005
+scratch_d2_n256_r1_head_p025_c02 head --scenario scratch --d 2 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d5_n256_r5_head_p05_c02 head --scenario uniform --d 5 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+scratch_d32_n256_r1_head_p05_c02 head --scenario scratch --d 32 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d8_n256_r0.5_head_p025_c02 head --scenario uniform --d 8 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+clustered_d8_n256_r0.5_head_c04 head --scenario clustered --d 8 --n0 256 --ratio 0.5 --cap 0.04
+scratch_d8_n256_r1_head_p025_c01 head --scenario scratch --d 8 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+uniform_d2_n1024_r5_batch_c01 batch --scenario uniform --d 2 --n0 1024 --ratio 5 --cap 0.01
+clustered_d3_n1024_r1_batch_place batch --scenario clustered --d 3 --n0 1024 --ratio 1 --epochs 0
+uniform_d5_n1024_r1_head_pool16 head --scenario uniform --d 5 --n0 1024 --ratio 1 --cap 0.01 --pool 16
+scratch_d32_n1024_r1_head_c005 head --scenario scratch --d 32 --n0 1024 --ratio 1 --cap 0.005
+uniform_d8_n1024_r1_random random --scenario uniform --d 8 --n0 1024 --ratio 1
+uniform_d2_n1024_r1_l1cap_p05 l1cap --scenario uniform --d 2 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+uniform_d32_n256_r5_head_c02 head --scenario uniform --d 32 --n0 256 --ratio 5 --cap 0.02
+uniform_d16_n256_r5_head_place head --scenario uniform --d 16 --n0 256 --ratio 5 --epochs 0
+uniform_d8_n256_r5_l1cap_p025 l1cap --scenario uniform --d 8 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d2_n256_r1_head_c005 head --scenario clustered --d 2 --n0 256 --ratio 1 --cap 0.005
+clustered_d2_n256_r1_head_c04 head --scenario clustered --d 2 --n0 256 --ratio 1 --cap 0.04
+uniform_d2_n256_r1_batch_c02 batch --scenario uniform --d 2 --n0 256 --ratio 1 --cap 0.02
+clustered_d16_n256_r1_batch_place batch --scenario clustered --d 16 --n0 256 --ratio 1 --epochs 0
+clustered_d5_n256_r0.5_head_p05_c02 head --scenario clustered --d 5 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d3_n256_r5_head_p025_c01 head --scenario clustered --d 3 --n0 256 --ratio 5 --p 0.25 --cap 0.01
+clustered_d32_n256_r5_l1cap_p05 l1cap --scenario clustered --d 32 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+uniform_d5_n256_r1_head_pool16 head --scenario uniform --d 5 --n0 256 --ratio 1 --cap 0.01 --pool 16
+uniform_d16_n256_r5_head_c02 head --scenario uniform --d 16 --n0 256 --ratio 5 --cap 0.02
+clustered_d16_n1024_r0.5_head_pool1 head --scenario clustered --d 16 --n0 1024 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d5_n1024_r0.5_batch_c02 batch --scenario uniform --d 5 --n0 1024 --ratio 0.5 --cap 0.02
+clustered_d16_n256_r1_head_c04 head --scenario clustered --d 16 --n0 256 --ratio 1 --cap 0.04
+uniform_d32_n1024_r5_head_pool256 head --scenario uniform --d 32 --n0 1024 --ratio 5 --cap 0.01 --pool 256
+uniform_d3_n256_r5_head_c005 head --scenario uniform --d 3 --n0 256 --ratio 5 --cap 0.005
+scratch_d3_n1024_r1_head_c005 head --scenario scratch --d 3 --n0 1024 --ratio 1 --cap 0.005
+clustered_d5_n1024_r0.5_batch_place batch --scenario clustered --d 5 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d3_n256_r1_head_c04 head --scenario clustered --d 3 --n0 256 --ratio 1 --cap 0.04
+uniform_d8_n256_r0.5_head_pool1 head --scenario uniform --d 8 --n0 256 --ratio 0.5 --cap 0.01 --pool 1
+clustered_d16_n256_r1_l1cap_p05 l1cap --scenario clustered --d 16 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d32_n256_r0.5_head_p05_c02 head --scenario uniform --d 32 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d8_n256_r5_head_c02 head --scenario uniform --d 8 --n0 256 --ratio 5 --cap 0.02
+scratch_d5_n256_r1_head_p05_c01 head --scenario scratch --d 5 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+uniform_d8_n256_r1_random random --scenario uniform --d 8 --n0 256 --ratio 1
+clustered_d3_n256_r0.5_head_p025_c02 head --scenario clustered --d 3 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+scratch_d2_n256_r1_random random --scenario scratch --d 2 --n0 256 --ratio 1
+uniform_d2_n256_r1_head_c005 head --scenario uniform --d 2 --n0 256 --ratio 1 --cap 0.005
+clustered_d8_n256_r0.5_head_p025_c01 head --scenario clustered --d 8 --n0 256 --ratio 0.5 --p 0.25 --cap 0.01
+scratch_d2_n256_r1_head_p05_c02 head --scenario scratch --d 2 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d32_n1024_r0.5_head_p05_c02 head --scenario clustered --d 32 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d3_n1024_r5_head_pool1 head --scenario uniform --d 3 --n0 1024 --ratio 5 --cap 0.01 --pool 1
+uniform_d3_n1024_r0.5_head_c02 head --scenario uniform --d 3 --n0 1024 --ratio 0.5 --cap 0.02
+uniform_d2_n256_r1_head_c01 head --scenario uniform --d 2 --n0 256 --ratio 1 --cap 0.01
+uniform_d5_n256_r1_head_c005 head --scenario uniform --d 5 --n0 256 --ratio 1 --cap 0.005
+uniform_d3_n256_r5_random random --scenario uniform --d 3 --n0 256 --ratio 5
+uniform_d8_n256_r0.5_l1cap_p025 l1cap --scenario uniform --d 8 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d3_n1024_r5_head_c005 head --scenario uniform --d 3 --n0 1024 --ratio 5 --cap 0.005
+clustered_d2_n256_r5_head_c01 head --scenario clustered --d 2 --n0 256 --ratio 5 --cap 0.01
+uniform_d16_n1024_r1_head_p05_c01 head --scenario uniform --d 16 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+uniform_d32_n256_r1_head_p025_c01 head --scenario uniform --d 32 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+clustered_d32_n256_r0.5_head_pool256 head --scenario clustered --d 32 --n0 256 --ratio 0.5 --cap 0.01 --pool 256
+scratch_d8_n1024_r1_random random --scenario scratch --d 8 --n0 1024 --ratio 1
+scratch_d32_n1024_r1_random random --scenario scratch --d 32 --n0 1024 --ratio 1
+scratch_d2_n256_r1_head_c005 head --scenario scratch --d 2 --n0 256 --ratio 1 --cap 0.005
+clustered_d5_n1024_r5_random random --scenario clustered --d 5 --n0 1024 --ratio 5
+scratch_d5_n1024_r1_random random --scenario scratch --d 5 --n0 1024 --ratio 1
+clustered_d5_n256_r1_head_c01 head --scenario clustered --d 5 --n0 256 --ratio 1 --cap 0.01
+clustered_d32_n1024_r5_batch_place batch --scenario clustered --d 32 --n0 1024 --ratio 5 --epochs 0
+uniform_d3_n256_r0.5_head_c005 head --scenario uniform --d 3 --n0 256 --ratio 0.5 --cap 0.005
+scratch_d5_n1024_r1_head_c02 head --scenario scratch --d 5 --n0 1024 --ratio 1 --cap 0.02
+clustered_d5_n256_r5_head_c005 head --scenario clustered --d 5 --n0 256 --ratio 5 --cap 0.005
+clustered_d2_n256_r1_head_p05_c01 head --scenario clustered --d 2 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+uniform_d3_n1024_r5_head_pool16 head --scenario uniform --d 3 --n0 1024 --ratio 5 --cap 0.01 --pool 16
+uniform_d3_n1024_r0.5_head_c04 head --scenario uniform --d 3 --n0 1024 --ratio 0.5 --cap 0.04
+uniform_d2_n256_r5_l1cap_p025 l1cap --scenario uniform --d 2 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d8_n1024_r5_head_pool256 head --scenario clustered --d 8 --n0 1024 --ratio 5 --cap 0.01 --pool 256
+clustered_d2_n1024_r0.5_head_place head --scenario clustered --d 2 --n0 1024 --ratio 0.5 --epochs 0
+uniform_d32_n1024_r5_head_c02 head --scenario uniform --d 32 --n0 1024 --ratio 5 --cap 0.02
+clustered_d8_n256_r1_head_p025_c02 head --scenario clustered --d 8 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d16_n256_r0.5_head_c04 head --scenario uniform --d 16 --n0 256 --ratio 0.5 --cap 0.04
+clustered_d5_n256_r1_head_pool16 head --scenario clustered --d 5 --n0 256 --ratio 1 --cap 0.01 --pool 16
+clustered_d32_n256_r1_head_pool16 head --scenario clustered --d 32 --n0 256 --ratio 1 --cap 0.01 --pool 16
+uniform_d8_n256_r1_head_pool256 head --scenario uniform --d 8 --n0 256 --ratio 1 --cap 0.01 --pool 256
+scratch_d2_n256_r1_head_c04 head --scenario scratch --d 2 --n0 256 --ratio 1 --cap 0.04
+uniform_d3_n256_r1_l1cap_p025 l1cap --scenario uniform --d 3 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+uniform_d3_n1024_r1_head_p05_c02 head --scenario uniform --d 3 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d2_n1024_r1_head_p05_c01 head --scenario clustered --d 2 --n0 1024 --ratio 1 --p 0.5 --cap 0.01
+clustered_d32_n1024_r1_head_pool256 head --scenario clustered --d 32 --n0 1024 --ratio 1 --cap 0.01 --pool 256
+uniform_d5_n256_r1_random random --scenario uniform --d 5 --n0 256 --ratio 1
+uniform_d2_n1024_r0.5_head_p05_c02 head --scenario uniform --d 2 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d32_n1024_r1_head_c005 head --scenario uniform --d 32 --n0 1024 --ratio 1 --cap 0.005
+scratch_d2_n1024_r1_l1cap_p05 l1cap --scenario scratch --d 2 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d5_n1024_r1_head_place head --scenario clustered --d 5 --n0 1024 --ratio 1 --epochs 0
+uniform_d16_n256_r0.5_random random --scenario uniform --d 16 --n0 256 --ratio 0.5
+uniform_d5_n256_r1_batch_c02 batch --scenario uniform --d 5 --n0 256 --ratio 1 --cap 0.02
+clustered_d16_n256_r1_head_p025_c02 head --scenario clustered --d 16 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d2_n256_r1_batch_c01 batch --scenario clustered --d 2 --n0 256 --ratio 1 --cap 0.01
+clustered_d32_n256_r1_batch_c02 batch --scenario clustered --d 32 --n0 256 --ratio 1 --cap 0.02
+uniform_d3_n256_r1_head_p05_c02 head --scenario uniform --d 3 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d5_n1024_r1_random random --scenario uniform --d 5 --n0 1024 --ratio 1
+uniform_d2_n256_r0.5_l1cap_p05 l1cap --scenario uniform --d 2 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d5_n256_r0.5_batch_place batch --scenario clustered --d 5 --n0 256 --ratio 0.5 --epochs 0
+uniform_d16_n1024_r0.5_head_p05_c01 head --scenario uniform --d 16 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.01
+clustered_d2_n1024_r1_head_p05_c02 head --scenario clustered --d 2 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+clustered_d32_n1024_r5_random random --scenario clustered --d 32 --n0 1024 --ratio 5
+uniform_d32_n256_r1_head_p05_c02 head --scenario uniform --d 32 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d8_n1024_r1_batch_c01 batch --scenario uniform --d 8 --n0 1024 --ratio 1 --cap 0.01
+uniform_d3_n1024_r1_random random --scenario uniform --d 3 --n0 1024 --ratio 1
+clustered_d5_n1024_r0.5_head_c02 head --scenario clustered --d 5 --n0 1024 --ratio 0.5 --cap 0.02
+uniform_d2_n256_r0.5_head_p025_c02 head --scenario uniform --d 2 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+scratch_d8_n256_r1_head_c01 head --scenario scratch --d 8 --n0 256 --ratio 1 --cap 0.01
+clustered_d3_n1024_r5_batch_c01 batch --scenario clustered --d 3 --n0 1024 --ratio 5 --cap 0.01
+scratch_d5_n256_r1_head_c02 head --scenario scratch --d 5 --n0 256 --ratio 1 --cap 0.02
+clustered_d32_n1024_r1_batch_place batch --scenario clustered --d 32 --n0 1024 --ratio 1 --epochs 0
+clustered_d8_n1024_r1_head_place head --scenario clustered --d 8 --n0 1024 --ratio 1 --epochs 0
+clustered_d32_n256_r5_head_pool1 head --scenario clustered --d 32 --n0 256 --ratio 5 --cap 0.01 --pool 1
+clustered_d5_n256_r1_batch_c01 batch --scenario clustered --d 5 --n0 256 --ratio 1 --cap 0.01
+clustered_d5_n256_r1_head_c04 head --scenario clustered --d 5 --n0 256 --ratio 1 --cap 0.04
+clustered_d2_n256_r5_l1cap_p025 l1cap --scenario clustered --d 2 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+uniform_d32_n1024_r1_head_c04 head --scenario uniform --d 32 --n0 1024 --ratio 1 --cap 0.04
+clustered_d5_n256_r5_head_pool256 head --scenario clustered --d 5 --n0 256 --ratio 5 --cap 0.01 --pool 256
+clustered_d5_n1024_r0.5_head_c005 head --scenario clustered --d 5 --n0 1024 --ratio 0.5 --cap 0.005
+uniform_d2_n1024_r0.5_head_p05_c01 head --scenario uniform --d 2 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.01
+uniform_d16_n1024_r5_head_pool256 head --scenario uniform --d 16 --n0 1024 --ratio 5 --cap 0.01 --pool 256
+uniform_d8_n256_r5_random random --scenario uniform --d 8 --n0 256 --ratio 5
+clustered_d16_n1024_r0.5_head_place head --scenario clustered --d 16 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d16_n1024_r1_head_c04 head --scenario clustered --d 16 --n0 1024 --ratio 1 --cap 0.04
+clustered_d2_n256_r0.5_head_p025_c01 head --scenario clustered --d 2 --n0 256 --ratio 0.5 --p 0.25 --cap 0.01
+uniform_d5_n1024_r5_head_place head --scenario uniform --d 5 --n0 1024 --ratio 5 --epochs 0
+uniform_d8_n1024_r1_head_c005 head --scenario uniform --d 8 --n0 1024 --ratio 1 --cap 0.005
+uniform_d16_n1024_r5_head_p05_c01 head --scenario uniform --d 16 --n0 1024 --ratio 5 --p 0.5 --cap 0.01
+uniform_d8_n256_r0.5_head_c01 head --scenario uniform --d 8 --n0 256 --ratio 0.5 --cap 0.01
+clustered_d3_n1024_r1_head_p05_c02 head --scenario clustered --d 3 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+scratch_d2_n1024_r1_head_c04 head --scenario scratch --d 2 --n0 1024 --ratio 1 --cap 0.04
+uniform_d32_n256_r0.5_batch_c01 batch --scenario uniform --d 32 --n0 256 --ratio 0.5 --cap 0.01
+uniform_d3_n256_r0.5_l1cap_p025 l1cap --scenario uniform --d 3 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+clustered_d8_n256_r1_head_p05_c01 head --scenario clustered --d 8 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+uniform_d3_n256_r0.5_head_p05_c02 head --scenario uniform --d 3 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d32_n1024_r0.5_head_c02 head --scenario uniform --d 32 --n0 1024 --ratio 0.5 --cap 0.02
+clustered_d3_n256_r1_head_pool1 head --scenario clustered --d 3 --n0 256 --ratio 1 --cap 0.01 --pool 1
+clustered_d3_n1024_r0.5_head_pool16 head --scenario clustered --d 3 --n0 1024 --ratio 0.5 --cap 0.01 --pool 16
+uniform_d16_n1024_r0.5_head_c005 head --scenario uniform --d 16 --n0 1024 --ratio 0.5 --cap 0.005
+uniform_d2_n256_r1_l1cap_p025 l1cap --scenario uniform --d 2 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+scratch_d3_n256_r1_head_p05_c02 head --scenario scratch --d 3 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d8_n256_r0.5_batch_c02 batch --scenario clustered --d 8 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d5_n1024_r1_head_c04 head --scenario clustered --d 5 --n0 1024 --ratio 1 --cap 0.04
+uniform_d5_n256_r0.5_random random --scenario uniform --d 5 --n0 256 --ratio 0.5
+uniform_d8_n256_r0.5_batch_c01 batch --scenario uniform --d 8 --n0 256 --ratio 0.5 --cap 0.01
+uniform_d8_n256_r1_head_p05_c01 head --scenario uniform --d 8 --n0 256 --ratio 1 --p 0.5 --cap 0.01
+uniform_d2_n256_r1_head_p025_c01 head --scenario uniform --d 2 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+clustered_d2_n256_r0.5_batch_c02 batch --scenario clustered --d 2 --n0 256 --ratio 0.5 --cap 0.02
+clustered_d3_n256_r5_l1cap_p025 l1cap --scenario clustered --d 3 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+uniform_d2_n1024_r5_head_pool16 head --scenario uniform --d 2 --n0 1024 --ratio 5 --cap 0.01 --pool 16
+uniform_d32_n1024_r0.5_head_p05_c02 head --scenario uniform --d 32 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+scratch_d32_n1024_r1_head_c01 head --scenario scratch --d 32 --n0 1024 --ratio 1 --cap 0.01
+scratch_d5_n256_r1_l1cap_p05 l1cap --scenario scratch --d 5 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+uniform_d8_n256_r1_head_c005 head --scenario uniform --d 8 --n0 256 --ratio 1 --cap 0.005
+uniform_d5_n256_r0.5_head_pool1 head --scenario uniform --d 5 --n0 256 --ratio 0.5 --cap 0.01 --pool 1
+uniform_d2_n256_r5_head_pool256 head --scenario uniform --d 2 --n0 256 --ratio 5 --cap 0.01 --pool 256
+clustered_d32_n1024_r1_head_pool1 head --scenario clustered --d 32 --n0 1024 --ratio 1 --cap 0.01 --pool 1
+clustered_d8_n1024_r5_head_c04 head --scenario clustered --d 8 --n0 1024 --ratio 5 --cap 0.04
+clustered_d2_n256_r1_batch_c02 batch --scenario clustered --d 2 --n0 256 --ratio 1 --cap 0.02
+clustered_d8_n256_r1_head_place head --scenario clustered --d 8 --n0 256 --ratio 1 --epochs 0
+uniform_d5_n256_r5_l1cap_p05 l1cap --scenario uniform --d 5 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+clustered_d32_n1024_r1_head_c01 head --scenario clustered --d 32 --n0 1024 --ratio 1 --cap 0.01
+clustered_d32_n1024_r0.5_head_pool1 head --scenario clustered --d 32 --n0 1024 --ratio 0.5 --cap 0.01 --pool 1
+clustered_d3_n1024_r0.5_head_pool256 head --scenario clustered --d 3 --n0 1024 --ratio 0.5 --cap 0.01 --pool 256
+clustered_d32_n1024_r1_batch_c02 batch --scenario clustered --d 32 --n0 1024 --ratio 1 --cap 0.02
+clustered_d5_n256_r5_batch_c01 batch --scenario clustered --d 5 --n0 256 --ratio 5 --cap 0.01
+uniform_d2_n1024_r5_batch_c02 batch --scenario uniform --d 2 --n0 1024 --ratio 5 --cap 0.02
+clustered_d8_n256_r1_batch_place batch --scenario clustered --d 8 --n0 256 --ratio 1 --epochs 0
+scratch_d5_n256_r1_head_c01 head --scenario scratch --d 5 --n0 256 --ratio 1 --cap 0.01
+clustered_d16_n256_r0.5_l1cap_p05 l1cap --scenario clustered --d 16 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d2_n256_r1_random random --scenario uniform --d 2 --n0 256 --ratio 1
+uniform_d16_n256_r0.5_batch_c01 batch --scenario uniform --d 16 --n0 256 --ratio 0.5 --cap 0.01
+uniform_d8_n256_r1_head_c04 head --scenario uniform --d 8 --n0 256 --ratio 1 --cap 0.04
+clustered_d32_n256_r1_head_place head --scenario clustered --d 32 --n0 256 --ratio 1 --epochs 0
+clustered_d5_n1024_r5_head_c04 head --scenario clustered --d 5 --n0 1024 --ratio 5 --cap 0.04
+clustered_d3_n256_r5_head_p025_c02 head --scenario clustered --d 3 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+clustered_d32_n256_r0.5_random random --scenario clustered --d 32 --n0 256 --ratio 0.5
+uniform_d3_n256_r5_head_c02 head --scenario uniform --d 3 --n0 256 --ratio 5 --cap 0.02
+uniform_d2_n1024_r0.5_batch_c02 batch --scenario uniform --d 2 --n0 1024 --ratio 0.5 --cap 0.02
+scratch_d8_n1024_r1_head_c005 head --scenario scratch --d 8 --n0 1024 --ratio 1 --cap 0.005
+uniform_d5_n1024_r0.5_random random --scenario uniform --d 5 --n0 1024 --ratio 0.5
+clustered_d16_n256_r1_random random --scenario clustered --d 16 --n0 256 --ratio 1
+clustered_d16_n1024_r1_head_p05_c02 head --scenario clustered --d 16 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+uniform_d3_n1024_r5_head_place head --scenario uniform --d 3 --n0 1024 --ratio 5 --epochs 0
+clustered_d8_n256_r1_head_c005 head --scenario clustered --d 8 --n0 256 --ratio 1 --cap 0.005
+scratch_d16_n256_r1_head_p05_c02 head --scenario scratch --d 16 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d8_n1024_r0.5_head_pool256 head --scenario clustered --d 8 --n0 1024 --ratio 0.5 --cap 0.01 --pool 256
+clustered_d16_n256_r1_head_pool1 head --scenario clustered --d 16 --n0 256 --ratio 1 --cap 0.01 --pool 1
+clustered_d8_n1024_r0.5_head_p05_c02 head --scenario clustered --d 8 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d2_n1024_r5_random random --scenario clustered --d 2 --n0 1024 --ratio 5
+scratch_d16_n1024_r1_head_c01 head --scenario scratch --d 16 --n0 1024 --ratio 1 --cap 0.01
+uniform_d32_n1024_r5_head_c005 head --scenario uniform --d 32 --n0 1024 --ratio 5 --cap 0.005
+clustered_d2_n256_r0.5_l1cap_p05 l1cap --scenario clustered --d 2 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+clustered_d5_n256_r0.5_head_c04 head --scenario clustered --d 5 --n0 256 --ratio 0.5 --cap 0.04
+uniform_d5_n256_r0.5_l1cap_p025 l1cap --scenario uniform --d 5 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d3_n256_r5_l1cap_p025 l1cap --scenario uniform --d 3 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+uniform_d3_n256_r0.5_batch_place batch --scenario uniform --d 3 --n0 256 --ratio 0.5 --epochs 0
+clustered_d5_n1024_r0.5_head_p05_c01 head --scenario clustered --d 5 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.01
+uniform_d16_n256_r5_batch_c02 batch --scenario uniform --d 16 --n0 256 --ratio 5 --cap 0.02
+clustered_d2_n256_r0.5_head_c02 head --scenario clustered --d 2 --n0 256 --ratio 0.5 --cap 0.02
+uniform_d8_n256_r0.5_l1cap_p05 l1cap --scenario uniform --d 8 --n0 256 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d8_n256_r1_head_c01 head --scenario uniform --d 8 --n0 256 --ratio 1 --cap 0.01
+uniform_d8_n256_r0.5_head_place head --scenario uniform --d 8 --n0 256 --ratio 0.5 --epochs 0
+clustered_d16_n256_r5_l1cap_p025 l1cap --scenario clustered --d 16 --n0 256 --ratio 5 --p 0.25 --cap 0.02
+uniform_d16_n256_r0.5_head_place head --scenario uniform --d 16 --n0 256 --ratio 0.5 --epochs 0
+clustered_d16_n1024_r1_random random --scenario clustered --d 16 --n0 1024 --ratio 1
+uniform_d32_n256_r5_head_pool256 head --scenario uniform --d 32 --n0 256 --ratio 5 --cap 0.01 --pool 256
+clustered_d32_n1024_r5_l1cap_p05 l1cap --scenario clustered --d 32 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+uniform_d32_n1024_r0.5_batch_c02 batch --scenario uniform --d 32 --n0 1024 --ratio 0.5 --cap 0.02
+clustered_d3_n256_r0.5_head_c04 head --scenario clustered --d 3 --n0 256 --ratio 0.5 --cap 0.04
+scratch_d5_n1024_r1_head_c01 head --scenario scratch --d 5 --n0 1024 --ratio 1 --cap 0.01
+clustered_d16_n256_r5_head_p05_c01 head --scenario clustered --d 16 --n0 256 --ratio 5 --p 0.5 --cap 0.01
+clustered_d16_n1024_r5_l1cap_p05 l1cap --scenario clustered --d 16 --n0 1024 --ratio 5 --p 0.5 --cap 0.02
+uniform_d16_n1024_r0.5_head_pool16 head --scenario uniform --d 16 --n0 1024 --ratio 0.5 --cap 0.01 --pool 16
+uniform_d8_n256_r5_head_p05_c01 head --scenario uniform --d 8 --n0 256 --ratio 5 --p 0.5 --cap 0.01
+scratch_d16_n1024_r1_head_c005 head --scenario scratch --d 16 --n0 1024 --ratio 1 --cap 0.005
+clustered_d32_n256_r1_head_c04 head --scenario clustered --d 32 --n0 256 --ratio 1 --cap 0.04
+uniform_d16_n1024_r0.5_head_pool256 head --scenario uniform --d 16 --n0 1024 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d5_n256_r0.5_head_pool16 head --scenario uniform --d 5 --n0 256 --ratio 0.5 --cap 0.01 --pool 16
+scratch_d32_n256_r1_head_c01 head --scenario scratch --d 32 --n0 256 --ratio 1 --cap 0.01
+uniform_d16_n1024_r0.5_l1cap_p05 l1cap --scenario uniform --d 16 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d32_n256_r0.5_batch_place batch --scenario uniform --d 32 --n0 256 --ratio 0.5 --epochs 0
+clustered_d3_n256_r5_head_c04 head --scenario clustered --d 3 --n0 256 --ratio 5 --cap 0.04
+clustered_d5_n1024_r5_batch_c02 batch --scenario clustered --d 5 --n0 1024 --ratio 5 --cap 0.02
+uniform_d8_n1024_r1_batch_c02 batch --scenario uniform --d 8 --n0 1024 --ratio 1 --cap 0.02
+uniform_d32_n256_r5_head_p05_c02 head --scenario uniform --d 32 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+uniform_d3_n256_r1_head_p025_c02 head --scenario uniform --d 3 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d3_n256_r0.5_head_c02 head --scenario clustered --d 3 --n0 256 --ratio 0.5 --cap 0.02
+scratch_d5_n1024_r1_l1cap_p05 l1cap --scenario scratch --d 5 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+scratch_d16_n1024_r1_head_p05_c02 head --scenario scratch --d 16 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+uniform_d5_n256_r5_head_pool16 head --scenario uniform --d 5 --n0 256 --ratio 5 --cap 0.01 --pool 16
+uniform_d16_n256_r0.5_head_c01 head --scenario uniform --d 16 --n0 256 --ratio 0.5 --cap 0.01
+clustered_d8_n256_r1_l1cap_p05 l1cap --scenario clustered --d 8 --n0 256 --ratio 1 --p 0.5 --cap 0.02
+clustered_d16_n1024_r0.5_head_c04 head --scenario clustered --d 16 --n0 1024 --ratio 0.5 --cap 0.04
+uniform_d8_n256_r1_head_pool1 head --scenario uniform --d 8 --n0 256 --ratio 1 --cap 0.01 --pool 1
+scratch_d3_n256_r1_head_p025_c02 head --scenario scratch --d 3 --n0 256 --ratio 1 --p 0.25 --cap 0.02
+clustered_d32_n256_r0.5_head_pool16 head --scenario clustered --d 32 --n0 256 --ratio 0.5 --cap 0.01 --pool 16
+uniform_d16_n256_r0.5_head_p05_c01 head --scenario uniform --d 16 --n0 256 --ratio 0.5 --p 0.5 --cap 0.01
+clustered_d32_n256_r1_random random --scenario clustered --d 32 --n0 256 --ratio 1
+scratch_d8_n1024_r1_head_c02 head --scenario scratch --d 8 --n0 1024 --ratio 1 --cap 0.02
+uniform_d32_n1024_r5_batch_place batch --scenario uniform --d 32 --n0 1024 --ratio 5 --epochs 0
+scratch_d2_n256_r1_head_c02 head --scenario scratch --d 2 --n0 256 --ratio 1 --cap 0.02
+scratch_d3_n1024_r1_random random --scenario scratch --d 3 --n0 1024 --ratio 1
+clustered_d3_n256_r0.5_head_pool256 head --scenario clustered --d 3 --n0 256 --ratio 0.5 --cap 0.01 --pool 256
+uniform_d2_n256_r0.5_l1cap_p025 l1cap --scenario uniform --d 2 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d16_n1024_r0.5_batch_c02 batch --scenario uniform --d 16 --n0 1024 --ratio 0.5 --cap 0.02
+scratch_d3_n256_r1_head_p025_c01 head --scenario scratch --d 3 --n0 256 --ratio 1 --p 0.25 --cap 0.01
+uniform_d16_n256_r5_batch_c01 batch --scenario uniform --d 16 --n0 256 --ratio 5 --cap 0.01
+clustered_d8_n1024_r0.5_head_pool16 head --scenario clustered --d 8 --n0 1024 --ratio 0.5 --cap 0.01 --pool 16
+clustered_d3_n1024_r5_batch_place batch --scenario clustered --d 3 --n0 1024 --ratio 5 --epochs 0
+clustered_d32_n1024_r5_head_pool16 head --scenario clustered --d 32 --n0 1024 --ratio 5 --cap 0.01 --pool 16
+uniform_d16_n1024_r1_head_c02 head --scenario uniform --d 16 --n0 1024 --ratio 1 --cap 0.02
+uniform_d8_n256_r5_l1cap_p05 l1cap --scenario uniform --d 8 --n0 256 --ratio 5 --p 0.5 --cap 0.02
+uniform_d32_n1024_r5_batch_c02 batch --scenario uniform --d 32 --n0 1024 --ratio 5 --cap 0.02
+uniform_d32_n256_r5_head_pool1 head --scenario uniform --d 32 --n0 256 --ratio 5 --cap 0.01 --pool 1
+clustered_d3_n1024_r1_batch_c02 batch --scenario clustered --d 3 --n0 1024 --ratio 1 --cap 0.02
+uniform_d2_n1024_r0.5_head_c02 head --scenario uniform --d 2 --n0 1024 --ratio 0.5 --cap 0.02
+clustered_d3_n256_r1_random random --scenario clustered --d 3 --n0 256 --ratio 1
+uniform_d16_n1024_r5_head_c02 head --scenario uniform --d 16 --n0 1024 --ratio 5 --cap 0.02
+clustered_d5_n1024_r0.5_head_c04 head --scenario clustered --d 5 --n0 1024 --ratio 0.5 --cap 0.04
+clustered_d32_n256_r0.5_head_p025_c02 head --scenario clustered --d 32 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d3_n256_r1_head_c04 head --scenario uniform --d 3 --n0 256 --ratio 1 --cap 0.04
+clustered_d3_n256_r1_head_c005 head --scenario clustered --d 3 --n0 256 --ratio 1 --cap 0.005
+uniform_d32_n256_r1_batch_place batch --scenario uniform --d 32 --n0 256 --ratio 1 --epochs 0
+uniform_d5_n256_r5_head_p025_c01 head --scenario uniform --d 5 --n0 256 --ratio 5 --p 0.25 --cap 0.01
+uniform_d32_n1024_r1_head_pool1 head --scenario uniform --d 32 --n0 1024 --ratio 1 --cap 0.01 --pool 1
+clustered_d8_n1024_r1_l1cap_p05 l1cap --scenario clustered --d 8 --n0 1024 --ratio 1 --p 0.5 --cap 0.02
+uniform_d16_n256_r1_head_place head --scenario uniform --d 16 --n0 256 --ratio 1 --epochs 0
+clustered_d32_n1024_r0.5_batch_c02 batch --scenario clustered --d 32 --n0 1024 --ratio 0.5 --cap 0.02
+clustered_d3_n256_r0.5_batch_c01 batch --scenario clustered --d 3 --n0 256 --ratio 0.5 --cap 0.01
+uniform_d5_n256_r5_head_c01 head --scenario uniform --d 5 --n0 256 --ratio 5 --cap 0.01
+clustered_d16_n256_r5_head_c005 head --scenario clustered --d 16 --n0 256 --ratio 5 --cap 0.005
+uniform_d5_n256_r5_head_c005 head --scenario uniform --d 5 --n0 256 --ratio 5 --cap 0.005
+uniform_d8_n1024_r1_head_c02 head --scenario uniform --d 8 --n0 1024 --ratio 1 --cap 0.02
+clustered_d8_n256_r1_head_pool256 head --scenario clustered --d 8 --n0 256 --ratio 1 --cap 0.01 --pool 256
+clustered_d16_n1024_r5_head_pool1 head --scenario clustered --d 16 --n0 1024 --ratio 5 --cap 0.01 --pool 1
+uniform_d2_n1024_r0.5_batch_place batch --scenario uniform --d 2 --n0 1024 --ratio 0.5 --epochs 0
+clustered_d5_n1024_r0.5_head_p05_c02 head --scenario clustered --d 5 --n0 1024 --ratio 0.5 --p 0.5 --cap 0.02
+uniform_d32_n256_r0.5_head_p025_c01 head --scenario uniform --d 32 --n0 256 --ratio 0.5 --p 0.25 --cap 0.01
+uniform_d3_n1024_r0.5_batch_c02 batch --scenario uniform --d 3 --n0 1024 --ratio 0.5 --cap 0.02
+clustered_d5_n1024_r5_head_c02 head --scenario clustered --d 5 --n0 1024 --ratio 5 --cap 0.02
+uniform_d8_n1024_r5_head_c01 head --scenario uniform --d 8 --n0 1024 --ratio 5 --cap 0.01
+uniform_d16_n256_r5_head_pool256 head --scenario uniform --d 16 --n0 256 --ratio 5 --cap 0.01 --pool 256
+clustered_d2_n256_r0.5_l1cap_p025 l1cap --scenario clustered --d 2 --n0 256 --ratio 0.5 --p 0.25 --cap 0.02
+uniform_d3_n1024_r5_batch_place batch --scenario uniform --d 3 --n0 1024 --ratio 5 --epochs 0
+clustered_d2_n1024_r1_head_pool16 head --scenario clustered --d 2 --n0 1024 --ratio 1 --cap 0.01 --pool 16

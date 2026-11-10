@@ -227,3 +227,27 @@ class TestRadiusModeThroughEsa(unittest.TestCase):
         rep = self._run(search_mode="radius", att_search_mode="k_nn")
         self.assertFalse(np.allclose(base, att))
         self.assertFalse(np.allclose(base, rep))
+
+
+class TestEstimateIsReproducible(unittest.TestCase):
+    """Above torann's crossover the estimate's neighbour search is LSH, and
+    its hash functions are drawn at fit. They have to be seeded, or one
+    `esa` seed gives two designs."""
+
+    def test_two_fits_agree_once_the_search_is_approximate(self):
+        rng = np.random.default_rng(0)
+        pos, val = rng.random((3000, 8)), rng.random(3000)
+        queries = rng.random((200, 8))
+        first = attraction.InverseDistance().fit(pos, val, np.ones(3000))
+        again = attraction.InverseDistance().fit(pos, val, np.ones(3000))
+        np.testing.assert_array_equal(first.at(queries), again.at(queries))
+
+    def test_a_seeded_run_with_attraction_repeats(self):
+        rng = np.random.default_rng(1)
+        pos, val = rng.random((3000, 8)), rng.random(3000)
+        bounds = np.array([[0.0, 1.0]] * 8)
+        kw = {"n": 60, "seed": 7, "attractiveness": val,
+              "attraction_metric": "cauchy",
+              "attraction_kwargs": {"power": 1.0}}
+        np.testing.assert_array_equal(
+            ess.esa(pos, bounds, **kw), ess.esa(pos, bounds, **kw))

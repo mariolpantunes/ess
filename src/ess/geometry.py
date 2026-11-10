@@ -1,4 +1,4 @@
-r"""Toroidal-L1 geometry: how wide a neighbourhood is, in a given dimension.
+r"""Toroidal $L^p$ geometry: how wide a neighbourhood is, in a given dimension.
 
 Its own module for two reasons. `attraction` needs the radius law and
 `ess` imports `attraction`, so the law cannot live in `ess` without a
@@ -7,15 +7,19 @@ interpreted: a radius is normalized precisely so it can cross a boundary
 where the geometry is not known, which makes "who converts it back" a
 question worth answering in one file rather than at each caller.
 
-The library ranks and relaxes under torann's toroidal $L_1$ metric, so
-everything here is derived from that distance law rather than assumed.
+The library ranks and relaxes under torann's toroidal $L^p$ metric,
+$0 < p \le 1$ with $L^1$ the default, so everything here is derived from
+that distance law rather than assumed.
 """
 
 from __future__ import annotations
 
+import functools
 import math
 import statistics
 from typing import Literal, NamedTuple, get_args
+
+import numpy as np
 
 #: Dimension from which radius mode is worth choosing at all.
 #:
@@ -32,13 +36,18 @@ LOW_DIM = 10
 __all__ = [
     "LOW_DIM",
     "NEIGHBOUR_TARGET",
+    "P_MIN",
     "RADIUS_TARGET",
     "SEARCH_MODES",
     "Neighbourhood",
     "ResolvedMode",
     "SearchMode",
+    "check_p",
+    "diameter",
     "l1_radius_for_count",
+    "lp_norm",
     "neighbourhood_for",
+    "radius_for_count",
     "radius_for_target",
     "radius_target_for",
 ]
@@ -173,28 +182,94 @@ class Neighbourhood(NamedTuple):
 _AXIS_MAX = 0.5
 
 
-def l1_radius_for_count(
-    dim: int, n_points: int, target: int = NEIGHBOUR_TARGET
+#: Smallest metric exponent accepted.
+#:
+#: The quasi-norm takes a $1/p$ power of a sum, so its scale grows like
+#: $d^{1/p}$: at $p = 0.005$ the diameter of a 40-dimensional torus already
+#: overflows a double, and a little above that the step cap overflows to
+#: infinity and freezes the relaxation without an error. Twenty is the
+#: largest $1/p$ that stays finite at every dimension this library is run
+#: at ($d^{20} < 10^{80}$ for $d \le 10^4$).
+P_MIN = 0.05
+
+
+def check_p(p: float) -> float:
+    """The exponent as a float, refusing what the geometry does not cover."""
+    if isinstance(p, bool) or not P_MIN <= float(p) <= 1.0:
+        raise ValueError(f"p must be in [{P_MIN}, 1], got {p!r}")
+    return float(p)
+
+
+def lp_norm(values: np.ndarray, p: float, axis: int = -1) -> np.ndarray:
+    r"""$(\sum_l \lvert v_l\rvert^p)^{1/p}$ along `axis`.
+
+    The one place the quasi-norm is written out, with $p = 1$ kept as the
+    plain absolute sum so the default path does no powers at all.
+    """
+    if p == 1.0:
+        return np.abs(values).sum(axis=axis)
+    return (np.abs(values) ** p).sum(axis=axis) ** (1.0 / p)
+
+
+def diameter(dim: int, p: float = 1.0) -> float:
+    r"""Largest possible toroidal $L^p$ distance on the unit torus.
+
+    Each axis contributes at most `_AXIS_MAX`, so the farthest pair differs
+    by one half on every axis and
+
+    $$ \operatorname{diam} = \Big(\sum_{l=1}^{d} 2^{-p}\Big)^{1/p}
+       = \tfrac{1}{2}\, d^{1/p} $$
+
+    which is $d/2$ at $p = 1$. It grows much faster below that -- $d^2/2$ at
+    $p = 1/2$ -- so an $L^p$ radius is not comparable across exponents as a
+    length, only as a neighbour count or as a fraction of this.
+    """
+    return _AXIS_MAX * dim ** (1.0 / check_p(p))
+
+
+def radius_for_count(
+    dim: int, n_points: int, target: int = NEIGHBOUR_TARGET, p: float = 1.0
 ) -> float:
     r"""Radius expected to contain `target` neighbours, from the exact
-    toroidal L1 distance law.
+    toroidal $L^p$ distance law, `P_MIN` $\le p \le 1$.
 
     Per dimension the toroidal distance between two uniform points is
     $u = \min(\delta,\, 1-\delta)$ with $\delta$ uniform, so
-    $u \sim \mathrm{U}(0, 1/2)$ *exactly*; the full distance is a sum of
-    $d$ such terms, with mean $d/4$ and variance $d/48$. Inverting
+    $u \sim \mathrm{U}(0, 1/2)$ *exactly*; the full distance is
+    $(\sum_l u_l^p)^{1/p}$. Inverting
 
     $$ N \cdot P(\mathrm{dist} \le R) = \text{target} $$
 
     gives the radius in either regime:
 
-    * **Dense** — while $R \le 1/2$ the sum is still in its first
-      Irwin-Hall piece, where $P(\mathrm{dist} \le R) = (2R)^d/d!$ is
-      exactly the L1 ball volume, so
-      $R = \tfrac{1}{2}\,(\text{target} \cdot d!/N)^{1/d}$.
-    * **Sparse** — beyond that the ball volume exceeds the torus and the
-      formula is meaningless, but the central limit theorem applies:
-      $R = d/4 + z_{\text{target}/N}\,\sqrt{d/48}$.
+    * **Dense** — while $R \le 1/2$ the ball has not met its own wrapped
+      image and $P(\mathrm{dist} \le R)$ is exactly its volume,
+
+      $$ P = (2R)^d \, \frac{\Gamma(1 + 1/p)^d}{\Gamma(1 + d/p)}
+         \quad\Longrightarrow\quad
+         R = \tfrac{1}{2} \Big( \text{target} \cdot
+             \frac{\Gamma(1 + d/p)}{N\, \Gamma(1 + 1/p)^d} \Big)^{1/d} $$
+
+      which at $p = 1$ is the first Irwin-Hall piece, $(2R)^d/d!$.
+    * **Sparse** — beyond that the formula overcounts, but
+      $S = \sum_l u_l^p$ is a sum of $d$ independent terms with
+
+      $$ \mathrm{E}[u^p] = \frac{2^{-p}}{p+1}, \qquad
+         \mathrm{Var}[u^p] = 4^{-p}\Big(\frac{1}{2p+1}
+                                       - \frac{1}{(p+1)^2}\Big) $$
+
+      so at $p = 1$ the central limit theorem gives
+      $R = d/4 + z_{\text{target}/N}\sqrt{d/48}$. Below $p = 1$ the terms
+      are skewed and the normal tail is wrong in low dimension, so the
+      law of $S$ is computed by convolution instead (see
+      `_power_sum_quantile`) and $R = S_{\text{target}/N}^{1/p}$.
+
+    **An $L^p$ ball with $p < 1$ is a spiked star, not a diamond.** At the
+    same neighbour count it reaches further along the axes and less far
+    along the diagonals, so the neighbours it holds are the ones that
+    differ from the query in *few* coordinates. That is the property the
+    exponent is chosen for, and the reason the radius has to be derived
+    per exponent rather than rescaled from $L^1$.
 
     Note:
         The previous version multiplied the packing radius by a fixed
@@ -213,20 +288,83 @@ def l1_radius_for_count(
             `NEIGHBOUR_TARGET` — the smallest radius that does not cost
             quality; callers wanting a wider interaction pass ``radius``
             to `esa` directly.
+        p (float): Metric exponent in $(0, 1]$.
 
     Returns:
-        float: The interaction radius in toroidal L1 units.
+        float: The interaction radius in toroidal $L^p$ units.
     """
+    p = check_p(p)
     n = max(n_points, 2)
     count = max(min(target, n - 1), 1)
 
-    log_r = (math.lgamma(dim + 1) + math.log(count) - math.log(n)) / dim
-    dense = 0.5 * math.exp(log_r)
-    if dense <= 0.5:
-        return dense  # exact: still inside the first Irwin-Hall piece
+    # Ordered so that p = 1 evaluates exactly the expression it always did:
+    # lgamma(2) is 0, and the radius of every existing run is unchanged.
+    log_r = (math.lgamma(1.0 + dim / p) - dim * math.lgamma(1.0 + 1.0 / p)
+             + math.log(count) - math.log(n)) / dim
+    # Compared in log space: at small p the dense expression overflows long
+    # before it is the answer.
+    if log_r <= 0.0:
+        return 0.5 * math.exp(log_r)  # exact: the ball is inside one period
 
-    z = statistics.NormalDist().inv_cdf(count / n)
-    return min(max(dim / 4.0 + z * math.sqrt(dim / 48.0), 1e-6), dim / 2.0)
+    if p == 1.0:
+        z = statistics.NormalDist().inv_cdf(count / n)
+        return min(max(dim / 4.0 + z * math.sqrt(dim / 48.0), 1e-6), dim / 2.0)
+    total = _power_sum_quantile(dim, p, count / n)
+    return min(max(total ** (1.0 / p), 1e-6), diameter(dim, p))
+
+
+@functools.lru_cache(maxsize=4)
+def _power_sum_law(dim: int, p: float) -> tuple[np.ndarray, float]:
+    r"""Cumulative law of $S = \sum_{l=1}^{d} u_l^p$, $u_l \sim \mathrm{U}(0, 1/2)$.
+
+    The exact law of one term, $P(u^p \le v) = 2 v^{1/p}$, binned and
+    convolved with itself $d$ times in one FFT. Cached per `(dim, p)` and
+    not per quantile: a run asks for several quantiles of one law (the
+    repulsion's count over all points, the estimate's over the sources),
+    and the transform is the whole cost -- half a second at $d = 1000$.
+
+    Returns:
+        tuple: The normalised CDF over the grid, and the grid step.
+    """
+    top = 0.5 ** p
+    bins = max(256, min(4096, (1 << 22) // dim))
+    edges = np.linspace(0.0, top, bins + 1)
+    pmf = np.diff(2.0 * edges ** (1.0 / p))
+    size = dim * bins
+    law = np.fft.irfft(np.fft.rfft(pmf, size) ** dim, size)
+    cdf = np.cumsum(np.maximum(law, 0.0))
+    return cdf / cdf[-1], top / bins
+
+
+def _power_sum_quantile(dim: int, p: float, q: float) -> float:
+    r"""Quantile `q` of $S = \sum_l u_l^p$: the sparse branch of
+    `radius_for_count` for $p < 1$.
+
+    The central limit theorem is the wrong tool there in low dimension:
+    $u^p$ is skewed, and a neighbour count is a *lower-tail* probability,
+    where a normal approximation to a skewed sum is at its worst -- at
+    $p = 1/4$, $d = 5$ it returned a radius holding 19.5 neighbours for a
+    target of 8. So the law is computed (`_power_sum_law`). The normal
+    approximation remains the fallback where the tail is below what double
+    precision resolves.
+    """
+    if q > 1e-9:
+        cdf, step = _power_sum_law(dim, p)
+        at = min(int(np.searchsorted(cdf, q)), cdf.size - 1)
+        # Entry k is the sum of d bin indices; each term sits mid-bin.
+        return float((at + 0.5 * dim) * step)
+    top = 0.5 ** p
+    mean = dim * top / (p + 1.0)
+    var = dim * top * top * (1.0 / (2.0 * p + 1.0) - 1.0 / (p + 1.0) ** 2)
+    return max(mean + statistics.NormalDist().inv_cdf(q) * math.sqrt(var), 0.0)
+
+
+def l1_radius_for_count(
+    dim: int, n_points: int, target: int = NEIGHBOUR_TARGET
+) -> float:
+    """`radius_for_count` at $p = 1$, under the name it had when toroidal
+    $L^1$ was the only metric."""
+    return radius_for_count(dim, n_points, target, 1.0)
 
 
 def radius_target_for(
@@ -409,8 +547,8 @@ def neighbourhood_for(
         dim, n_points, low_dim=low_dim, low_target=low_target))
 
 
-def radius_from_normalized(value: float, dim: int) -> float:
-    """A normalized radius as a toroidal-L1 distance.
+def radius_from_normalized(value: float, dim: int, p: float = 1.0) -> float:
+    """A normalized radius as a toroidal $L^p$ distance.
 
     The single place the ``(0, 1]`` convention is interpreted. It lives here
     rather than at any caller because the conversion needs ``dim`` and the
@@ -431,20 +569,22 @@ def radius_from_normalized(value: float, dim: int) -> float:
     Args:
         value (float): Fraction of the torus diameter, in ``(0, 1]``.
         dim (int): Dimensionality.
+        p (float): Metric exponent in $(0, 1]$; see `diameter`. The
+            per-axis reading above is the $p = 1$ one.
 
     Returns:
-        float: The radius in toroidal L1 units.
+        float: The radius in toroidal $L^p$ units.
 
     Raises:
         ValueError: If `value` is outside ``[0, 1]``.
     """
     if not 0.0 <= value <= 1.0:
         raise ValueError(f"radius must be in [0, 1] (0 = auto), got {value}")
-    return float(value) * dim * _AXIS_MAX
+    return float(value) * diameter(dim, p)
 
 
 def radius_for_target(
-    dim: int, n_points: int, target: int = NEIGHBOUR_TARGET
+    dim: int, n_points: int, target: int = NEIGHBOUR_TARGET, p: float = 1.0
 ) -> float:
     r"""Normalized radius expected to contain `target` neighbours.
 
@@ -459,7 +599,7 @@ def radius_for_target(
 
     So this answers the question a caller actually has -- "how wide is about
     eight neighbours, here?" -- with the number to pass. It is
-    `l1_radius_for_count`, which is what ``radius=0`` uses internally,
+    `radius_for_count`, which is what ``radius=0`` uses internally,
     divided by the diameter.
 
     Args:
@@ -467,6 +607,8 @@ def radius_for_target(
         n_points (int): Total points $N$ the radius will search among
             (static + generated).
         target (int): Desired neighbours inside the ball.
+        p (float): Metric exponent in $(0, 1]$; pass the one `esa` runs
+            under, since both the radius and the diameter depend on it.
 
     Returns:
         float: A value in $(0, 1]$ for ``esa(radius=...)`` or
@@ -476,4 +618,4 @@ def radius_for_target(
         >>> round(radius_for_target(100, 400), 3)
         0.426
     """
-    return l1_radius_for_count(dim, n_points, target) / (dim * _AXIS_MAX)
+    return radius_for_count(dim, n_points, target, p) / diameter(dim, p)

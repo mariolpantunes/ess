@@ -143,8 +143,8 @@ class InverseDistance(AttractionModel):
     identifiable. Do not drop this model on the concentration argument alone.
 
     **The neighbour search is `torann`, not a second implementation.** The
-    library already delegates every toroidal-L1 query to `ToroidalNN`, and
-    this model's estimate is a toroidal-L1 k-NN like any other, so it uses an
+    library already delegates every toroidal query to `ToroidalNN`, and
+    this model's estimate is a toroidal k-NN like any other, so it uses an
     index rather than scanning. That index is separate from the relaxation's
     on purpose: the relaxation's holds the moving candidates as well, and an
     estimate must average over *sources* -- points whose objective was paid
@@ -207,11 +207,17 @@ class InverseDistance(AttractionModel):
             from the fitted anchors that targets `k` neighbours, so the two
             modes are calibrated to the same neighbourhood by default and
             differ only in which of count and volume is held fixed.
+        p (float): Exponent of the toroidal $L^p$ metric the neighbours are
+            ranked and weighted by, in $(0, 1]$.
+        seed (int | None): Seed of the index's hash functions. Fixed by
+            default so that a seeded run is reproducible whatever the
+            number of sources; ``None`` draws fresh ones on every fit.
     """
 
     def __init__(self, k: int = 8, power: float = 2.0, backend: str = "auto",
                  search_mode: geometry.ResolvedMode = "k_nn",
-                 radius: float | None = None):
+                 radius: float | None = None, p: float = 1.0,
+                 seed: int | None = 0):
         if search_mode not in ("k_nn", "radius"):
             raise ValueError(
                 f"search_mode must be 'k_nn' or 'radius', got {search_mode!r}")
@@ -220,6 +226,8 @@ class InverseDistance(AttractionModel):
         self.backend = str(backend)
         self.search_mode = str(search_mode)
         self.radius = radius
+        self.p = geometry.check_p(p)
+        self.seed = seed
         self._val = np.empty(0)
         self._conf = np.empty(0)
         self._index: ToroidalNN | None = None
@@ -235,12 +243,22 @@ class InverseDistance(AttractionModel):
             # Resolved here, not in `at`: the radius is a property of the
             # source set, which is fixed at fit time, and `at` runs on every
             # refresh.
-            self._r = (
-                geometry.l1_radius_for_count(dim, n, min(self.k, n))
-                if not self.radius
-                else geometry.radius_from_normalized(float(self.radius), dim)
-            )
-            self._index = ToroidalNN(backend=self.backend).fit(
+            # Only radius mode reads it, and below p = 1 it is not free.
+            if self.search_mode == "radius":
+                self._r = (
+                    geometry.radius_for_count(dim, n, min(self.k, n), self.p)
+                    if not self.radius
+                    else geometry.radius_from_normalized(
+                        float(self.radius), dim, self.p)
+                )
+            # Under the run's exponent, not L1: "nearest" has to mean the
+            # same thing to the estimate as to the repulsion it balances.
+            # Seeded: above torann's crossover the search is LSH, whose hash
+            # functions are drawn at fit. Unseeded, two runs of `esa` with
+            # one seed estimated two different fields and placed two
+            # different designs -- from about 3000 sources at d = 8.
+            self._index = ToroidalNN(
+                seed=self.seed, backend=self.backend, p=self.p).fit(
                 np.mod(pos, 1.0), k=min(self.k, n))
         return self
 

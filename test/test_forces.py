@@ -10,11 +10,13 @@ heuristic.
 import inspect
 import itertools
 import math
+import sys
 import typing
 import unittest
 
 import numpy as np
 
+from ess import geometry
 from ess.ess import (
     METRIC_REGISTRY,
     _compute_forces,
@@ -223,27 +225,28 @@ if __name__ == "__main__":
 
 
 class TestForceDirection(unittest.TestCase):
-    """The push direction must be the gradient of the metric measuring it.
+    """The push direction is `sign(delta)`: every coordinate pushed equally.
 
-    Distances here are toroidal L1 -- torann returns L1, the force law is
-    evaluated on it, the step is capped in it -- so the direction is
-    `grad(d_L1) = sign(delta)`, which pushes every coordinate equally.
+    Under toroidal L1 that is the gradient of the metric measuring the
+    distance -- torann returns L1, the force law is evaluated on it, the step
+    is capped in it. Until 2026-07-28 the kernel used `delta/||delta||_2`
+    regardless, the L2 gradient, so the applied force descended no potential
+    ESS defines.
 
-    Until 2026-07-28 the kernel used `delta/||delta||_2` regardless, the L2
-    gradient, so the applied force descended no potential ESS defines. The
-    exponent was briefly a parameter while `p != 1` was explored; that arm
-    lives on `wip_lp` and main is L1 end to end, so there is nothing left to
-    select and the geometry is checked here instead.
+    `esa` has a metric exponent `p` again since torann 0.6.0 serves toroidal
+    L^p, but it selects the *metric* -- neighbours, radius, step cap -- and
+    not the direction: there is still no `force_p`, because the L^p gradient
+    lost to `sign` in every cell it was measured in (`_compute_forces`).
     """
 
     def setUp(self):
         self.bounds = np.array([[0.0, 1.0]] * 8)
         self.static = np.random.default_rng(0).random((60, 8))
 
-    def test_no_metric_exponent_is_exposed(self):
+    def test_no_direction_exponent_is_exposed(self):
         params = inspect.signature(esa).parameters
         self.assertNotIn("force_p", params)
-        self.assertNotIn("p", params)
+        self.assertNotIn("p", inspect.signature(_compute_forces).parameters)
 
     def test_direction_is_the_l1_subgradient(self):
         """Equal push per coordinate, and a shared coordinate gets none."""
@@ -717,3 +720,220 @@ class TestAutoReachesEsa(unittest.TestCase):
         self.assertEqual(auto["search_mode"], "k_nn")
         self.assertEqual(auto["radius"], explicit["radius"])
         np.testing.assert_allclose(a, b)
+
+
+class TestLpGeometry(unittest.TestCase):
+    """The radius law, the diameter and the force direction under toroidal
+    $L^p$, $0 < p \\le 1$. Everything in `geometry` is derived from the
+    distance law, so each of these is checked against the distances
+    themselves rather than against a formula restated."""
+
+    @staticmethod
+    def _counts(dim, n, radius, p, seed=0):
+        x = np.random.default_rng(seed).random((n, dim))
+        gap = np.abs(x[:150, None, :] - x[None, :, :])
+        np.minimum(gap, 1.0 - gap, out=gap)
+        dist = (gap ** p).sum(axis=2) ** (1.0 / p)
+        return float(((dist <= radius).sum(axis=1) - 1).mean())
+
+    def test_p_one_is_the_l1_law_bit_for_bit(self):
+        for dim, n, target in ((2, 100, 2), (8, 2000, 16), (100, 400, 8)):
+            with self.subTest(dim=dim):
+                self.assertEqual(
+                    geometry.radius_for_count(dim, n, target, 1.0),
+                    l1_radius_for_count(dim, n, target))
+
+    def test_the_radius_holds_the_count_it_was_asked_for(self):
+        """Dense branch (exact ball volume) and sparse branch (convolved
+        law) both: the normal approximation alone returned 19.5 neighbours
+        for 8 at p=1/4, d=5."""
+        cases = ((2, 400, 5), (5, 2000, 8), (8, 2000, 16), (30, 1500, 60))
+        for p in (0.75, 0.5, 0.25):
+            for dim, n, target in cases:
+                with self.subTest(p=p, dim=dim):
+                    r = geometry.radius_for_count(dim, n, target, p)
+                    got = self._counts(dim, n, r, p)
+                    self.assertLess(abs(got - target) / target, 0.2, got)
+
+    def test_diameter_is_the_farthest_pair(self):
+        for p in (1.0, 0.5, 0.25):
+            for dim in (1, 3, 10):
+                with self.subTest(p=p, dim=dim):
+                    far = (dim * 0.5 ** p) ** (1.0 / p)
+                    self.assertAlmostEqual(geometry.diameter(dim, p), far)
+                    self.assertAlmostEqual(
+                        radius_from_normalized(1.0, dim, p), far)
+
+    def test_normalized_radius_round_trips_under_any_exponent(self):
+        for p in (1.0, 0.5):
+            norm = radius_for_target(12, 500, 8, p)
+            self.assertTrue(0.0 < norm <= 1.0)
+            self.assertAlmostEqual(
+                radius_from_normalized(norm, 12, p),
+                geometry.radius_for_count(12, 500, 8, p), places=9)
+
+    def test_exponents_outside_the_unit_interval_are_refused(self):
+        for bad in (0.0, -0.5, 1.5, 2.0, True):
+            with self.subTest(p=bad), self.assertRaises(ValueError):
+                geometry.check_p(bad)
+
+    def test_direction_does_not_depend_on_the_exponent(self):
+        """The push is $\\operatorname{sign}(r)$ under every exponent: it
+        widens every gap, so it raises every $L^p$ distance, and it beat
+        the $L^p$ gradient wherever the two were measured. The exponent
+        reaches the force only through the distances it is handed."""
+        active = np.array([[0.54, 0.51, 0.3]])
+        data = np.vstack((np.array([[0.5, 0.5, 0.3]]), active))
+        f = _compute_forces(active, data, np.array([[0]]),
+                            np.array([[0.09]]), 1.0,
+                            METRIC_REGISTRY["gaussian"],
+                            np.random.default_rng(0))
+        self.assertEqual(f[0, 2], 0.0)
+        self.assertGreater(f[0, 0], 0.0)
+        self.assertAlmostEqual(f[0, 1] / f[0, 0], 1.0)
+
+
+class TestLpThroughEsa(unittest.TestCase):
+    """One exponent governs a run: search, radius, force, step, placement
+    and the attractiveness estimate."""
+
+    def setUp(self):
+        self.bounds = np.array([[0.0, 1.0]] * 4)
+        self.static = np.random.default_rng(0).random((60, 4))
+
+    def test_runs_in_bounds_and_is_reproducible(self):
+        for p in (0.75, 0.5, 0.25):
+            with self.subTest(p=p):
+                a = esa(self.static, self.bounds, n=80, seed=3, p=p)
+                b = esa(self.static, self.bounds, n=80, seed=3, p=p)
+                self.assertEqual(a.shape, (80, 4))
+                self.assertTrue(np.isfinite(a).all())
+                self.assertTrue((a >= 0.0).all() and (a <= 1.0).all())
+                np.testing.assert_array_equal(a, b)
+
+    def test_the_exponent_changes_the_result(self):
+        a = esa(self.static, self.bounds, n=80, seed=3)
+        b = esa(self.static, self.bounds, n=80, seed=3, p=0.5)
+        self.assertFalse(np.allclose(a, b))
+
+    def test_default_is_l1_and_explicit_one_is_the_same_run(self):
+        a = esa(self.static, self.bounds, n=40, seed=5)
+        b = esa(self.static, self.bounds, n=40, seed=5, p=1.0)
+        np.testing.assert_array_equal(a, b)
+
+    def test_a_supplied_index_carries_its_exponent(self):
+        import torann
+        stats = {}
+        out = esa(self.static, self.bounds, n=40, seed=5,
+                  index=torann.ToroidalNN(seed=0, p=0.5), stats=stats)
+        self.assertEqual(out.shape, (40, 4))
+        want = geometry.radius_for_count(4, 100, NEIGHBOUR_TARGET, 0.5)
+        self.assertAlmostEqual(stats["radius"], want, places=12)
+
+    def test_an_index_under_another_exponent_is_refused(self):
+        import torann
+        with self.assertRaises(ValueError):
+            esa(self.static, self.bounds, n=10, seed=5, p=0.5,
+                index=torann.ToroidalNN(seed=0))
+
+    def test_radius_mode_and_attraction_run_under_lp(self):
+        values = np.random.default_rng(1).random(60)
+        out = esa(self.static, self.bounds, n=40, seed=5, p=0.5,
+                  search_mode="radius", attractiveness=values,
+                  attraction_metric="cauchy",
+                  attraction_kwargs={"power": 1.0})
+        self.assertEqual(out.shape, (40, 4))
+        self.assertTrue(np.isfinite(out).all())
+
+    def test_the_relaxation_descends_the_metric_it_was_given(self):
+        """Separation measured in $L^{1/2}$ must be better after relaxing
+        in $L^{1/2}$ than after relaxing in $L^1$, from the same start."""
+        def lp_sep(pts, p):
+            gap = np.abs(pts[:, None, :] - pts[None, :, :])
+            np.minimum(gap, 1.0 - gap, out=gap)
+            dist = (gap ** p).sum(axis=2) ** (1.0 / p)
+            np.fill_diagonal(dist, np.inf)
+            return float(np.median(dist.min(axis=1)))
+
+        empty = np.empty((0, 4))
+        wins = 0
+        for seed in range(6):
+            in_l1 = esa(empty, self.bounds, n=150, seed=seed)
+            in_lp = esa(empty, self.bounds, n=150, seed=seed, p=0.5)
+            wins += lp_sep(in_lp, 0.5) > lp_sep(in_l1, 0.5)
+        self.assertGreaterEqual(wins, 5)
+
+
+class TestLpGuards(unittest.TestCase):
+    """What an exponent may be, and who is told about it."""
+
+    def setUp(self):
+        self.bounds = np.array([[0.0, 1.0]] * 4)
+        self.static = np.random.default_rng(0).random((60, 4))
+        self.values = np.random.default_rng(1).random(60)
+
+    def test_exponents_too_small_to_compute_are_refused(self):
+        """Below `P_MIN` the quasi-norm's scale overflows a double: the
+        diameter raised OverflowError, and just above that the step cap
+        went to infinity and froze the relaxation without a word."""
+        for bad in (0.005, 0.012, geometry.P_MIN / 2):
+            with self.subTest(p=bad), self.assertRaises(ValueError):
+                esa(self.static, self.bounds, n=10, seed=0, p=bad)
+        out = esa(self.static, self.bounds, n=10, seed=0, p=geometry.P_MIN)
+        self.assertTrue(np.isfinite(out).all())
+
+    def test_a_float32_exponent_matches_its_index(self):
+        import torann
+        out = esa(self.static, self.bounds, n=10, seed=0,
+                  p=np.float32(0.3), index=torann.ToroidalNN(seed=0, p=0.3))
+        self.assertEqual(out.shape, (10, 4))
+
+    def test_a_model_built_under_another_exponent_is_refused(self):
+        from ess import attraction
+        kw = {"n": 10, "seed": 0, "attractiveness": self.values,
+              "attraction_metric": "cauchy",
+              "attraction_kwargs": {"power": 1.0}}
+        with self.assertRaises(ValueError):
+            esa(self.static, self.bounds, p=0.5,
+                att_model=attraction.InverseDistance(k=4), **kw)
+        model = attraction.InverseDistance(k=4, p=0.5)
+        esa(self.static, self.bounds, p=0.5, att_model=model, **kw)
+        self.assertEqual(model._index.p, 0.5)
+
+    def test_lp_norm_is_the_quasi_norm(self):
+        v = np.array([[0.04, -0.01, 0.0]])
+        self.assertAlmostEqual(float(geometry.lp_norm(v, 1.0)[0]), 0.05)
+        self.assertAlmostEqual(
+            float(geometry.lp_norm(v, 0.5)[0]), (0.2 + 0.1) ** 2)
+
+    def test_one_epoch_is_capped_in_the_runs_own_metric(self):
+        """One cap, in the run's L^p: a step is at most `STEP_CAP` of the
+        interaction radius, whatever the exponent."""
+        empty = np.empty((0, 4))
+        for p in (1.0, 0.5, 0.25):
+            with self.subTest(p=p):
+                start = esa(empty, self.bounds, n=200, seed=2, p=p, epochs=0)
+                moved = esa(empty, self.bounds, n=200, seed=2, p=p, epochs=1)
+                gap = np.abs(moved - start)
+                np.minimum(gap, 1.0 - gap, out=gap)
+                radius = geometry.radius_for_count(4, 200, NEIGHBOUR_TARGET, p)
+                self.assertLessEqual(
+                    float(geometry.lp_norm(gap, p, axis=1).max()),
+                    sys.modules["ess.ess"].STEP_CAP * radius * 1.001)
+
+
+class TestBounds(unittest.TestCase):
+    """`bounds` is taken as given by a caller, so it is checked."""
+
+    def test_a_list_is_accepted(self):
+        static = np.random.default_rng(0).random((30, 2))
+        a = esa(static, [[0.0, 1.0], [0.0, 1.0]], n=10, seed=1)
+        b = esa(static, np.array([[0.0, 1.0]] * 2), n=10, seed=1)
+        np.testing.assert_array_equal(a, b)
+
+    def test_reversed_or_misshapen_bounds_are_refused(self):
+        static = np.random.default_rng(0).random((30, 2))
+        for bad in ([[1.0, 0.0], [0.0, 1.0]], [0.0, 1.0],
+                    [[0.0, np.inf], [0.0, 1.0]]):
+            with self.assertRaises(ValueError):
+                esa(static, bad, n=10, seed=1)
