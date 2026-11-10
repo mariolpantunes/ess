@@ -38,15 +38,14 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 """logging.Logger: Module-level logger for debugging ESA optimization steps."""
 
-STEP_CAP = 0.02
+STEP_CAP = 0.01
 r"""float: Per-epoch travel budget, as a fraction of the interaction radius.
 
-Displacement is capped in the metric the radius is expressed in -- **L1**
-by default -- so a point never crosses more than 2% of its local spacing
-per epoch. Below $p = 1$ the quasi-norm cap alone does not promise that
-(an $L^p$ radius is far longer than an axis period, and a step along one
-axis is as long in $L^p$ as in $L^1$), so the $L^1$ cap of the same
-neighbour count is applied as well; see `_esa`.
+Displacement is capped in the metric the radius is expressed in -- the
+run's toroidal $L^p$, **L1** by default -- so a point never crosses more
+than 1% of the interaction radius per epoch. It is the only cap: the
+learning rate sets the step, and this shortens a step that is too long.
+It was 0.02 through 0.7.3.
 Early on the cap binds, which turns the update into a constant-speed
 flow along the force direction — only the *direction* matters, which is
 why `lr` barely affects the outcome; as the learning rate decays the
@@ -1158,7 +1157,7 @@ def _esa(
                 # the points currently occupy rather than carried from where
                 # they started.
                 #
-                # On a stride because `STEP_CAP` bounds a point to 2% of the
+                # On a stride because `STEP_CAP` bounds a point to 1% of the
                 # interaction radius per epoch, while the field varies on the
                 # scale of the radius itself -- so between refreshes the value
                 # can drift by only a few percent, and refreshing every epoch
@@ -1590,7 +1589,7 @@ def esa(
         att_every (int): Epochs between refreshes of the attractiveness
             field. The estimate belongs to a position, so it is re-read as the
             points move; a stride of 5 is enough because a point travels at
-            most 2% of the interaction radius per epoch.
+            most 1% of the interaction radius per epoch.
         attraction_kwargs (dict | None): Parameters for that law, kept
             separate from `metric_kwargs` because both laws take parameters
             of the same names and one ``**kwargs`` cannot serve two.
