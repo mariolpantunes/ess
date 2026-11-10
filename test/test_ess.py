@@ -812,3 +812,21 @@ class TestInitPool(unittest.TestCase):
         a = ess.esa(empty, self.bounds, n=20, seed=3, init_pool=1)
         b = ess.esa(empty, self.bounds, n=20, seed=3, init_pool=512)
         np.testing.assert_allclose(a, b)
+
+
+class TestSamplesOutsideBounds(unittest.TestCase):
+    """A sample past a bound wraps to the far side of the torus and repels
+    there. That is the geometry, but it is silent, so it is announced."""
+
+    def test_samples_outside_the_bounds_are_announced(self):
+        bounds = np.array([[0.0, 1.0]] * 2)
+        static = np.array([[1.4, 0.5], [0.5, -0.3], [0.5, 0.5]])
+        with self.assertLogs("ess.ess", level="WARNING") as seen:
+            ess.esa(static, bounds, n=8, seed=0)
+        self.assertIn("2 of 3 samples lie outside", seen.output[0])
+
+    def test_samples_on_the_bounds_are_not(self):
+        bounds = np.array([[0.0, 1.0]] * 2)
+        static = np.array([[0.0, 1.0], [1.0, 0.0], [0.5, 0.5]])
+        with self.assertNoLogs("ess.ess", level="WARNING"):
+            ess.esa(static, bounds, n=8, seed=0)

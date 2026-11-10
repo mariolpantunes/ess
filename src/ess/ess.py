@@ -1719,6 +1719,20 @@ def esa(
     min_val = bounds[:, 0]
     max_val = bounds[:, 1]
     scaled_samples, _, _ = _scale(samples, min_val, max_val)
+    if scaled_samples.size:
+        outside = int(np.any(
+            (scaled_samples < 0.0) | (scaled_samples > 1.0), axis=1).sum())
+        if outside:
+            # The domain is a torus, so a coordinate past a bound is reduced
+            # mod 1 and reappears on the far side: the new points are then
+            # kept away from a place where there is nothing. Said out loud
+            # because it is silent otherwise, and because the usual cause is
+            # bounds narrower than the data, which the caller can fix.
+            logger.warning(
+                "%d of %d samples lie outside `bounds`. On the torus they "
+                "wrap to the opposite side and act as obstacles there. "
+                "Widen `bounds` to contain the samples, or drop them.",
+                outside, scaled_samples.shape[0])
 
     k_value = k if k is not None else min(2 * dim + 1, K_LOCAL)
     batch = batch_size if batch_size is not None else max(n, 1)
