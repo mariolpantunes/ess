@@ -11,7 +11,7 @@ from ess import legacy, utils
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
-plt.set_loglevel("error")
+plt.set_loglevel("ERROR")
 logging.getLogger("PIL").setLevel(logging.WARNING)
 
 

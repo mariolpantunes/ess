@@ -69,7 +69,7 @@ ignore = ["B905"]
 
 [tool.basedpyright]
 typeCheckingMode = "standard"
-include = ["src/ess", "test", "examples"]
+include = ["src/ess", "test"]
 reportImportCycles = "none"
 venvPath = "."
 venv = "venv"
