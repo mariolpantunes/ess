@@ -7,6 +7,7 @@ import logging
 import unittest
 
 import numpy as np
+from torann import available_backends
 
 import ess
 from ess import attraction, geometry, utils
@@ -14,7 +15,6 @@ from ess import attraction, geometry, utils
 # `ess.ess` is the exported *function*, which shadows the submodule of
 # the same name, so the private helpers need an explicit module import.
 ess_core = importlib.import_module("ess.ess")
-from torann import available_backends
 
 # Disable info logging during tests to keep output clean
 logging.getLogger("ess.ess").setLevel(logging.WARNING)
@@ -590,7 +590,7 @@ class TestGuardsAndDegenerateInputs(unittest.TestCase):
         built = ess.UniformSampler(random_state=1)
         self.assertIs(ess.check_sampler(built), built)
         with self.assertRaises(TypeError):
-            ess.check_sampler("lhs")
+            ess.check_sampler("lhs")  # pyright: ignore[reportArgumentType]
 
 
 class TestInitPool(unittest.TestCase):

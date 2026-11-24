@@ -6,7 +6,6 @@ from torann.metrics import (
     toroidal_separation as _torann_separation,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 """logging.Logger: Module-level logger for debugging ESA optimization steps."""
 

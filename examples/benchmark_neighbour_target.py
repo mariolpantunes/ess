@@ -145,7 +145,7 @@ def report_pull(targets, seeds, weights):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--dims", type=int, nargs="+",
                         default=[2, 3, 5, 8, 20])
     parser.add_argument("--targets", type=int, nargs="+",

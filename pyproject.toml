@@ -54,6 +54,10 @@ where = ["src"]
 [tool.ruff]
 line-length = 120
 
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "UP"]
+ignore = ["B905"]
+
 [tool.ruff.lint.per-file-ignores]
 # `test/` and `examples/` are linted now -- they are where the rot happens --
 # but two rules are noise outside the package: B023 (a closure over a loop
@@ -65,7 +69,7 @@ line-length = 120
 
 [tool.basedpyright]
 typeCheckingMode = "standard"
-include = ["src/ess"]
+include = ["src/ess", "test", "examples"]
 reportImportCycles = "none"
 venvPath = "."
 venv = "venv"

@@ -193,7 +193,7 @@ _AXIS_MAX = 0.5
 P_MIN = 0.05
 
 
-def check_p(p: float) -> float:
+def check_p(p: float | np.floating) -> float:
     """The exponent as a float, refusing what the geometry does not cover."""
     if isinstance(p, bool) or not P_MIN <= float(p) <= 1.0:
         raise ValueError(f"p must be in [{P_MIN}, 1], got {p!r}")

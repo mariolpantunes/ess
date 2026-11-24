@@ -15,9 +15,8 @@ where they win on cost. The comparison that matters is this one.
 Methods compared (all asked to add `n` points to `a` fixed anchors):
 
     ess-<version>   the library, this checkout
-    init-lhs        Latin hypercube sample of n points, anchors ignored
-    init-random     uniform sample of n points, anchors ignored
-    init-sobol      Sobol sequence, anchors ignored (if SciPy is present)
+    dart            best-candidate placement alone (epochs=0, w=0.0)
+    init-random     uniform sample of n points, anchors ignored (scale reference)
 
 The "init-" methods are the initialisation strategies ESS itself starts
 from, so they are the honest floor: any gain ESS reports has to be a gain
@@ -67,7 +66,7 @@ from torann.brute import pairwise_l1
 from torann.metrics import toroidal_separation
 
 import ess
-from ess.samplers import LHCSampler, UniformSampler
+from ess.samplers import UniformSampler
 from ess.utils import (
     expected_discrepancy,
     wrap_around_discrepancy,
@@ -104,24 +103,15 @@ def score(anchors, new, marginal_dims=8):
 
 def methods():
     """name -> callable(anchors, bounds, n, seed) returning the new points."""
-    out = {
+    return {
         f"ess-{VERSION}": lambda A, b, n, s: ess.esa(A, b, n=n, seed=s),
-        "init-lhs": lambda A, b, n, s: LHCSampler(random_state=s).sample(
-            n, A.shape[1]
+        "dart": lambda A, b, n, s: ess.esa(
+            A, b, n=n, epochs=0, w=0.0, seed=s
         ),
         "init-random": lambda A, b, n, s: UniformSampler(random_state=s).sample(
             n, A.shape[1]
         ),
     }
-    try:
-        from scipy.stats import qmc
-
-        out["init-sobol"] = lambda A, b, n, s: qmc.Sobol(
-            A.shape[1], scramble=True, seed=s
-        ).random(n)
-    except ImportError:
-        pass
-    return out
 
 
 def run(dims, n_anchors, n_new, seeds):

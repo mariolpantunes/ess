@@ -50,7 +50,7 @@ class TestUtils(unittest.TestCase):
 
         # High Dim Sparse Test
         dim = 64
-        pts_hd = np.random.rand(10, dim)
+        pts_hd = np.random.default_rng(0).random((10, dim))
         bounds_hd = np.array([[0, 1]] * dim)
         # Should not crash
         cov_hd = utils.calculate_grid_coverage(pts_hd, bounds_hd, grid=3)

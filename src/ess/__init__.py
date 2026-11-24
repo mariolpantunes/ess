@@ -34,22 +34,21 @@ its threshold, chosen internally by size.
 Modules
 -------
 * `ess`: Core generation logic and force-field definitions.
+* `attraction`: Static inverse-distance fitness terrain (`InverseDistance`)
+  and buffered leave-one-out neighbourhood selection (`choose_k`).
+* `geometry`: Toroidal $L^p$ radius laws, diameter, and automatic
+  neighbourhood selection (`neighbourhood_for`).
 * `samplers`: Space-filling initial-position samplers (LHS, uniform).
-* `utils`: Metrics for spatial distribution. **Rank designs with
-  `projection_discrepancy` and `wrap_around_discrepancy`** — they measure
-  deviation from uniformity and reference no point metric at all, so no
-  choice of geometry can flatter an arm that optimised it. ESS relaxes
-  under a toroidal-$L_1$ repulsion, so ranking it on a toroidal-$L_1$ point
-  metric would be grading the optimiser with its own loss, and would report
-  a large margin for exactly that reason and no other.
-  `toroidal_separation` is that point metric — a raw $L_1$ gap, useful as a
-  diagnostic within one fixed geometry, and **never** a ranking here. Its
-  definition comes from `torann.metrics` (see *Division of labour* below);
-  `euclidean_separation` is its non-wrapping counterpart, kept for
-  provenance. Clark-Evans is gone: it only has meaning divided by an
-  expected nearest-neighbour distance, which makes it a statistic *about a
-  metric* rather than about uniformity, and it was measurably blunt
-  besides.
+* `utils`: Metrics for spatial distribution:
+  - `toroidal_separation` (shared with `torann.metrics`): minimum toroidal
+    $L_1$ distance from each new point to its nearest other point (existing
+    anchor or new point), which directly measures void-filling clearance in
+    iterative re-exploration.
+  - `wrap_around_discrepancy`, `projection_discrepancy`, and
+    `expected_discrepancy`: periodic $L_2$ uniformity diagnostics over the
+    full torus or low-dimensional coordinate projections ($1.0$ = random).
+  - `euclidean_separation` and `calculate_grid_coverage`: non-wrapping
+    separation and low-dimensional grid occupancy, retained for provenance.
 * `baseline`: Reference constructions for *testing* ESS, not for using it
   -- `dart` (Mitchell's best-candidate: the ablation of the relaxation),
   `random_fill` (the null), and `grid_oracle` (the emptiest point by
@@ -62,11 +61,9 @@ Division of labour with torann
 far apart they are. It owns the neighbour index and the **definitions** of
 toroidal point metrics, because each is one exact k-NN scan.
 
-ESS owns everything about *purpose*: how designs are generated, and how they
-are **ranked**. Which metric decides that a design is better is a question
-about what the points are for, and the reasoning above — rank on
-discrepancies, never on a point metric ESS itself optimises — is this
-project's to make and lives here.
+ESS owns everything about *purpose*: how new points are placed and relaxed
+into empty regions (with optional terrain guidance), and how iterative
+space exploration is evaluated.
 
 Keep that line. It was drawn after the alternative failed: with a metric
 defined in one project and chosen in another, a rename in one silently

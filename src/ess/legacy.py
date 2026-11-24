@@ -2,7 +2,6 @@ import logging
 
 import numpy as np
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -154,7 +153,7 @@ def _empty_center(coor, data, *, lr: float, epochs: int, bounds: np.ndarray):
     # k = dim + 1 is a heuristic for sufficient neighbors
     k_req = min(data.shape[1] + 1, data.shape[0])
 
-    for i in range(epochs):
+    for _ in range(epochs):
         adjs_, distances_ = _static_knn(data, coor, k=k_req)
 
         direc = _elastic(coor, data[adjs_[0]], distances_[0])

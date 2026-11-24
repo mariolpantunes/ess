@@ -42,7 +42,7 @@ def run_benchmark():
             bounds = np.array([[0, 1]] * d)
             # Use a small seed set (10% of N)
             n_initial = max(1, n // 10)
-            samples = np.random.uniform(0, 1, (n_initial, d)).astype(np.float32)
+            samples = np.random.default_rng(42).uniform(0, 1, (n_initial, d)).astype(np.float32)
 
             # --- Benchmark Legacy Version ---
             # _esa_01 optimizes each point independently against 'samples'

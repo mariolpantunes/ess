@@ -18,7 +18,7 @@ It simulates electrostatic repulsive forces to "relax" new points into the empty
 * **Single Scalable Engine**: Neighbour search is [torann](https://github.com/mariolpantunes/torann) — exact brute force at small N, toroidal LSH above its threshold, chosen internally; per-epoch coordinate updates are native (no index rebuilds).
 * **Single-Parameter Own-Gap Step & Post-Relaxation Re-Placement**: Each epoch moves a point by its own nearest-neighbour distance divided by $t + C$ (`C=12.0` by default) along the unit force direction, eliminating separate learning-rate, decay and step-cap knobs. After convergence, the lowest-scoring fraction `w` (`w=0.05` by default, 5%) is offered a best-candidate re-placement (`_smart_init`), accepted only if it improves clearance.
 * **Robust Early Stopping**: Convergence is detected on what the relaxation is for: the run stops when the nearest-neighbour distance of the points being placed (its 5% quantile, read off the neighbour query) and, when guided, the spread-scaled mean field elevation stop improving for `patience` (default 12) epochs.
-* **High-Dimensional Metrics**: Ranks designs on wrap-around and projection discrepancy — normalised so 1.0 = random, and valid at any ambient dimension. Toroidal separation (shared with [torann](https://github.com/mariolpantunes/torann)) is reported as a diagnostic. Clark-Evans has been removed; see *Metrics* below for why.
+* **High-Dimensional Evaluation Metrics**: Evaluates iterative void-filling on the toroidal distance from each newly placed point to its nearest other point (`toroidal_separation`, shared with [torann](https://github.com/mariolpantunes/torann), normalised by the fair-share radius `geometry.radius_for_count`), alongside wrap-around and projection discrepancies (`wrap_around_discrepancy`, `projection_discrepancy`, normalised so 1.0 = random).
 * **Smart Initialization**: Uses a sequential "Best Candidate" sampling strategy to seed new batches in the most promising void regions without collapsing.
 * **Space-Based Terrain Guidance**: Given the `fitness` of the measured points (**lower = closer to the ground = better**), the space itself acts as an inverse-distance terrain (`attraction.InverseDistance`) built once via buffered leave-one-out cross-validation (`attraction.choose_k`, selecting the optimal neighbourhood count $k$ and field `trust` in $[0, 1]$). During relaxation, uphill movement along the terrain slope (climbing towards higher fitness/cost) is damped without injecting point-source pulls that could collapse the search.
 
@@ -176,15 +176,14 @@ the one-dimensional marginals and leaves packing *worse* than random.
 
 ## Measuring a design
 
-Uniformity metrics do not survive high dimension equally well, so
-`ess.utils` offers the ones appropriate to each regime:
+ESS is an iterative space-exploration method: given existing points (anchors), it places and relaxes new points into unexplored regions. `ess.utils` and `ess.geometry` provide metrics for both iterative clearance and global uniformity:
 
-| function | what it measures | rank designs with it? |
+| function | what it measures | primary role |
 | --- | --- | --- |
-| `wrap_around_discrepancy` | deviation from uniform over every wrap-around box, full dimension | **yes** |
-| `projection_discrepancy` | the same, averaged over 1-D / 2-D coordinate projections; fixed scale in any ambient $d$ | **yes** |
-| `expected_discrepancy` | the null both are divided by, so 1.0 = as uniform as random | — |
-| `toroidal_separation` | the smallest toroidal $L_1$ gap to another point (defined in `torann.metrics`) | diagnostic only |
+| `toroidal_separation` | smallest toroidal $L_1$ gap from each new point to its nearest other point (defined in `torann.metrics`) | **iterative clearance / coverage** (normalise by `radius_for_count(d, n_total, target=1)`) |
+| `wrap_around_discrepancy` | deviation from uniform over every wrap-around box, full dimension | global uniformity diagnostic |
+| `projection_discrepancy` | the same, averaged over 1-D / 2-D coordinate projections; fixed scale in any ambient $d$ | marginal uniformity diagnostic |
+| `expected_discrepancy` | the null both discrepancies are divided by, so 1.0 = as uniform as random | — |
 | `euclidean_separation`, `calculate_grid_coverage` | non-wrapping separation, and grid occupancy | provenance only |
 
 ### Division of labour with torann
@@ -192,9 +191,8 @@ Uniformity metrics do not survive high dimension equally well, so
 `torann` answers **geometric** questions — which points are near which, and how
 far apart. It owns the neighbour index and the *definitions* of toroidal point
 metrics, each being one exact k-NN scan. ESS owns everything about **purpose**:
-how designs are generated, and which metric decides that one is better. That
-second question depends on what the points are for, so it is answered here and
-not there.
+how new points are generated and relaxed into empty regions, and how they are
+evaluated.
 
 The line was drawn after the alternative failed. With a metric defined in one
 project and chosen in another, a rename in one silently outlived the other: two
@@ -205,27 +203,22 @@ regression — for weeks, without ever failing. `test/test_examples.py` now runs
 every example end to end, because importing them does not catch a bad key
 inside a report function.
 
-**Rank designs with the two discrepancies.** They measure deviation from
-uniformity and reference no point metric at all, so no choice of geometry
-can flatter an arm that happened to optimise it. Divide by
-`expected_discrepancy(n, s)` and the scale is fixed: 1.0 is as uniform as
-random, lower is better, and above 1.0 is worse than random — a real and
-observed failure mode, not a rounding artefact.
+**Evaluating iterative re-exploration vs. one-shot uniformity.** Because ESS
+iteratively adds points around existing anchors (both across relaxation epochs
+and across repeated rounds), one-shot designs like LHS or Sobol are not
+comparable baselines: they lay out a fixed count at once and ignore existing
+points. At high dimension the volume is too large for a modest point budget to
+eliminate global holes, so iterative exploration is evaluated first on the
+clearance of the newly placed points to their nearest other point
+(`toroidal_separation`, normalised by the fair-share radius
+`R1 = geometry.radius_for_count(d, n_total, target=1)`), and second on the
+expected fitness of the regions discovered when guided.
 
-The separations are raw distances, so they are only meaningful inside one
-fixed geometry; ranking an $L_1$-optimised design against an
-$L_2$-optimised one with either asks which is better at the thing one of
-them optimised. `calculate_grid_coverage` saturates and inverts above
-$d \approx 8$ and cannot be built past $d \approx 20$.
-
-Clark-Evans has been **removed**. It has meaning only divided by an
-expected nearest-neighbour distance, which makes it a statistic about a
-*metric* rather than about uniformity — so it cannot compare designs that
-optimised different geometries, which is most of the comparisons worth
-making. It was also blunt where it was valid: across a change under which
-2-D projection discrepancy moved six-fold, it moved 1.4%, and it scored a
-design that is worse than random in its projections as 24% better than
-random.
+For full-design uniformity diagnostics across different geometries, divide
+`wrap_around_discrepancy` or `projection_discrepancy` by
+`expected_discrepancy(n, s)`: 1.0 is as uniform as random, and lower is better.
+`calculate_grid_coverage` saturates above $d \approx 8$ and cannot be built
+past $d \approx 20$. Clark-Evans has been **removed**.
 
 ## Benchmark
 

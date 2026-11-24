@@ -34,7 +34,6 @@ from torann import rust as _torann_rust
 
 from . import attraction, geometry, samplers
 
-logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 """logging.Logger: Module-level logger for debugging ESA optimization steps."""
 
@@ -1105,7 +1104,7 @@ def esa(
     *,
     fitness: np.ndarray | list | None = None,
     n: int | None = None,
-    p: float = 1.0,
+    p: float | np.floating = 1.0,
     C: float = 12.0,
     w: float = 0.05,
     fitness_weight: float = 1.0,
@@ -1325,7 +1324,7 @@ def ess(
     *,
     fitness: np.ndarray | list | None = None,
     n: int | None = None,
-    p: float = 1.0,
+    p: float | np.floating = 1.0,
     **kwargs,
 ) -> np.ndarray:
     r"""Empty Space Strategy (ESS): returns the combined data set.

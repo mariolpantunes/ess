@@ -148,7 +148,7 @@ class TestRowBlocking(unittest.TestCase):
     def test_chunking_does_not_change_the_forces(self):
         """Same result whichever block size the budget implies."""
         # `ess.ess` the attribute is the public function, not this module
-        core = sys.modules["ess.ess"]
+        core: typing.Any = sys.modules["ess.ess"]
 
         rng = np.random.default_rng(0)
         active = rng.random((40, 3))

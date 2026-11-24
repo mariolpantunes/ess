@@ -8,18 +8,19 @@ import time
 import numpy as np
 
 import ess
+from ess import geometry
 
 # Disable logging to keep profile output clean
 logging.basicConfig(level=logging.CRITICAL)
 
 
 def profile_esa_split(
-    n=2000,
-    search_mode="k_nn",
-    k=None,
-    radius=None,
-    metric="gaussian",
-    batch_size=50,
+    n: int = 2000,
+    search_mode: geometry.SearchMode = "k_nn",
+    k: int | None = None,
+    radius: float | None = None,
+    metric: str = "gaussian",
+    batch_size: int = 50,
 ):
     """
     Runs a profile for a specific N value and configuration.
