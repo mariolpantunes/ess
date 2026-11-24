@@ -186,6 +186,7 @@ docs/
 *.json
 !pyrightconfig.json
 examples/out/
+results/
 
 # Agent scratch
 .claude/

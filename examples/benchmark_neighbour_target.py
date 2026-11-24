@@ -2,9 +2,9 @@ r"""Is `NEIGHBOUR_TARGET` the right force scale for k-NN mode?
 
 In k-NN mode the interaction radius selects nothing -- `k` does that. It is
 the unit of length the run is expressed in: $\hat{d} = d_{L1}/R$ feeds every
-force law, the step is $\eta F R$, and `STEP_CAP` bounds travel to a
-fraction of $R$. `ess.NEIGHBOUR_TARGET` is how that length is specified, as
-the neighbour count $R$ is derived to hold.
+force law, and the step shrinks from each point's nearest-neighbour distance
+as $\text{near}_i / (t + C)$. `ess.NEIGHBOUR_TARGET` is how that length is
+specified, as the neighbour count $R$ is derived to hold.
 
 The value is a compromise between two readings that move in opposite
 directions, and this script measures both:
@@ -79,13 +79,12 @@ def pull(target, seed, weight):
     bounds = np.tile([-5.0, 5.0], (PULL_DIM, 1))
     rng = np.random.default_rng(seed)
     static = rng.uniform(-5, 5, (PULL_STATIC, PULL_DIM))
-    attract = -np.linalg.norm(static, axis=1)
+    fitness = np.linalg.norm(static, axis=1)
     shared = {"n": PULL_N, "seed": 11 + seed, "search_mode": "k_nn",
               "radius_target": target}
     repulsive = ess.esa(static, bounds, **shared)
-    composite = ess.esa(static, bounds, attractiveness=attract,
-                        attraction_weight=weight, attraction_metric="cauchy",
-                        attraction_kwargs={"power": 1.0}, **shared)
+    composite = ess.esa(static, bounds, fitness=fitness,
+                        fitness_weight=weight, **shared)
     return float(np.linalg.norm(repulsive, axis=1).mean()
                  - np.linalg.norm(composite, axis=1).mean())
 

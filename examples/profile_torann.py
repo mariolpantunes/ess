@@ -37,8 +37,8 @@ from torann.brute import exact_knn
 
 OUT = os.path.join(os.path.dirname(__file__), "out")
 
-# Fraction of a spacing a point travels per epoch (mirrors ess.STEP_CAP).
-STEP_FRACTION = 0.02
+# Fraction of a spacing a point travels per epoch during relaxation.
+STEP_FRACTION = 0.04
 
 
 def recall_at_k(index, arena, queries, k, n_probe=256, seed=0):
