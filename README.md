@@ -13,13 +13,14 @@ It simulates electrostatic repulsive forces to "relax" new points into the empty
 
 * **Empty Space Algorithm (ESA)**: Uses physics-inspired repulsive forces (Gaussian, Softened Inverse, etc.) to maximize the separation between points.
 * **Toroidal Geometry (New in v0.4.0)**: The relaxation runs on the unit torus $[0, 1)^d$ under the toroidal L1 metric — opposite faces are identified, so there are no walls, no clipping, and no edge-clumping artifacts by construction.
-* **Toroidal $L^p$, $0 < p \le 1$ (New in v0.8.0)**: `esa(..., p=0.5)` runs the neighbour search, the interaction radius, the step cap, the placement and the attractiveness estimate under the toroidal $L^p$ quasi-norm, where a point is near the points that agree with it on most axes. The default is $p = 1$. The exponent decides which points interact and how strongly; the push itself is along $\operatorname{sign}(r)$ of the displacement at every $p$ (the exact gradient at $p = 1$, a measured choice below it). Requires `torann>=0.6.0`.
+* **Toroidal $L^p$, $0 < p \le 1$ (New in v0.8.0)**: `esa(..., p=0.5)` runs the neighbour search, the interaction radius, the step schedule, the placement and the fitness terrain estimate under the toroidal $L^p$ quasi-norm, where a point is near the points that agree with it on most axes. The default is $p = 1$. The exponent decides which points interact and how strongly; the push itself is along $\operatorname{sign}(r)$ of the displacement at every $p$ (the exact gradient at $p = 1$, a measured choice below it). Requires `torann>=0.6.0`.
 * **Radius-Based Interactions**: Supports physical range searches (interacting with *all* neighbors within a radius) alongside standard k-NN, with automatic L1-ball radius estimation for high-dimensional spaces.
 * **Single Scalable Engine**: Neighbour search is [torann](https://github.com/mariolpantunes/torann) — exact brute force at small N, toroidal LSH above its threshold, chosen internally; per-epoch coordinate updates are native (no index rebuilds).
-* **Robust Early Stopping**: Convergence is detected on the force field itself (plateau of the largest net force, learning-rate-decoupled), typically stopping in tens of epochs instead of hundreds.
+* **Single-Parameter Own-Gap Step & Post-Relaxation Re-Placement**: Each epoch moves a point by its own nearest-neighbour distance divided by $t + C$ (`C=12.0` by default) along the unit force direction, eliminating separate learning-rate, decay and step-cap knobs. After convergence, the lowest-scoring fraction `w` (`w=0.05` by default, 5%) is offered a best-candidate re-placement (`_smart_init`), accepted only if it improves clearance.
+* **Robust Early Stopping**: Convergence is detected on what the relaxation is for: the run stops when the nearest-neighbour distance of the points being placed (its 5% quantile, read off the neighbour query) and, when guided, the spread-scaled mean field elevation stop improving for `patience` (default 12) epochs.
 * **High-Dimensional Metrics**: Ranks designs on wrap-around and projection discrepancy — normalised so 1.0 = random, and valid at any ambient dimension. Toroidal separation (shared with [torann](https://github.com/mariolpantunes/torann)) is reported as a diagnostic. Clark-Evans has been removed; see *Metrics* below for why.
-* **Smart Initialization**: Uses a vectorized "Best Candidate" sampling strategy to seed new batches in the most promising void regions.
-* **Guided Attraction (New in v0.5.0)**: Given the attractiveness of the measured points, placement and relaxation both balance repulsion against a pull toward promising regions, with the collapse condition checked rather than discovered.
+* **Smart Initialization**: Uses a sequential "Best Candidate" sampling strategy to seed new batches in the most promising void regions without collapsing.
+* **Space-Based Terrain Guidance**: Given the `fitness` of the measured points (**lower = closer to the ground = better**), the space itself acts as an inverse-distance terrain (`attraction.InverseDistance`) built once via buffered leave-one-out cross-validation (`attraction.choose_k`, selecting the optimal neighbourhood count $k$ and field `trust` in $[0, 1]$). During relaxation, uphill movement along the terrain slope (climbing towards higher fitness/cost) is damped without injecting point-source pulls that could collapse the search.
 
 > **Note:** The library is designed to be compliant with modern Python 3.12+ standards.
 
@@ -101,117 +102,47 @@ new_points = esa(
 )
 ```
 
-### Guided ESS: attraction toward what is worth exploring (New in v0.5.0)
+### Guided ESS: terrain guidance toward promising regions
 
-Pure repulsion treats every empty region as equally worth probing. Given a
-measurement of how *attractive* the existing points are, the search becomes a
-force balance instead: points repel by distance and are attracted by quality.
+Pure repulsion treats every empty region as equally worth probing. Given the
+measured `fitness` of the existing points (**lower = closer to the ground = better**,
+passed as a keyword argument; from `fitness` onwards all arguments are
+keyword-only), the space itself acts as a terrain that guides both initial
+placement and relaxation:
 
 ```python
 new_points = esa(
-    samples, bounds, n=60,
-    attractiveness=-objective_values,   # higher is more attractive
-    attraction_weight=0.5,              # pull against the repulsion
-    attraction_metric='cauchy',         # must decay slower than the repulsion
-    attraction_kwargs={'power': 1.0},
-    att_model='idw',                    # how unmeasured positions are estimated
+    samples, bounds,
+    fitness=objective_values,           # lower = closer to the ground = better
+    n=60,                               # defaults to max(1, len(samples)) if omitted
+    p=1.0,                              # toroidal L^p metric exponent (0 < p <= 1)
+    C=12.0,                             # own-gap step schedule: near_i / (t + C)
+    w=0.05,                             # 5% post-relaxation worst-point re-placement
+    fitness_weight=1.0,                 # uphill damping & placement weight
 )
 ```
 
-`attractiveness` is only ever known for the points whose objective has been
-paid for, so a candidate's is estimated. `att_model` picks how:
+**How the terrain works:**
 
-| model | coefficients | how they are obtained |
-|---|---|---|
-| `idw` | none | **default**: inverse-distance over the `k_att` nearest measured points |
-| `projection` | `2d` | correlation against the basis, James-Stein shrunk |
-
-`fourier`, `detrended` and `auto` were removed in v1.0.0. All three fit `2d`
-coefficients, and a caller supplies anchors by population size rather than by
-dimension, so staying identifiable needed a population growing linearly in `d`
-— where every anchor is a paid objective call. Measured inside OBLESA as the
-share of the selected population the relaxed block won, against 33% parity,
-`detrended` fell 70.4 → 13.8 across `d = 8..64` while `idw` held 74.9 → 71.0.
-`auto` additionally cross-validated four candidates on every fit: 23 ms at 60
-sources, 86 seconds at 15360.
-
-**Why a trigonometric basis.** The space is a torus, so a model of it has to be
-periodic — a polynomial is discontinuous at the seam and would assert a
-gradient across a boundary the space does not have. The periodic analogue of a
-quadratic well is the von Mises density, whose logarithm is
-`κ cos(θ − μ) = (κ cos μ) cos θ + (κ sin μ) sin θ` — one first-harmonic term per
-axis. A first-harmonic model *is* an additive log-von-Mises field. Higher
-harmonics buy narrower and multimodal wells, at `2·harmonics·d` coefficients.
-
-**Which to use.** `idw`, unless you know the objective is additive and you
-have far more measured points than `2d`. Held-out error, normalised so 1.0 is
-what predicting the mean scores — the removed ridge is kept in the table
-because it is *why* the others are hedged:
-
-| truth | ridge (removed) | projection | idw |
-|---|---|---|---|
-| additive, `d=8`, `M=300` | **0.31** | 0.36 | 0.48 |
-| additive, `d=100`, `M=30` | **0.78** | 0.80 | 0.80 |
-| non-additive, `d=32`, `M=120` | 1.08 | **0.81** | 0.82 |
-| non-additive, `d=100`, `M=300` | 1.27 | **0.81** | 0.84 |
-
-Above 1.0 means worse than abstaining. Least squares commits hard, which pays
-when the basis matches the truth and costs when it does not; the shrunk
-projection and the interpolation both hedge. Four of the eight objectives in
-the downstream benchmark are non-separable, which is where that matters — and
-it is why the model that wins the first row was still the wrong default.
-
-**Two costs `idw` does carry**, both measured rather than argued. Its query is
-`O(M·d)` with no closed form to tabulate, so 512 queries against 15360 sources
-at `d=100` take 2.35 s against 2.4 ms for a tabulated harmonic model. And in
-high dimension distances concentrate, so more sources stop helping:
-leave-one-out error at `d=100` moves only 0.624 → 0.614 as `M` goes 60 → 300.
-Neither bites at the anchor counts a population-sized caller supplies (60–400),
-which is the regime this default is chosen for.
-
-No fixed choice wins in both regimes, and the one that decides it — whether the
-additive basis matches the objective — cannot be read off `M` and `d`. So
-`auto` measures instead: each candidate is fitted on part of the measured
-points and scored on the rest. The sources are already paid for, so this costs
-no objective evaluations. Below `2 * folds` sources there is nothing to hold
-out and it interpolates, which needs no coefficients to estimate.
-
-**Custom models.** Subclass `AttractionModel`, implement `fit` and `at`, and
-pass the instance:
-
-```python
-class MyModel(ess.AttractionModel):
-    def fit(self, positions, values, confidence):
-        ...
-        return self
-
-    def at(self, positions):
-        return ...
-
-ess.esa(samples, bounds, n=60, attractiveness=-scores, att_model=MyModel())
-```
-
-`att_model` also takes a tuned built-in, e.g. `ess.HarmonicProjection(harmonics=3)`.
-
-Two guards are checked rather than left to a run. An attraction that
-out-pulls repulsion at contact collapses every free point onto its most
-attractive neighbour, and the plateau detector would report that as
-convergence — so `attraction_weight * F_att(0) < F_rep(0)` is enforced, which
-refuses weights at or above 2.5 for the default pair. And attraction only
-overcomes repulsion *somewhere* if it decays more slowly, so using one law for
-both sides warns: two proportional forces can never cross, and the attraction
-merely scales the repulsion down instead of pulling.
-
-`placement_weight` separates the two stages. Placement picks where a point
-starts; the relaxation decides where it settles. Passing `None` pairs them,
-which is the sensible default; setting it apart from `attraction_weight` lets
-guided placement and guided relaxation be measured separately.
-
-The estimate is a fitted function, so it improves with the number of *measured*
-points and nothing else. At `d=100` the model carries 201 coefficients and
-needs roughly 640 points to reach the error `d=8` reaches with 160 — a budget
-of 60 is what a weak high-dimensional attraction actually measures, and no work
-on the estimator changes that.
+1. **Static per call, intensive, and IDW-only**: Only the measured anchors carry
+   true objective values, interpolated by inverse-distance weighting
+   (`attraction.InverseDistance`, the only model that survives high dimensionality
+   without fitting under-determined coefficients). At the start of `esa`,
+   `attraction.choose_k` runs a buffered leave-one-out cross-validation (at
+   buffer $R_1$, the fair-share radius) to choose the optimal neighbourhood count
+   $k \in \{8, 32, 128, M\}$ and compute the field's rank-correlation
+   `trust` in $[0, 1]$. At low dimension it picks local neighbourhoods ($k = 8$);
+   at high dimension ($d \ge 16$) it widens to all anchors so the slope stays
+   informative despite distance concentration.
+2. **Uphill terrain damping (`damp`)**: No point exerts an attractive pull on
+   another point (which would collapse when points accumulate in good regions).
+   Instead, particles repel each other and the field slope $\nabla f(x)$
+   damps the component of the repulsive force that pushes **uphill** (towards
+   higher cost / worse expected fitness), while movement **downhill** towards
+   the ground is unbraked.
+3. **Neutral on flat or uninformative landscapes**: A constant `fitness`
+   vector or a deceptive landscape with `trust == 0` produces zero damping and
+   reproduces pure repulsion bit-for-bit.
 
 ## Algorithms
 

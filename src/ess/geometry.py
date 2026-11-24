@@ -57,8 +57,8 @@ r"""int: Neighbours the interaction radius should contain in **k-NN mode**.
 
 Here the radius selects nothing -- `k` does that -- so this is not really a
 neighbour count at all. It is the *unit of length* the run is expressed in:
-$\hat{d} = d_{L1}/R$ feeds every force law, the step is $\eta F R$, and
-`ess.STEP_CAP` bounds travel to a fraction of $R$. A count is simply how
+$\hat{d} = d_{L1}/R$ feeds every force law, and the step shrinks from the
+point's nearest-neighbour distance as $\text{near}_i / (t + C)$. A count is simply how
 that length is specified, because a count inverts the distance law and so
 scales correctly with $d$ and $N$, which a raw length cannot.
 
@@ -499,9 +499,8 @@ def neighbourhood_for(
 
     Note:
         Measured on the repulsion, which is what `search_mode` governs. The
-        attraction estimate is a separate use of the index with its own
-        argument (`ess.esa`'s ``att_search_mode``) and its own neighbour
-        count, and this crossover is not evidence about it.
+        attraction field is a separate use of the index with its own neighbour
+        count (`attraction.choose_k`), and this crossover is not evidence about it.
 
     Args:
         dim (int): Dimensionality $D$.

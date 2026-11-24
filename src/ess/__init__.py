@@ -27,7 +27,7 @@ The simulation runs on the unit torus $[0, 1)^d$ under the toroidal L1
 metric — opposite faces are identified, so the relaxation has no walls
 and no edge artifacts. `esa(p=...)` selects a toroidal $L^p$ quasi-norm,
 $0 < p \le 1$, in its place; the exponent governs the search, the radius,
-the step cap, the placement and the attractiveness estimate together. Neighbour search is a single engine,
+the step schedule, the placement and the fitness terrain estimate together. Neighbour search is a single engine,
 `torann.ToroidalNN`: exact brute force at small $n$, toroidal LSH above
 its threshold, chosen internally by size.
 
@@ -102,7 +102,7 @@ from torann import ToroidalNN
 from . import attraction, baseline, geometry, legacy, samplers, utils
 
 # 2. Main API Exports
-from .attraction import AttractionModel, InverseDistance
+from .attraction import InverseDistance
 from .ess import esa, ess
 from .geometry import (
     LOW_DIM,
@@ -125,7 +125,6 @@ __all__ = [
     "LOW_DIM",
     "NEIGHBOUR_TARGET",
     "RADIUS_TARGET",
-    "AttractionModel",
     "InverseDistance",
     "LHCSampler",
     "Neighbourhood",

@@ -38,39 +38,48 @@ logging.basicConfig(level=logging.INFO, format="%(message)s")
 logger = logging.getLogger(__name__)
 """logging.Logger: Module-level logger for debugging ESA optimization steps."""
 
-STEP_CAP = 0.01
-r"""float: Per-epoch travel budget, as a fraction of the interaction radius.
+PLACEMENT_ROUND = 32
+r"""int: Slots placed per round of the best-candidate initialisation.
 
-Displacement is capped in the metric the radius is expressed in -- the
-run's toroidal $L^p$, **L1** by default -- so a point never crosses more
-than 1% of the interaction radius per epoch. It is the only cap: the
-learning rate sets the step, and this shortens a step that is too long.
-It was 0.02 through 0.7.3.
-Early on the cap binds, which turns the update into a constant-speed
-flow along the force direction — only the *direction* matters, which is
-why `lr` barely affects the outcome; as the learning rate decays the
-step falls below the cap and the run anneals into place.
-
-Two failure modes this avoids, both measured at $d = 32$: capping the
-L2 norm instead lets each coordinate move by $R/\sqrt{d}$ rather than
-$R/d$ (a quarter of the domain per epoch, toroidal Clark-Evans 1.28 ->
-1.06), and a loose cap of 0.25 leaves every step maximal, which never
-settles (1.14 versus 1.30 here).
+A slot must be far from the slots placed before it, not only from what
+was indexed when the batch began (see `_smart_init`). Inside a round that
+is an exact running minimum, quadratic in the round; between rounds it is
+the index, which costs a `promote`. Measured at 16 to 256 on clustered
+static data ($n = 20000$ at $d = 2, 5$; $n = 5000$ at $d = 16$) the
+placement is the same quality at every size and cheapest here: at 256 the
+running minimum costs more than the neighbour queries it sits beside, and
+below 32 the per-round overhead starts to show.
 """
 
+GAP_QUANTILE = 0.05
+r"""float: Quantile of the nearest-neighbour distance the stop rule watches.
 
+Each epoch the neighbour query already returns, for every point being
+relaxed, the distance to its nearest other point. The relaxation exists to
+raise the low end of that distribution, so the stop rule watches its 5%
+quantile: the minimum is one point and too noisy to wait on, the median
+saturates while the closest pairs are still separating.
+"""
 
-#: Slots placed per round of the best-candidate initialisation.
-#:
-#: A slot must be far from the slots placed before it, not only from what
-#: was indexed when the batch began (see `_smart_init`). Inside a round that
-#: is an exact running minimum, quadratic in the round; between rounds it is
-#: the index, which costs a `promote`. Measured at 16 to 256 on clustered
-#: static data ($n = 20000$ at $d = 2, 5$; $n = 5000$ at $d = 16$) the
-#: placement is the same quality at every size and cheapest here: at 256 the
-#: running minimum costs more than the neighbour queries it sits beside, and
-#: below 32 the per-round overhead starts to show.
-PLACEMENT_ROUND = 32
+GAP_IMPROVE = 0.01
+r"""float: Relative gain of the watched gap that counts as progress.
+
+A batch is settled when the `GAP_QUANTILE` gap has not grown by 1% over
+its best value (and, when guided, the mean field value has not dropped by
+its spread-scaled `ATT_IMPROVE`) for `patience` consecutive epochs.
+"""
+
+ATT_IMPROVE = 0.005
+"""float: Drop of the mean estimated fitness (in units of the batch spread) that counts as progress."""
+
+_RANK_STD = 12.0 ** -0.5
+"""float: Standard deviation of a rank spread evenly over 0 to 1."""
+
+ATT_EVERY = 5
+"""int: Epochs between evaluations of the fitness terrain guide during relaxation."""
+
+PLACEMENT_WEIGHT_CAP = 0.5
+"""float: Maximum fitness weight applied during best-candidate placement so placement never over-clusters."""
 
 K_LOCAL = 5
 r"""int: Cap on the number of interacting neighbours per point.
@@ -214,11 +223,11 @@ METRIC_REGISTRY = {
 
 
 def _rank_normalise(values: np.ndarray) -> np.ndarray:
-    r"""Attractiveness to $[0, 1]$ by rank, highest = 1.
+    r"""Fitness (elevation) to $[0, 1]$ by rank, lowest = 0 (ground), highest = 1 (uphill).
 
-    **The force must never see the caller's raw units.** Objective values
+    **The terrain must never see the caller's raw units.** Objective values
     span orders of magnitude between problems and between regions of one
-    problem, so an `attraction_weight` calibrated on a landscape scoring
+    problem, so a `fitness_weight` calibrated on a landscape scoring
     $10^{-3}$ means something else entirely on one scoring $10^{6}$ — the
     balance point would be set by the objective rather than by the knob.
 
@@ -230,15 +239,15 @@ def _rank_normalise(values: np.ndarray) -> np.ndarray:
 
     Ranks are used rather than z-scores because they are bounded and
     outlier-proof: one catastrophic sample cannot compress every other point
-    into a corner of the range. Ties share the mean rank, so equally
-    attractive points pull equally. A constant vector maps to all ones —
-    every point equally attractive, which is the sensible reading.
+    into a corner of the range. Ties share the mean rank, so equally good
+    points sit at equal elevation. A constant vector maps to all zeros
+    (flat ground).
 
     Args:
-        values (np.ndarray): Raw attractiveness, higher = more attractive.
+        values (np.ndarray): Raw fitness, lower = closer to the ground (better).
 
     Returns:
-        np.ndarray: Ranks scaled to $[0, 1]$, same shape.
+        np.ndarray: Ranks scaled to $[0, 1]$, same shape (0 = best, 1 = worst).
     """
     v = np.asarray(values, dtype=np.float64).ravel()
     if v.size == 0:
@@ -246,83 +255,14 @@ def _rank_normalise(values: np.ndarray) -> np.ndarray:
     order = np.argsort(v, kind="stable")
     ranks = np.empty(v.size, dtype=np.float64)
     ranks[order] = np.arange(v.size, dtype=np.float64)
-    # average the ranks of tied values so equals pull equally
+    # average the ranks of tied values so equals share the same elevation
     uniq, inv, counts = np.unique(v, return_inverse=True, return_counts=True)
     if uniq.size < v.size:
         sums = np.zeros(uniq.size)
         np.add.at(sums, inv, ranks)
         ranks = (sums / counts)[inv]
     span = ranks.max() - ranks.min()
-    return np.ones_like(ranks) if span == 0 else (ranks - ranks.min()) / span
-
-
-def _check_attraction_balance(
-    metric_fn: collections.abc.Callable,
-    metric_kwargs: dict,
-    attraction_fn: collections.abc.Callable,
-    attraction_kwargs: dict,
-    weight: float,
-) -> None:
-    r"""Refuse an attraction that can out-pull repulsion at contact.
-
-    Dart cannot collapse: it picks from discrete candidates and re-measures
-    novelty against everything placed. A continuous relaxation can — an
-    attraction that dominates at short range piles every active point onto
-    the most attractive static one, and the plateau detector would report
-    that as convergence, because the forces really have stopped changing.
-
-    Every law in `METRIC_REGISTRY` is finite at $\hat d = 0$, so the guard
-    is one inequality and can be *checked* rather than tested for:
-
-    $$ w \cdot a_{\max} \cdot F_{\text{att}}(0) \;<\; F_{\text{rep}}(0) $$
-
-    with $a_{\max} = 1$ after `_rank_normalise`, which is the worst case.
-
-    A second condition decides whether the attraction does anything at all.
-    It only overcomes repulsion somewhere if it decays *more slowly*, so the
-    net force must change sign at some separation; if it never does, the
-    term merely scales repulsion down near attractive neighbours. That is a
-    legitimate configuration — points still settle closer to good regions —
-    but it is not what "attraction" suggests, so it warns. The common way to
-    land there is using one law for both sides: two `linear` terms are
-    proportional and can never cross.
-
-    Args:
-        metric_fn (Callable): Repulsion law, log-space.
-        metric_kwargs (dict): Its parameters.
-        attraction_fn (Callable): Attraction law, log-space.
-        attraction_kwargs (dict): Its parameters.
-        weight (float): $w$.
-
-    Raises:
-        ValueError: If the guard fails, naming both magnitudes.
-    """
-    zero = np.zeros(1)
-    f_rep = float(np.exp(metric_fn(zero, **metric_kwargs))[0])
-    f_att = float(np.exp(attraction_fn(zero, **attraction_kwargs))[0])
-    if weight * f_att >= f_rep:
-        raise ValueError(
-            f"attraction would out-pull repulsion at contact: "
-            f"weight * F_att(0) = {weight * f_att:.4g} >= F_rep(0) = "
-            f"{f_rep:.4g}. Every active point would collapse onto its most "
-            f"attractive neighbour, and the plateau detector would call that "
-            f"convergence. Lower attraction_weight below {f_rep / f_att:.4g}, "
-            f"or give the attraction a shallower law."
-        )
-
-    d_hat = np.linspace(1e-3, 4.0, 512)
-    net = (np.exp(metric_fn(d_hat, **metric_kwargs))
-           - weight * np.exp(attraction_fn(d_hat, **attraction_kwargs)))
-    if not (net < 0).any():
-        logger.warning(
-            "attraction never overcomes repulsion at any separation, so it "
-            "only weakens the push near attractive neighbours rather than "
-            "pulling toward them. This is what happens when both sides use "
-            "the same law with the same shape (two `linear` terms are "
-            "proportional and can never cross). Give the attraction a "
-            "slower-decaying law via attraction_metric, or raise "
-            "attraction_weight."
-        )
+    return np.zeros_like(ranks) if span == 0 else (ranks - ranks.min()) / span
 
 
 def _check_metric_kwargs(
@@ -446,103 +386,52 @@ def _inv_scale(
 
 
 class _AttractionField:
-    r"""Attractiveness as a field over the torus, and the only source of
-    estimates for it.
+    r"""Fitness (elevation) as a terrain field over the torus, and the only
+    source of estimates for it.
 
     Two things this exists to make unmissable.
 
-    **Where estimation happens.** Every inferred attractiveness in the library
+    **Where estimation happens.** Every inferred fitness in the library
     comes out of `at`. Nothing else writes into the estimated region, so the
     question "is this number measured or inferred?" is answered by reading one
     class rather than tracing an array through a loop.
 
-    **That attractiveness belongs to a position, not to a point.** The estimate
-    used to be taken once at placement and carried by the point for the whole
-    relaxation, which made one side of the force balance live and the other
-    stale. A point that relaxed *into* a good region kept its old low value and
-    never became an attractor; worse, a point that drifted *out* of one kept
-    its old high value and went on pulling everything else toward where it no
-    longer was. Repulsion has always depended on current positions; now
-    attraction does too.
-
-    Sources carry a confidence. Measured points -- the ones whose objective was
-    actually paid for -- sit at 1 and never decay. A value that was itself
-    inferred enters at `decay` times the confidence of what it was inferred
-    from, so a chain of inference fades toward the mean instead of laundering
-    itself into ground truth.
-
-    *How* a position is estimated is `attraction.AttractionModel`, which this
-    holds one of. This class owns the sources and their confidence; the model
-    owns the estimate.
+    **That fitness belongs to a position, not to a point.** The estimate is
+    a property of the space itself (`attraction.InverseDistance`), fitted once
+    from the measured anchors at the start of `esa` and queried as the moving
+    points traverse the terrain.
 
     Args:
         positions (np.ndarray): Measured points, shape $(M, D)$, in $[0, 1)$.
-        values (np.ndarray): Their attractiveness, shape $(M,)$, normalised.
+        values (np.ndarray): Their fitness (elevation), shape $(M,)$, normalised
+            so lower = closer to the ground (better).
         k (int): Neighbours an inverse-distance estimate averages over.
         power (float): Its inverse-distance exponent.
-        decay (float): Confidence multiplier applied to inferred sources.
-        model: Name, class or instance; see `attraction.get_model`.
-        p (float): Exponent of the toroidal $L^p$ metric; forwarded to a
-            model that takes one.
+        p (float): Exponent of the toroidal $L^p$ metric.
     """
 
-    __slots__ = ("_conf", "_pos", "_val", "decay", "model", "n_measured")
+    __slots__ = ("_pos", "_val", "model", "n_measured")
 
-    def __init__(self, positions, values, k=8, power=2.0, decay=0.5,
-                 model: "str | type | attraction.AttractionModel" = "idw",
-                 search_mode: geometry.ResolvedMode = "k_nn",
-                 radius: float | None = None, p: float = 1.0):
+    def __init__(self, positions, values, k=8, power=2.0, p: float = 1.0):
         self._pos = np.asarray(positions, dtype=np.float64)
         self._val = np.asarray(values, dtype=np.float64)
-        self._conf = np.ones(self._val.shape[0], dtype=np.float64)
         self.n_measured = int(self._val.shape[0])
-        self.decay = float(decay)
-        # `get_model` filters by the constructor's signature, so a model
-        # that has no notion of a search mode simply does not receive one --
-        # the same capability protocol OBLESA forwards its keywords under.
-        self.model = attraction.get_model(
-            model, k=k, power=power, search_mode=search_mode, radius=radius,
-            p=p)
-        # A model built by the caller keeps the exponent it was built with,
-        # and one whose constructor takes none never hears of it. The first
-        # can be checked, so it is: an estimate ranking neighbours in
-        # another metric than the repulsion it balances is the same error
-        # as a mismatched index, and `esa` refuses that one too.
-        model_p = getattr(self.model, "p", None)
-        if model_p is not None and not math.isclose(
-                float(model_p), p, rel_tol=1e-6):
-            raise ValueError(
-                f"p={p} but att_model was built with p={float(model_p)}. "
-                f"Build it with the run's exponent, or pass the class or "
-                f"its name and let `esa` do so.")
-        self.model.fit(self._pos, self._val, self._conf)
+        self.model = attraction.InverseDistance(k=k, power=power, p=p).fit(
+            self._pos, self._val)
 
     def at(self, positions: np.ndarray) -> np.ndarray:
-        """Estimated attractiveness at `positions`, shape $(Q,)$."""
+        """Estimated fitness (elevation) at `positions`, shape $(Q,)$."""
         return self.model.at(np.asarray(positions, dtype=np.float64))
 
-    def add_inferred(self, positions: np.ndarray, values: np.ndarray) -> None:
-        """Fold settled-but-unmeasured points in as reduced-confidence sources.
-
-        For a batched run, where an earlier batch has finished relaxing and its
-        points now anchor the next one. Their values were inferred, so they
-        enter at `decay` times the mean confidence of the sources that produced
-        them rather than as ground truth.
-        """
-        if len(values) == 0:
-            return
-        conf = self.decay * float(self._conf.mean())
-        self._pos = np.vstack((self._pos, np.asarray(positions, np.float64)))
-        self._val = np.concatenate((self._val, np.asarray(values, np.float64)))
-        self._conf = np.concatenate(
-            (self._conf, np.full(len(values), conf, dtype=np.float64)))
-        self.model.fit(self._pos, self._val, self._conf)
+    def guide(self, positions: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Estimate and uphill slope of the terrain at `positions`."""
+        return self.model.guide(np.asarray(positions, dtype=np.float64))
 
 
 def _zscore(values: np.ndarray) -> np.ndarray:
     """Standardise, returning zeros when every value is the same.
 
-    Used to put novelty and estimated attractiveness on one scale so the
+    Used to put novelty and estimated fitness on one scale so the
     weight between them means the same thing on any objective.
     """
     sd = values.std()
@@ -559,7 +448,7 @@ def _smart_init(
     init_sampler: samplers.Sampler,
     pool: int = 15,
     field: "_AttractionField | None" = None,
-    attraction_weight: float = 0.0,
+    fitness_weight: float = 0.0,
     p: float = 1.0,
 ) -> np.ndarray:
     r"""Initializes new points by Best Candidate Sampling against the index.
@@ -580,27 +469,30 @@ def _smart_init(
     find them. With clustered static data in 2-D and $n = 5000$ that put the
     whole batch in the corners: 20% grid coverage where the raw sampler
     (``pool=1``) reaches 100%, and a largest hole that did not shrink with
-    $n$. The relaxation cannot repair it, because `STEP_CAP` bounds travel to
-    a fraction of the *local* spacing and the imbalance is global. The cost
-    of seeing the earlier slots is quadratic in the slots of one call, which
-    is why `_esa` calls this in rounds of `PLACEMENT_ROUND`.
+    $n$. The relaxation cannot repair it, because the own-gap step schedule
+    $\text{near}_i / (t + C)$ bounds travel to the *local* spacing and the
+    imbalance is global. The cost of seeing the earlier slots is quadratic
+    in the slots of one call, which is why `_esa` calls this in rounds of
+    `PLACEMENT_ROUND`.
 
     A small jitter $\xi \sim U(-10^{-3}, 10^{-3})$ breaks exact overlaps;
     the result is reduced mod 1 (no clipping — the torus has no edge to
     clip against).
 
-    **The placement mirrors the mode.** Given `attract_static`, the winner is
-    chosen on a standardised blend of novelty and the attractiveness the
-    candidate is *expected* to have,
+    **The placement mirrors the mode.** Given a fitness `field`, the winner is
+    chosen on a standardised blend of novelty (large gap) and the fitness
+    (low elevation $\hat f$, closer to the ground) the candidate is *expected*
+    to have,
 
     $$ s(c) = z\big(\text{novelty}(c)\big)
-              + w \, z\big(\hat a(c)\big) $$
+              - w \, z\big(\hat f(c)\big) $$
 
-    so a repulsive ESS places repulsively and a composite ESS places
-    compositely. Measured on the OBLESA sweep, placing on novelty alone is
-    worth nothing: unguided dart tied uniform noise 233-243 over 480 paired
-    cells, while the same search with a fitness term in the *placement* beat
-    it 309-169. Where you probe matters more than how evenly you spread.
+    so a repulsive ESS places repulsively and a guided ESS places towards
+    empty regions with lower expected fitness. Measured on the OBLESA sweep,
+    placing on novelty alone is worth nothing: unguided dart tied uniform
+    noise 233-243 over 480 paired cells, while the same search with a fitness
+    term in the *placement* beat it 309-169. Where you probe matters more than
+    how evenly you spread.
 
     Args:
         index (ToroidalNN): Fitted index holding all existing points.
@@ -609,9 +501,9 @@ def _smart_init(
         rng (np.random.Generator): Random number generator.
         init_sampler (samplers.Sampler): Candidate-pool sampler (e.g. LHS).
         pool (int): Candidates drawn per slot.
-        field (_AttractionField | None): Source of the attractiveness
+        field (_AttractionField | None): Source of the fitness
             estimate. Omit for repulsive placement.
-        attraction_weight (float): Balance against novelty in the composite
+        fitness_weight (float): Balance against novelty in the composite
             score. Zero reproduces the repulsive placement exactly.
         p (float): Exponent of the metric the index ranks by, so that the
             distance to an earlier slot is the same distance as the one to
@@ -627,26 +519,22 @@ def _smart_init(
     novelty = np.array(dists, dtype=np.float64).reshape(n_new, pool)
     slots = candidates.reshape(n_new, pool, dim)
 
-    # Repulsive ESS places on novelty alone; composite ESS places on a blend.
-    # Scoring on novelty alone in the composite mode puts every candidate as
-    # far from everything as possible -- including as far from the good
-    # regions -- and then asks the relaxation's attraction to drag it back.
-    # That is the attraction spending its budget undoing the placement
-    # instead of refining it.
-    a_hat = None
-    if field is not None and attraction_weight != 0.0:
-        a_hat = field.at(candidates).reshape(n_new, pool)
+    # Repulsive ESS places on novelty alone; guided ESS places on a blend
+    # preferring larger gap and lower expected fitness (closer to the ground).
+    f_hat = None
+    if field is not None and fitness_weight != 0.0:
+        f_hat = field.at(candidates).reshape(n_new, pool)
 
     best = np.empty(n_new, dtype=np.intp)
     for i in range(n_new):
-        if a_hat is None:
+        if f_hat is None:
             best[i] = novelty[i].argmax()
         else:
-            # Standardised per slot, so `attraction_weight` is scale-free:
+            # Standardised per slot, so `fitness_weight` is scale-free:
             # novelty shrinks as the space fills, and without this the balance
             # would drift over the batch.
             best[i] = (_zscore(novelty[i])
-                       + attraction_weight * _zscore(a_hat[i])).argmax()
+                       - fitness_weight * _zscore(f_hat[i])).argmax()
         if pool == 1 or i + 1 == n_new:
             continue  # nothing to choose between, or nobody to tell
         # The slots still to be picked now have one more point to be far
@@ -728,13 +616,9 @@ def _compute_forces(
     radius: float,
     metric_fn: collections.abc.Callable,
     rng: np.random.Generator,
-    attract: np.ndarray | None = None,
-    attraction_weight: float = 1.0,
-    attraction_fn: collections.abc.Callable | None = None,
-    attraction_kwargs: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
-    r"""Net force on each active point from its neighbour list.
+    r"""Net repulsive force on each active point from its neighbour list.
 
     This is the single force kernel for both search modes: k-NN passes the
     dense `ToroidalNN.query` result, radius mode passes
@@ -750,24 +634,6 @@ def _compute_forces(
     wrapped into $[-1/2, 1/2)$ by $r \leftarrow r - \operatorname{round}(r)$
     — so near the seam the push points the short way around, never across
     the whole domain.
-
-    **With `attract` given the sum has a second, signed term:**
-
-    $$ \vec{F}_i = \sum_j \hat u_{ij} f_{\text{rep}}(\hat d_{ij})
-       \;-\; w \sum_j \hat u_{ij}\, a_j\, f_{\text{att}}(\hat d_{ij}) $$
-
-    where $a_j \in [0, 1]$ is the neighbour's normalised attractiveness. Both
-    terms share the neighbour list and the direction $\hat u$; only the
-    magnitude law and the sign differ. Static points carry their measured
-    $a_j$. What the points being placed carry is the caller's decision, made
-    through `attract`: `_esa` writes the field's *estimate* at each one's
-    current position, so candidates in a promising region pull on one
-    another; a caller that leaves those rows at zero gets attraction toward
-    measured points only.
-
-    Note this is a *pairwise* pull, not the gradient of an interpolated
-    field, so a weight tuned against a Shepard-style surrogate does not
-    transfer to it.
 
     **The direction is the gradient of the metric supplying the
     magnitudes.** For toroidal L1 that is $\operatorname{sign}(r_l)$: every
@@ -820,14 +686,6 @@ def _compute_forces(
         radius (float): Interaction radius $R$ used to normalise distances.
         metric_fn (Callable): Log-space force law $\log f(\hat{d})$.
         rng (np.random.Generator): Generator for tie-breaking noise.
-        attract (np.ndarray | None): Per-row attractiveness over `all_data`,
-            already rank-normalised to $[0, 1]$, zero for rows that are not
-            static points. ``None`` evaluates no second term at all — not a
-            second term weighted zero — so the default path keeps exactly the
-            instruction stream it had before attraction existed.
-        attraction_weight (float): $w$, the balance against repulsion.
-        attraction_fn (Callable | None): Attraction law, log-space.
-        attraction_kwargs (dict | None): Its parameters.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
     Returns:
@@ -863,11 +721,6 @@ def _compute_forces(
         # coincidence is close to measure-zero here, which is what makes
         # "fall back for the whole block" cheaper than splitting the pairs.
         stacked = valid & (np.where(valid, block_dists, np.inf) < 1e-9)
-        directions = None
-        pull = None
-        # The kernel itself rather than a flag, so "we took the compiled
-        # path" and "the kernel exists" are one fact instead of two that a
-        # reader (or a type checker) has to keep in step.
         wd = _torann_rust.weighted_directions
         kernel = (
             wd
@@ -879,68 +732,54 @@ def _compute_forces(
         if kernel is None:
             disp = active[lo:hi, None, :] - all_data[safe_ids]
             disp -= np.round(disp)  # toroidal wrap: shortest per axis
-            # The direction is L1-normalised whatever metric `dists` is in
-            # (see the docstring for why it does not follow the exponent):
-            # torann returns the distance, the force law is evaluated on it,
-            # and the step is capped in it. A single geometry end to end.
-            norms = np.abs(disp).sum(axis=2, keepdims=True)
             if np.any(stacked):
                 noise = rng.standard_normal(size=disp.shape)
                 noise /= np.abs(noise).sum(axis=2, keepdims=True) + 1e-9
                 disp = np.where(stacked[..., None], noise, disp)
-                norms = np.where(stacked[..., None], 1.0, norms)
 
-            # grad(d_L1) = sign(delta): every coordinate is pushed equally,
-            # which is what descending L1 means. An exactly shared coordinate
-            # contributes nothing, since sign(0) = 0 — the symmetric
-            # subgradient, and the only choice that does not invent a
-            # direction.
             grad = np.sign(disp)
             norms = np.abs(grad).sum(axis=2, keepdims=True)
             directions = grad / np.maximum(norms, 1e-9)
             net = np.sum(directions * weights[..., None], axis=1)
         else:
-            net = None  # filled below, once the second weighting is known
+            (net,) = kernel(all_data, active[lo:hi], block_ids, weights[None])
 
         force_cap = 1000.0
-
-        # Both are set together by `esa`; testing the callable is what makes
-        # that pairing explicit, and it is the thing actually invoked.
-        if attract is not None and attraction_fn is not None:
-            # The log-sum-exp trick is per *term*, not across terms: a signed
-            # sum cannot share one max-subtract, because the shift that keeps
-            # one term in range can push the other under it. So the attraction
-            # gets its own maximum, its own exponentiation, and the two are
-            # combined in linear space. It looks fusable and is not.
-            a = attract[safe_ids] * valid
-            log_att = attraction_fn(d_hat, **(attraction_kwargs or {}))
-            log_att = np.where(valid, log_att, -np.inf)
-            m_a = np.max(log_att, axis=1, keepdims=True)
-            m_a = np.where(np.isneginf(m_a), 0.0, m_a)
-            w_att = np.exp(log_att - m_a) * a
-            w_att[~valid] = 0.0
-            if kernel is None:
-                pull = np.sum(directions * w_att[..., None], axis=1)
-            else:
-                # Both weightings in one call. They differ only in what
-                # multiplies the direction, and the direction is 99% of the
-                # cost, so two calls would pay for the same wrap twice.
-                net, pull = kernel(all_data, active[lo:hi], block_ids,
-                                   np.stack((weights, w_att)))
-            # Scaled here rather than at the subtraction below: it is the
-            # only place `m_a` is in scope, and folding it in leaves one
-            # optional to test instead of two that must agree.
-            pull = np.exp(np.minimum(m_a, np.log(force_cap))) * pull
-            # `directions` points from the neighbour towards the active point,
-            # so repulsion adds along it and attraction subtracts.
-        if net is None and kernel is not None:
-            # Repulsion only: one weighting, so nothing to share with.
-            (net,) = kernel(all_data, active[lo:hi], block_ids, weights[None])
         forces[lo:hi] = np.exp(np.minimum(m_i, np.log(force_cap))) * net
-        if pull is not None:
-            forces[lo:hi] -= attraction_weight * pull
 
     return forces
+
+
+def _apply_guide(forces: np.ndarray, guide: np.ndarray, weight: float) -> None:
+    r"""Damp the uphill component of the repulsive force along the terrain slope, in place.
+
+    The fitness field $f(x)$ is the terrain that particles traverse (lower =
+    closer to the ground = better; higher = uphill = worse). Repulsion moving
+    downhill ($\vec F_{\text{rep}} \cdot \hat u < 0$, towards the ground) is
+    untouched; the share $\min(w, 1)$ of the component of $\vec F_{\text{rep}}$
+    that points uphill ($\vec F_{\text{rep}} \cdot \hat u > 0$, climbing against
+    gravity towards higher fitness/cost) is removed:
+
+    $$ \vec F' = \vec F_{\text{rep}} - \min(w, 1)\,\max(\vec F_{\text{rep}}\cdot\hat u,\, 0)\,\hat u,
+       \qquad \hat u = \frac{\nabla f}{\lVert\nabla f\rVert_2} $$
+
+    No external force is injected: a point at rest under repulsion stays at
+    rest, the push is never reversed and never grows, and a row whose guide is
+    zero (flat field, or a point on a source) is untouched.
+
+    Args:
+        forces (np.ndarray): Repulsive push on each active point, shape $(M, D)$.
+        guide (np.ndarray): $R\,\nabla f$ (uphill slope) at each point, shape $(M, D)$.
+        weight (float): $w \ge 0$, effective space weight.
+    """
+    g_len = np.sqrt(np.einsum("md,md->m", guide, guide))
+    rows = np.flatnonzero(g_len > 0.0)
+    if rows.size == 0:
+        return
+    unit = guide[rows] / g_len[rows, None]
+    along = np.einsum("md,md->m", forces[rows], unit)
+    up = np.maximum(along, 0.0)
+    forces[rows] -= min(float(weight), 1.0) * up[:, None] * unit
 
 
 # --- Core Logic --------------------------------------------------------------
@@ -951,30 +790,20 @@ def _esa(
     n: int,
     dim: int,
     epochs: int,
-    lr: float,
-    decay: float,
+    C: float,
+    w: float,
     batch_size: int,
     k: int,
     radius: float,
     search_mode: geometry.ResolvedMode,
-    tol: float,
     patience: int,
     metric_fn: collections.abc.Callable,
     rng: np.random.Generator,
     init_sampler: samplers.Sampler,
     init_pool: int = 64,
     p: float = 1.0,
-    attract: np.ndarray | None = None,
-    attraction_weight: float = 1.0,
-    attraction_fn: collections.abc.Callable | None = None,
-    attraction_kwargs: dict | None = None,
-    k_att: int = 8,
-    att_power: float = 2.0,
-    att_search_mode: geometry.ResolvedMode = "k_nn",
-    att_radius: float | None = None,
-    placement_weight: float | None = None,
-    att_every: int = 5,
-    att_model: "str | type | attraction.AttractionModel" = "idw",
+    fit_norm: np.ndarray | None = None,
+    fitness_weight: float = 1.0,
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
@@ -984,30 +813,25 @@ def _esa(
 
     1. Initialize positions (`_smart_init` once the index has points,
        the raw sampler for the very first from-scratch batch).
-    2. For each epoch $t$: query neighbours, compute forces, step
+    2. For each epoch $t$: query neighbours, compute repulsive forces,
+       damp uphill motion along the fitness terrain when `fit_norm` is
+       given, and step in units of each point's own nearest-neighbour
+       clearance (Vlasiuk et al. 2018):
 
-       $$ x_{t+1} = (x_t + \eta_t \vec{F}_t) \bmod 1, \qquad
-          \eta_{t+1} = \gamma \eta_t $$
+       $$ x_{i,t+1} = \left(x_{i,t} + \frac{\text{near}_{i,t}}{t + C}
+          \,\frac{\vec F_{i,t}}{\lVert\vec F_{i,t}\rVert_p}\right) \bmod 1 $$
 
-       (per-point steps are norm-capped at $1/4$ so a force spike can
-       never wrap a point across the torus), then `ToroidalNN.update`.
-    3. On convergence, `ToroidalNN.promote` freezes the batch into the
-       static tier and installs the next one.
+       then `ToroidalNN.update`.
+    3. On convergence, offer the lowest-scoring share `w` of the batch a
+       best-candidate position (`_smart_init`), accepting only moves that
+       improve the score, and freeze the batch into the static tier.
 
-    **Early stopping** is learning-rate-decoupled, so the decay schedule
-    cannot fake convergence. The monitored signal is the largest force
-    magnitude $\max_i \lVert \vec{F}_i \rVert$, smoothed by an EMA
-    ($\beta = 1/2$). The loop stops when the signal *plateaus*: no
-    relative improvement of at least 1% over its best value for
-    `patience` consecutive epochs — i.e. when the physics has stopped
-    settling, at whatever force level the packing frustration allows.
-    Two additional guards: the absolute floor `tol` (forces genuinely
-    vanished — isolated points), and the annealing floor
-    $\eta_t \cdot \text{EMA} < 10^{-9}$ (steps too small to matter).
-    Benchmarked over $d \in \{2, \dots, 64\}$
-    (``examples/benchmark_dispersion.py``), the plateau fires after
-    8-38 epochs per batch where pure annealing would grind on for 300+,
-    at equal Clark-Evans quality.
+    **Early stopping** watches the `GAP_QUANTILE` (5%) quantile of the
+    nearest-neighbour distance of the points being relaxed (and, when guided,
+    the mean field elevation scaled by the batch's initial field spread). The
+    loop stops when neither has improved by `GAP_IMPROVE` (1%) or the spread-
+    scaled `ATT_IMPROVE` (0.5% drop towards the ground) for `patience`
+    consecutive epochs.
 
     Args:
         samples01 (np.ndarray): Static points already scaled to $[0, 1)$.
@@ -1015,43 +839,25 @@ def _esa(
         n (int): Number of points to generate.
         dim (int): Dimensionality of the space.
         epochs (int): Maximum update steps per batch.
-        lr (float): Initial step size $\eta_0$.
-        decay (float): Learning-rate decay $\gamma$ per epoch.
+        C (float): Offset of the gap step schedule $\text{near}_i / (t + C)$.
+        w (float): Share of worst points offered re-placement after relaxation.
         batch_size (int): Points optimized together per batch.
         k (int): Neighbours per query (k-NN mode).
         radius (float): Interaction radius $R$ (search cutoff in radius
             mode; force normalisation scale in both modes).
         search_mode (geometry.ResolvedMode): ``"k_nn"`` or ``"radius"``.
-            Already resolved -- ``"auto"`` is answered in `esa`, so the loop
-            never has to ask what mode it is running.
-        tol (float): Absolute convergence floor on the force EMA.
-        patience (int): Consecutive non-improving epochs (< 1% relative)
-            before the plateau stop fires.
+            Already resolved -- ``"auto"`` is answered in `esa`.
+        patience (int): Consecutive epochs without progress before the
+            plateau stop fires.
         metric_fn (Callable): Log-space force law.
         rng (np.random.Generator): Random number generator.
         init_sampler (samplers.Sampler): Sampler for initial positions.
         init_pool (int): Candidates per slot for `_smart_init`; see `esa`.
         p (float): Exponent of the toroidal $L^p$ metric the index ranks
             by; `radius` is in its units.
-        attract (np.ndarray | None): Normalised attractiveness over
-            `all_data`; see `_compute_forces`.
-        attraction_weight (float): Balance against repulsion.
-        attraction_fn (Callable | None): Attraction law, log-space.
-        attraction_kwargs (dict | None): Its parameters.
-        k_att (int): Neighbours the attractiveness estimate averages over.
-        att_power (float): Inverse-distance exponent of that estimate.
-        att_search_mode (str): ``'k_nn'`` or ``'radius'`` for the
-            attractiveness estimate. Independent of `search_mode`, which
-            governs the repulsion: the two are separate uses of the index
-            and there is no reason a run must make the same choice twice.
-        att_radius (float | None): Normalized radius in $(0, 1]$ for
-            ``att_search_mode='radius'``; ``None`` or ``0`` derives one
-            targeting `k_att` neighbours.
-        placement_weight (float | None): Attraction weight for the placement
-            only; ``None`` uses `attraction_weight`.
-        att_every (int): Refresh the attractiveness field every this many
-            epochs. 1 refreshes every epoch.
-        att_model: Name, class or instance; see `attraction.get_model`.
+        fit_norm (np.ndarray | None): Normalised fitness of `samples01` in $[0, 1]$
+            (lower = closer to the ground = better).
+        fitness_weight (float): Balance against repulsion.
         stats (dict | None): Optional run-statistics sink; see `esa`.
         **metric_kwargs: Extra arguments for `metric_fn`.
 
@@ -1066,15 +872,18 @@ def _esa(
     radius_hint = radius if search_mode == "radius" else None
     fitted = n_static > 0
 
-    # One field, built from the measured points, used for both the placement
-    # score and the per-epoch refresh below. Every estimate in the run comes
-    # out of this object.
+    # One field, built once from the measured points: the anchors do not move,
+    # so the terrain they define is static for the whole call.
     field = None
-    if attract is not None and n_static > 0:
-        field = _AttractionField(all_data[:n_static], attract[:n_static],
-                                 k=k_att, power=att_power, model=att_model,
-                                 search_mode=att_search_mode,
-                                 radius=att_radius, p=p)
+    trust = 1.0
+    if fit_norm is not None and n_static > 0:
+        k_att, trust = attraction.choose_k(
+            all_data[:n_static], fit_norm[:n_static], power=2.0, p=p)
+        if stats is not None:
+            stats["k_att"] = int(k_att)
+            stats["field_trust"] = float(trust)
+        field = _AttractionField(all_data[:n_static], fit_norm[:n_static],
+                                 k=k_att, power=2.0, p=p)
     if fitted:
         index.fit(all_data[:n_static], k=k, radius=radius_hint)
 
@@ -1085,6 +894,7 @@ def _esa(
     )
 
     timers: dict | None = {} if stats is not None else None
+    place_w = min(float(fitness_weight), PLACEMENT_WEIGHT_CAP) if fitness_weight > 0.0 else 0.0
 
     for _ in range(num_batches):
         current_n = min(batch_size, n_static + n - cursor)
@@ -1097,15 +907,13 @@ def _esa(
             # that a slot is far from the whole batch placed so far and not
             # only from the batches before it. Within a round `_smart_init`
             # does the same thing exactly.
-            weight = (attraction_weight if placement_weight is None
-                      else placement_weight)
             rounds = PLACEMENT_ROUND
             init = np.empty((current_n, dim))
             for lo in range(0, current_n, rounds):
                 hi = min(lo + rounds, current_n)
                 init[lo:hi] = _smart_init(
                     index, hi - lo, dim, rng, init_sampler, pool=init_pool,
-                    field=field, attraction_weight=weight, p=p,
+                    field=field, fitness_weight=place_w, p=p,
                 )
                 if hi < current_n:
                     index.promote(init[lo:hi])
@@ -1129,20 +937,25 @@ def _esa(
         all_data[cursor : cursor + current_n] = init
         active = all_data[cursor : cursor + current_n]  # view into the buffer
 
-        if field is not None and attract is not None:
-            # Seed the active rows. Left at the zero this buffer was created
-            # with they would sit at the *bottom* of the normalised scale --
-            # modelled as the least attractive things in the space -- so they
-            # would repel each other with no attraction between them. Refreshed
-            # every epoch below, because the value belongs to the position.
-            attract[cursor : cursor + current_n] = field.at(active)
-
-        current_lr = lr
+        space_weight = float(fitness_weight) * trust
+        use_guide = (field is not None and fit_norm is not None
+                     and space_weight > 0.0)
+        att_step = ATT_IMPROVE
+        if field is not None and fit_norm is not None:
+            est = field.at(active)
+            best_fit = float(est.mean())
+            if current_n > 1:
+                att_step = ATT_IMPROVE * min(1.0, max(0.01, float(est.std()) / _RANK_STD))
+        else:
+            best_fit = 0.0
+        fit_start = best_fit
+        guide_vec = None
+        both_streak = 0
         ema = None
-        best_ema = np.inf
-        rel_improve = 0.01
-        calm_streak = 0
+        best_gap = 0.0
+        gap_streak = 0
         epochs_used = 0
+
         for epochs_used in range(1, epochs + 1):
             started = time.perf_counter()
             if search_mode == "radius":
@@ -1151,48 +964,47 @@ def _esa(
                 ids, dists = index.query(k=k)
             _accumulate(timers, "query_s", started)
 
-            if (field is not None and attract is not None
-                    and epochs_used % att_every == 0):
-                # Attractiveness is a field, so it is read at the positions
-                # the points currently occupy rather than carried from where
-                # they started.
-                #
-                # On a stride because `STEP_CAP` bounds a point to 1% of the
-                # interaction radius per epoch, while the field varies on the
-                # scale of the radius itself -- so between refreshes the value
-                # can drift by only a few percent, and refreshing every epoch
-                # buys accuracy the physics cannot use. It is the difference
-                # between the composite path costing ~1.5x the repulsive one
-                # and ~1.1x.
-                attract[cursor : cursor + current_n] = field.at(active)
+            # The distance from each point to its nearest other point, read
+            # off the query. Radius mode reports nothing beyond the radius,
+            # so a point alone inside it counts as one radius away.
+            near = dists.min(axis=1)
+            isolated = ~np.isfinite(near)
+            near[isolated] = radius
+            gap = float(np.quantile(near, GAP_QUANTILE))
+            progress = (not np.all(isolated)) and (gap > best_gap * (1.0 + GAP_IMPROVE))
+            if progress:
+                best_gap = gap
+                gap_streak = 0
+            else:
+                gap_streak += 1
+
+            if use_guide and field is not None and (
+                    guide_vec is None or epochs_used % ATT_EVERY == 0):
+                # The field is fixed for the call; what is refreshed is
+                # where the moving points read it. Lower elevation is better.
+                est, guide_vec = field.guide(active)
+                guide_vec *= radius
+                fit_now = float(est.mean())
+                if fit_now < best_fit - att_step:
+                    best_fit = fit_now
+                    progress = True
+            both_streak = 0 if progress else both_streak + 1
 
             started = time.perf_counter()
             forces = _compute_forces(
                 active, all_data, ids, dists, radius, metric_fn, rng,
-                attract=attract,
-                attraction_weight=attraction_weight,
-                attraction_fn=attraction_fn,
-                attraction_kwargs=attraction_kwargs,
                 **metric_kwargs,
             )
+            if use_guide and guide_vec is not None:
+                _apply_guide(forces, guide_vec, space_weight)
             _accumulate(timers, "force_s", started)
 
             started = time.perf_counter()
-
-            # Steps are measured in units of the interaction radius, so
-            # stability does not depend on n or d: the forces are already
-            # dimensionless (they see d/R), and a step of lr*R is the same
-            # fraction of the local spacing at every density.
-            step = forces * (current_lr * radius)
-            # Cap travel in the metric the radius is expressed in, the
-            # run's L^p: one budget, a fraction of the radius. Capping the L2
-            # norm instead lets each coordinate move by R/sqrt(d) rather
-            # than R/d, which in 32 dimensions is a quarter of the domain
-            # per epoch and destroys the packing.
-            step_norm = geometry.lp_norm(step, p, axis=1)[:, None]
-            scale = np.minimum(
-                1.0, STEP_CAP * radius / np.maximum(step_norm, 1e-12))
-            step *= scale
+            # The point's own clearance is the unit, and it shrinks as
+            # 1/(t + C) along the unit force direction in the run's L^p.
+            f_norm = geometry.lp_norm(forces, p, axis=1)[:, None]
+            step = forces / np.maximum(f_norm, 1e-12)
+            step *= (near / (epochs_used + C))[:, None]
             active += step
             np.mod(active, 1.0, out=active)
             _accumulate(timers, "step_s", started)
@@ -1203,16 +1015,65 @@ def _esa(
 
             f_max = float(np.max(np.abs(forces).sum(axis=1)))
             ema = f_max if ema is None else 0.5 * ema + 0.5 * f_max
-            if ema < best_ema * (1.0 - rel_improve):
-                best_ema = ema
-                calm_streak = 0
-            else:
-                calm_streak += 1
-            if ema < tol or calm_streak >= patience:
-                break  # converged: forces vanished, or stopped improving
-            if current_lr * ema < 1e-9:
-                break  # annealing floor: steps too small to matter
-            current_lr *= decay
+            settled = both_streak if use_guide else gap_streak
+            if f_max <= 1e-12 or settled >= patience:
+                break
+
+        replaced = 0
+        if w > 0.0 and current_n > 1:
+            # Worst first, in rounds, each one indexed before the next is
+            # drawn, as the placement does. Higher score = larger gap and
+            # lower fitness (closer to the ground).
+            _, d_near = index.query(k=2, queries=active)
+            d_near = np.asarray(d_near, dtype=np.float64).reshape(current_n, -1)
+            own = np.where(d_near > 1e-12, d_near, np.inf).min(axis=1)
+            own[~np.isfinite(own)] = 0.0
+            guided = field is not None and fit_norm is not None and place_w > 0.0
+            own_fit = field.at(active) if guided and field is not None else None
+            rank_by = (own if own_fit is None
+                       else _zscore(own) - place_w * _zscore(own_fit))
+            order = np.argsort(rank_by)[: math.ceil(w * current_n)]
+            for lo in range(0, order.size, PLACEMENT_ROUND):
+                rows = order[lo : lo + PLACEMENT_ROUND]
+                offer = _smart_init(index, rows.size, dim, rng, init_sampler,
+                                    pool=init_pool, p=p,
+                                    field=field if guided else None,
+                                    fitness_weight=place_w if guided else 0.0)
+                _, d_offer = index.query(k=1, queries=offer)
+                gain = np.asarray(d_offer, dtype=np.float64).reshape(rows.size, -1)[:, 0]
+                offer_fit = None
+                mu_g = sd_g = 0.0
+                fit_term = np.zeros(2 * rows.size)
+                if own_fit is not None and field is not None:
+                    offer_fit = field.at(offer)
+                    gaps = np.concatenate((own[rows], gain))
+                    mu_g, sd_g = float(gaps.mean()), float(gaps.std())
+                    fit_term = -place_w * _zscore(
+                        np.concatenate((own_fit[rows], offer_fit)))
+                best_first = np.argsort(
+                    -gain if offer_fit is None
+                    else -(_zscore(gain) + fit_term[rows.size:]))
+                moved = False
+                taken = np.empty((0, dim))
+                for at, (row, j) in enumerate(zip(rows, best_first)):
+                    clear = gain[j]
+                    if taken.shape[0]:
+                        sep = np.abs(taken - offer[j])
+                        np.minimum(sep, 1.0 - sep, out=sep)
+                        clear = min(clear, float(geometry.lp_norm(sep, p, axis=1).min()))
+                    if offer_fit is None:
+                        better = clear > own[row]
+                    else:
+                        scale = sd_g if sd_g > 0.0 else 1.0
+                        better = ((clear - mu_g) / scale + fit_term[rows.size + j]
+                                  > (own[row] - mu_g) / scale + fit_term[at])
+                    if better:
+                        active[row] = offer[j]
+                        taken = np.concatenate((taken, offer[j][None]))
+                        replaced += 1
+                        moved = True
+                if moved:
+                    index.update(active)
 
         logger.debug(
             "Batch [%d:%d] stopped after %d/%d epochs (force EMA %.4g)",
@@ -1220,6 +1081,10 @@ def _esa(
         )
         if stats is not None:
             stats.setdefault("batch_epochs", []).append(epochs_used)
+            stats.setdefault("batch_replaced", []).append(replaced)
+            if field is not None and fit_norm is not None:
+                stats.setdefault("batch_att_gain", []).append(
+                    fit_start - float(field.at(active).mean()))
             stats.setdefault("batch_force_ema", []).append(
                 float(ema) if ema is not None else 0.0
             )
@@ -1235,377 +1100,108 @@ def _esa(
 
 
 def esa(
-    samples: np.ndarray,
-    bounds: np.ndarray,
+    samples: np.ndarray | list,
+    bounds: np.ndarray | list,
     *,
-    n: int,
+    fitness: np.ndarray | list | None = None,
+    n: int | None = None,
+    p: float = 1.0,
+    C: float = 12.0,
+    w: float = 0.05,
+    fitness_weight: float = 1.0,
     index: ToroidalNN | None = None,
     epochs: int = 1024,
-    lr: float = 0.5,
+    patience: int = 12,
     search_mode: geometry.SearchMode = "auto",
-    decay: float = 0.99,
     batch_size: int | None = None,
     k: int | None = None,
     radius: float | None = None,
     radius_target: int | None = None,
-    tol: float = 1e-2,
-    patience: int = 25,
     metric: str | collections.abc.Callable = "gaussian",
     seed: int | np.random.Generator | None = None,
     init_sampler: samplers.Sampler | int | None = None,
     init_pool: int = 64,
-    p: float | None = None,
-    attractiveness: np.ndarray | None = None,
-    attraction_weight: float = 0.5,
-    attraction_metric: str | collections.abc.Callable | None = None,
-    attraction_kwargs: dict | None = None,
-    k_att: int = 8,
-    att_power: float = 2.0,
-    att_search_mode: geometry.ResolvedMode = "k_nn",
-    att_radius: float | None = None,
-    placement_weight: float | None = None,
-    att_every: int = 5,
-    att_model: "str | type | attraction.AttractionModel" = "idw",
     stats: dict | None = None,
     **metric_kwargs,
 ) -> np.ndarray:
     r"""Empty Space Algorithm (ESA): returns only the generated points.
 
-    Public API for the toroidal relaxation. It scales the domain to the
-    unit torus $[0, 1)^d$, derives the interaction radius, runs `_esa`,
-    and maps the result back:
+    Public API for the toroidal relaxation. At its simplest it takes only the
+    existing `samples`, the domain `bounds`, and optionally `fitness`
+    (with every parameter from `fitness` onwards passed by keyword):
 
-    $$ R = \min\!\left(\tfrac{5}{8}\,(d!/N)^{1/d},\; d/4\right)
-       \quad \text{(when not given, at $p = 1$; see `geometry.radius_for_count`)} $$
-
-    The same $R$ is the range cutoff in radius mode and the distance
-    normalisation of every force law in both modes, which is what keeps
-    force parameters dimension-free.
-
-    The defaults are calibrated by ``examples/benchmark_dispersion.py``
-    over $d \in \{2, \dots, 64\}$. Two of them dominate the achieved
-    quality and interact, so they must be read together:
-
-    * ``batch_size=None`` relaxes every point at once. Freezing points
-      in batches is greedy — an early batch settles into an arrangement
-      optimal for *itself*, then never moves while the rest squeeze into
-      its gaps — and costs about a third of the achievable dispersion.
-    * ``patience=25`` gives the plateau detector enough evidence.
-      Stopping sooner is what makes single-batch relaxation look bad:
-      with one batch there is no per-batch restart of the annealing, so
-      a hair-trigger stop ends the run before it has done anything.
-
-    Together, in 2D at $n = 256$, they take the toroidal Clark-Evans
-    index from 1.71 to 2.08 against a theoretical ceiling of
-    $2/\Gamma(1+1/d) = 2.257$ — 92% of optimal — and improve the worst
-    pair separation by $6.7\times$. ``lr`` and ``decay`` are
-    comparatively inert once the stop criterion is right.
+    * When `n` is omitted (`None`), it defaults to $\max(1, N_0)$, doubling the
+      existing sample set (or generating 1 point when starting from scratch).
+    * Each epoch steps along the unit repulsive force in the run's toroidal
+      $L^p$ metric by the point's own nearest-neighbour clearance divided by
+      $t + C$ (Vlasiuk et al. 2018), eliminating separate learning-rate, decay
+      and travel-cap parameters.
+    * When `fitness` is provided (**lower = closer to the ground = better**),
+      the space itself acts as a terrain (`attraction.InverseDistance`) built
+      once from the measured anchors via `attraction.choose_k` (automatic
+      neighbourhood size $k$ and leave-one-out `trust` in $[0, 1]$). During
+      relaxation, uphill motion along the terrain slope (climbing towards
+      higher fitness/cost) is damped by $\min(\text{fitness\_weight} \cdot \text{trust}, 1)$,
+      while downhill motion towards the ground is unbraked, without injecting
+      point-source attraction forces that could collapse the design.
+    * After convergence, the lowest-scoring fraction `w` (default 5%) of the
+      batch is offered a best-candidate re-placement (`_smart_init`), taken
+      only when it improves the point's clearance (or composite score).
 
     Args:
-        samples (np.ndarray): Existing points to avoid, shape $(N_0, D)$.
+        samples (np.ndarray | list): Existing points to avoid, shape $(N_0, D)$.
             May be empty.
-        bounds (np.ndarray): Domain boundaries, shape $(D, 2)$.
-        n (int): Number of new points to create.
-        index (ToroidalNN | None): Optional pre-configured index (e.g. a
-            specific backend or LSH parameters). It is re-fitted; when
-            None a default `ToroidalNN` is created. Exact vs LSH search
-            is the index's own size-based decision — there are no engine
-            thresholds left in ESS.
-        epochs (int): Maximum iterations per batch.
-        lr (float): Initial step size $\eta_0$, **in units of the
-            interaction radius**. Largely inert: `STEP_CAP` binds for
-            most of the run, so it mainly sets when annealing takes
-            over (0.2 and 0.5 differ by <2% on every benchmark cell).
-        search_mode (geometry.SearchMode): How the repulsion picks the
-            neighbours it acts on. ``"auto"`` (default) chooses per
-            dimension via `geometry.neighbourhood_for`: ``"k_nn"``
-            (rank-based neighbourhood) below `geometry.LOW_DIM`, and
-            ``"radius"`` (metric ball) from there up, which is where radius
-            mode is both better and cheaper -- 0.90x the k-NN time at
-            $D = 40$ and 0.73x at $D = 100$. Naming a mode still gets that
-            mode at any dimension.
-
-            The default is ``"auto"`` rather than a fixed mode because
-            neither mode wins everywhere and the crossover is a property of
-            the dimension, not of the caller's intent.
-        decay (float): Learning-rate decay $\gamma$ per epoch.
-        batch_size (int | None): Points optimized together. ``None``
-            (default) relaxes **all** $n$ points simultaneously, which
-            is what the toroidal index makes affordable. A smaller value
-            processes the points in sequential batches, each frozen once
-            converged — a greedy approximation.
-
-            Batching is *not* the way to make large runs fast. Measured
-            at $d = 8$ from scratch, wall time and toroidal Clark-Evans:
-
-            | $n$ | all at once | batch 5000 | batch 50 |
-            | --- | --- | --- | --- |
-            | 10 000 | 11.5 s / 1.487 | — | 5.3 s / 1.352 |
-            | 40 000 | 113 s / 1.491 | 94 s / 1.396 | > 750 s |
-
-            Batching saves at most ~20% at $n = 40\,000$ while giving up
-            most of the quality, and small batches become *pathological*
-            — 800 sequential batches, each paying full query cost
-            against an index that keeps growing. Cost is superlinear
-            (~$n^{1.6}$) either way, dominated by index and query work
-            rather than by the batch structure. Set this only to bound
-            the per-epoch working set ($O(\text{batch} \cdot k \cdot D)$)
-            when memory, not time, is the constraint.
+        bounds (np.ndarray | list): Domain boundaries, shape $(D, 2)$.
+        fitness (np.ndarray | list | None): One value per row of
+            `samples`, **lower = closer to the ground = better**. ``None``
+            (default) runs pure repulsion. Values are rank-normalised to
+            $[0, 1]$ internally ($0$ = best/ground, $1$ = worst/uphill),
+            and a constant vector is treated as pure repulsion.
+        n (int | None): Number of new points to create. ``None`` (default)
+            generates $\max(1, N_0)$ points.
+        p (float): Exponent of the toroidal $L^p$ metric,
+            `geometry.P_MIN` $\le p \le 1$. Default ``1.0`` (or taken from
+            `index` when supplied and `p` is left at ``1.0``).
+        C (float): Offset of the single-parameter gap step schedule
+            $\Delta x_i = \frac{\text{near}_i}{t + C}\frac{\vec F_i}{\lVert\vec F_i\rVert_p}$.
+            Default ``12.0``.
+        w (float): Share in $[0, 1]$ of the lowest-scoring points in each batch
+            offered a post-relaxation best-candidate re-placement. Default
+            ``0.05`` (5%); ``0.0`` disables it.
+        fitness_weight (float): Terrain uphill damping and placement weight when
+            `fitness` is given. Default ``1.0`` (scaled by the field's
+            leave-one-out `trust` during relaxation, and capped at
+            `PLACEMENT_WEIGHT_CAP` = 0.5 during placement). ``0.0`` disables
+            guidance and reproduces pure repulsion bit-for-bit.
+        index (ToroidalNN | None): Optional pre-configured index. It is
+            re-fitted; when ``None`` a default `ToroidalNN` is created.
+        epochs (int): Maximum iterations per batch. Default ``1024``.
+        patience (int): Consecutive epochs without a `GAP_IMPROVE` (1%) gain
+            in the 5% nearest-neighbour gap quantile (or spread-scaled
+            `ATT_IMPROVE` field drop towards the ground when guided) before
+            stopping. Default ``12``.
+        search_mode (geometry.SearchMode): ``"auto"`` (default), ``"k_nn"`` or
+            ``"radius"``, resolved via `geometry.neighbourhood_for`.
+        batch_size (int | None): Points optimized together. ``None`` (default)
+            relaxes all $n$ points simultaneously.
         k (int | None): Neighbours in k-NN mode; default
             $\min(2D + 1, \text{`K_LOCAL`})$.
-        radius (float | None): Interaction radius as a **fraction of the
-            torus diameter**, in $(0, 1]$. ``None`` or ``0`` derives it
-            from `geometry.radius_for_count`.
-
-            Normalized rather than expressed in the units `bounds` is in,
-            because for this metric there is no such number: each axis is
-            min-maxed onto $[0, 1]$ *independently* and the distance is an
-            L1 sum over all $D$ of them, so the radius is a sum of $D$
-            dimensionless per-axis fractions. It equals a length in the
-            caller's units only if every axis happens to share a unit and a
-            width, which `bounds` need not.
-
-            Per axis it does read directly: ``radius / 2`` is the mean
-            fraction of *each axis's own range* the ball reaches. On bounds
-            of $[-5, 5]$, ``radius=0.2`` reaches 10% of the range, so 1.0 in
-            the caller's units, on a typical axis.
-
-            Setting it by hand gets harder as $D$ grows -- the value that
-            holds a fixed neighbour count converges on $1/2$, so at
-            $D = 1000$ the whole range from 1 to 64 neighbours spans
-            $0.474$ to $0.491$. Use `radius_for_target` rather than guessing
-            inside that band.
+        radius (float | None): Interaction radius as a fraction of the torus
+            diameter, in $(0, 1]$. ``None`` or ``0`` derives it from
+            `geometry.radius_for_count`.
         radius_target (int | None): Neighbours the derived radius should
-            contain, when `radius` is not given. ``None`` takes the default
-            for whichever mode is chosen -- `geometry.NEIGHBOUR_TARGET` (2)
-            for k-NN, where the radius only scales the force law, and
-            `geometry.radius_target_for(dim, N)` for radius mode, which
-            scales the count with the dimension and caps it at half the
-            design. That default is what makes radius mode parameter-free;
-            pass a number here only to override it. The radius itself stops being tunable by hand
-            once $D$ is large, but the count behind it does not: at
-            $D = 100, N = 300$ the span from 1 to 64 neighbours is a 13%
-            change in radius, and at $D = 1000$ a 3.5% one. Same information,
-            on a scale a caller can act on.
-
-            No effect in k-NN mode, where `k` fixes the count directly. The
-            attraction field's own radius already targets `k_att` neighbours,
-            so that side needs no second knob.
-        tol (float): Absolute early-stop floor on the EMA of the largest
-            force magnitude (fires only when forces genuinely vanish;
-            the working criterion is the plateau — see `_esa`).
-        patience (int): Consecutive epochs without a 1% relative
-            improvement of the force EMA before the batch is declared
-            converged. Quality saturates at 25-50; below ~10 the
-            detector fires on a transient and the run stops early.
+            contain when `radius` is not given.
         metric (str | Callable): Force-law name in `METRIC_REGISTRY`, or
-            a callable $\log f(\hat{d})$.
+            a callable $\log f(\hat{d})$. Default ``"gaussian"``.
         seed (int | np.random.Generator | None): Seed or Generator.
-        init_sampler (samplers.Sampler | int | None): Candidate-pool
-            sampler; None = LHS. It does not place the initial positions
-            directly — it proposes `init_pool` candidates per slot and
-            `_smart_init` keeps the farthest. The exception is a run with no
-            static points, where there is nothing to be far from and the
-            sampler's output is used as drawn.
-        init_pool (int): Candidates per slot for that selection, i.e. the
-            $k$ of Mitchell's best-candidate. ``1`` disables the selection
-            and uses the sampler's raw output.
-
-            **Each slot is scored against the slots placed before it as
-            well as the existing points.** It was not always: through 0.7.2
-            the slots of a batch were scored against the index alone, so
-            with `batch_size` left at its default every new point competed
-            for the same few voids. Extending a clustered 2-D dataset by
-            $n = 5000$ covered 20% of a $10 \times 10$ grid at the default
-            pool against 100% at ``1``; it now covers 100% with a largest
-            hole of 0.013 against 0.018. The table below was measured
-            before that change, on a shape where $n$ is no larger than the
-            static set and the race was mild; read it as the case for
-            having a selection, not as a tuning of the current one.
-
-            **The selection earns its place; the pool size is a small,
-            dimension-fading tuning.** Measured on a $1N$ sample + $1N$
-            quasi-opposite + $1N$ probe pool, 20 seeds, paired per seed
-            against the old hardcoded 15, on normalised 2-D projection
-            discrepancy (positive = better, with wins out of 20):
-
-            | $d$ | `1` | `64` | best | at |
-            | --- | --- | --- | --- | --- |
-            | 8 | -5.7% | **+4.4%** (16) | +6.2% (17) | 1024 |
-            | 16 | -3.5% | **+1.5%** (15) | +3.1% (17) | 512 |
-            | 32 | -0.5% | +0.6% (12) | +2.9% (20) | 2048 |
-            | 64 | -0.6% | -0.4% (8) | +0.8% (14) | 1024 |
-
-            ``1`` — no selection at all — is worse at every dimension, which
-            is the result that matters: the best-candidate step is doing
-            real work. Beyond that the gain rises and then plateaus inside
-            its own noise, so there is no interior optimum to find; an
-            earlier 6-seed reading suggested one and did not survive more
-            seeds.
-
-            The knob fades with dimension: 4-6% at $d = 8$, 1.5-3% through
-            $d = 32$, and essentially inert by $d = 64$, where `wrap` does
-            not move at all across the whole range. Concentration of measure
-            — once every candidate is far from everything, "farthest" stops
-            discriminating. 64 is the default because it takes most of the
-            low-$d$ gain at 1.7x the cost of 15 and does no harm above;
-            1024 buys another 2% at $d = 8$ for roughly 15x the cost.
-        p (float | None): Exponent of the toroidal $L^p$ metric,
-            `geometry.P_MIN` $\le p \le 1$. ``None`` takes it from `index` when one is
-            supplied and is $1$ (toroidal $L^1$) otherwise; an explicit
-            value that disagrees with a supplied index raises.
-
-            One exponent governs the whole run: the neighbour search, the
-            interaction radius (`geometry.radius_for_count`), the step cap,
-            the placement and the attractiveness estimate (an `att_model`
-            instance built under another exponent is refused, as an index
-            is). Below $1$ a point counts as near the points that agree
-            with it on most axes, so those are the points the forces act
-            between.
-
-            **The exponent sets who interacts and how strongly, not the
-            direction of the push.** Repulsion and attraction both act
-            along $\operatorname{sign}(r_l)$ of the toroidal displacement,
-            on every axis equally, at every exponent. At $p = 1$ that is
-            the exact gradient of the distance. Below $1$ it is not: the
-            $L^p$ gradient weights axis $l$ by $\lvert r_l\rvert^{p-1}$,
-            which is unbounded at a shared coordinate and puts nearly the
-            whole push on the smallest gap (95% of it for a displacement
-            of $(0.001, 0.3)$ at $p = 1/2$). Measured on separation in the
-            run's own metric it was worse than
-            $\operatorname{sign}$ in all six cells tried, so it is not
-            used; the table is in `_compute_forces`.
-
-            Measured against $L^1$ from scratch, a run under $p$ separates
-            better in its own metric from $d = 4$ up and about equally at
-            $d = 2$, and gives up a little wrap-around discrepancy and
-            Euclidean separation (at $d = 8$, $n = 1000$: discrepancy 0.26
-            to 0.34 of random, separation 0.41 to 0.32, going from $p = 1$
-            to $1/2$). Choose it for the neighbourhood it defines, not as
-            a free improvement.
-
-            Cost: torann scores $p = 1$ and $p = 1/2$ without a general
-            power; any other exponent pays one per coordinate in every
-            exact scan, and the placement issues `init_pool` of them per
-            point. At $d = 100$, 500 existing, $n = 1000$, three epochs:
-            1.1 s at $p = 1$, 1.9 s at $1/2$, 15.4 s at $0.3$.
-        attractiveness (np.ndarray | None): One value per row of `samples`,
-            **higher = more attractive**. ``None`` (default) is pure
-            repulsion and evaluates no second term at all -- not a term
-            weighted zero -- so the default path is unchanged.
-
-            The polarity is in the name on purpose: ESS is not told whether
-            the caller minimises or maximises, and cannot guess. A caller
-            minimising an objective passes the negated values.
-
-            Only existing points carry it. The points being placed have no
-            evaluated quality, and inventing one would be fabrication; they
-            exert repulsion alone.
-
-            Values are rank-normalised to $[0, 1]$ internally, so the units
-            never reach the force and `attraction_weight` means the same
-            thing on every objective. See `_rank_normalise`.
-        attraction_weight (float): $w$, the balance against repulsion.
-            Refused at setup if $w \cdot F_{\text{att}}(0) \ge
-            F_{\text{rep}}(0)$, which would let attraction win at contact and
-            collapse every active point onto its most attractive neighbour --
-            a failure the plateau detector would report as convergence.
-        attraction_metric (str | Callable | None): Force law for the pull.
-            ``None`` means the same law as `metric`.
-
-            **The same law on both sides cannot produce a well.** Identical
-            shapes are proportional, so the net force never changes sign and
-            attraction only weakens the push near attractive neighbours
-            rather than pulling toward them. That is a legitimate mode -- and
-            it is what `linear` on both sides can *only* do, having no shape
-            parameter -- but it is rarely what is wanted, so it warns. For a
-            genuine equilibrium give the attraction a slower-decaying law,
-            e.g. ``metric="softened_inverse", attraction_metric="cauchy"``.
-        placement_weight (float | None): Attraction weight used when
-            *placing* the points, separately from the weight used in the
-            relaxation. ``None`` (default) uses `attraction_weight` for both,
-            which is the sensible pairing.
-
-            The two are different mechanisms and separating them is what makes
-            their contributions measurable: ``placement_weight=0`` is guided
-            relaxation on a repulsive placement (ESS before 0.5.0), while
-            ``attraction_weight=0`` with a non-zero `placement_weight` is a
-            guided placement that then relaxes on repulsion alone. The second
-            is not recommended -- with nothing holding them, the placed points
-            drift off the good regions they were put on and push the rest of
-            the design around -- but it is the arm that shows why the
-            relaxation term is needed rather than assuming it.
-        att_model: How the attractiveness of an unmeasured position is
-            estimated. A registered name, an `attraction.AttractionModel`
-            subclass, or an instance of one -- so a caller can tune a built-in
-            (``HarmonicRidge(harmonics=3)``) or supply their own.
-
-            ``'auto'`` (default) cross-validates the others on the measured
-            points and keeps whichever scores best -- the sources are already
-            paid for, so holding some out costs no objective evaluations, and
-            no fixed choice wins in every regime.
-
-            ``'fourier'`` fits one periodic function of position at
-            construction and evaluates it thereafter -- $O(d)$ a query rather
-            than $O(Md)$, and measured more accurate than the alternative at
-            every dimension tried. ``'idw'`` weights the nearest measured
-            points instead, with no fitting. ``'detrended'`` is the function
-            plus the interpolated residual: the most accurate at low
-            dimension, and the cost of ``'idw'``.
-
-            ``'projection'`` fits the same basis by correlation rather than by
-            solving, which stays defined when there are fewer measured points
-            than coefficients -- the regime ``'fourier'`` cannot serve.
-            ``'auto'`` reads the ratio off the data at every refresh and picks
-            between them.
-
-            Leave-one-out error over 60 measured points: at $d=8$, 0.47 for
-            idw against 0.12 fourier and 0.05 detrended; at $d=32$, 0.60
-            against 0.29 and 0.29. At $d=100$ all three sit near 0.55 -- with
-            60 points in 100 dimensions the fit is underdetermined and every
-            model correctly reports that it knows little. Raising the measured
-            count to 300 at the same dimension drops fourier to 0.11, which is
-            the evidence that the limit is the data rather than the estimator.
-        att_search_mode (geometry.ResolvedMode): ``'k_nn'`` or ``'radius'``
-            for the attractiveness estimate. No ``"auto"`` here, and the
-            omission is a measurement rather than an oversight: on the 2x2
-            mode sweep, radius attraction is the worse half at every
-            dimension where the effect resolves at all (`de` and `cs` lose
-            0.002-0.009 dlog10 to it at $D \ge 40$, under both repulsion
-            modes), so there is no crossover for a policy to find. Fixing
-            the neighbour *count* is what this estimate wants.
-
-            Deliberately independent of `search_mode`, which governs the
-            repulsion: they are two separate
-            uses of the index and nothing requires a run to make the same
-            choice twice. k-NN holds the neighbour *count* fixed, so a
-            candidate in a void reaches far out and is smoothed by distant
-            values; radius holds the *volume* fixed, so that candidate
-            averages few sources or none and falls back to the mean.
-        att_radius (float | None): Normalized radius in $(0, 1]$ for
-            ``att_search_mode='radius'``; ``None`` or ``0`` derives one
-            targeting `k_att` neighbours, so the two modes start from the
-            same neighbourhood and differ only in what they hold fixed.
-        att_every (int): Epochs between refreshes of the attractiveness
-            field. The estimate belongs to a position, so it is re-read as the
-            points move; a stride of 5 is enough because a point travels at
-            most 1% of the interaction radius per epoch.
-        attraction_kwargs (dict | None): Parameters for that law, kept
-            separate from `metric_kwargs` because both laws take parameters
-            of the same names and one ``**kwargs`` cannot serve two.
+        init_sampler (samplers.Sampler | int | None): Candidate-pool sampler;
+            ``None`` = LHS.
+        init_pool (int): Candidates per slot for `_smart_init`. Default ``64``.
         stats (dict | None): Optional dictionary filled in place with run
-            statistics — ``batch_epochs`` (epochs used per batch),
-            ``batch_force_ema`` (final force EMA per batch),
-            ``epochs_total``, ``radius``, ``search_mode`` (the mode actually
-            run, which is the answer when it was left to ``"auto"``), and a
-            wall-clock decomposition
-            in seconds: ``query_s`` (neighbour search), ``force_s`` (the
-            force kernel), ``step_s`` (position update), ``update_s``
-            (re-indexing the moved points) and ``setup_s``
-            (initialisation plus promote/fit). The buckets are what turn
-            "the large runs are slow" into an attributable cost, and
-            they cover the whole inner loop, so they should sum to just
-            under the total. Passing None disables the timers entirely.
+            statistics (`batch_epochs`, `batch_replaced`, `batch_force_ema`,
+            `epochs_total`, `radius`, `search_mode`, `k_att`, `field_trust`,
+            and timing buckets `query_s`, `force_s`, `step_s`, `update_s`,
+            `setup_s`).
         **metric_kwargs: Extra arguments for the force law.
 
     Returns:
@@ -1623,6 +1219,12 @@ def esa(
     if samples.ndim != 2:
         samples = samples.reshape(-1, bounds.shape[0])
 
+    n_gen = max(1, samples.shape[0]) if n is None else int(n)
+    if C <= 0.0:
+        raise ValueError(f"`C` must be positive, got {C!r}")
+    if not 0.0 <= float(w) <= 1.0:
+        raise ValueError(f"`w` must be in [0, 1], got {w!r}")
+
     if isinstance(metric, str):
         metric_fn = METRIC_REGISTRY.get(metric.lower())
         if metric_fn is None:
@@ -1631,43 +1233,17 @@ def esa(
         metric_fn = metric
     _check_metric_kwargs(metric_fn, metric_kwargs, isinstance(metric, str))
 
-    attract = None
-    attraction_fn = None
-    attraction_kw = dict(attraction_kwargs or {})
-    if attractiveness is not None:
-        # Shape first: it is the most basic thing that can be wrong, and its
-        # message should not be pre-empted by a balance complaint.
-        a = _rank_normalise(np.asarray(attractiveness, dtype=np.float64))
-        if a.size != samples.shape[0]:
+    fit_norm = None
+    if fitness is not None:
+        raw_fit = np.asarray(fitness, dtype=np.float64).ravel()
+        if raw_fit.size != samples.shape[0]:
             raise ValueError(
-                f"attractiveness has {a.size} values for {samples.shape[0]} "
+                f"fitness has {raw_fit.size} values for {samples.shape[0]} "
                 f"samples. One per existing point: the points being placed "
                 f"have no evaluated quality yet, so they carry none."
             )
-        # Laid out over `all_data`, which is [static | placed]; the placed
-        # rows start at zero and `_esa` fills them with the field's estimate.
-        attract = np.zeros(samples.shape[0] + n, dtype=np.float64)
-        attract[: samples.shape[0]] = a
-
-        chosen = metric if attraction_metric is None else attraction_metric
-        if isinstance(chosen, str):
-            attraction_fn = METRIC_REGISTRY.get(chosen.lower())
-            if attraction_fn is None:
-                raise ValueError(f"Unknown attraction_metric '{chosen}'")
-        else:
-            attraction_fn = chosen
-        if attraction_metric is None and not attraction_kw:
-            # same law, same parameters: proportional, so it can never cross
-            attraction_kw = dict(metric_kwargs)
-        _check_metric_kwargs(attraction_fn, attraction_kw, isinstance(chosen, str))
-        if attraction_weight != 0.0:
-            # At weight zero there is no attraction to balance, and the
-            # "never overcomes repulsion" warning is both true and useless --
-            # that is the point of the setting. It is the ablation arm.
-            _check_attraction_balance(
-                metric_fn, metric_kwargs, attraction_fn, attraction_kw,
-                float(attraction_weight),
-            )
+        if raw_fit.size > 0 and np.ptp(raw_fit) > 0.0 and float(fitness_weight) != 0.0:
+            fit_norm = _rank_normalise(raw_fit)
 
     if isinstance(seed, np.random.Generator):
         rng = seed
@@ -1682,11 +1258,6 @@ def esa(
         outside = int(np.any(
             (scaled_samples < 0.0) | (scaled_samples > 1.0), axis=1).sum())
         if outside:
-            # The domain is a torus, so a coordinate past a bound is reduced
-            # mod 1 and reappears on the far side: the new points are then
-            # kept away from a place where there is nothing. Said out loud
-            # because it is silent otherwise, and because the usual cause is
-            # bounds narrower than the data, which the caller can fix.
             logger.warning(
                 "%d of %d samples lie outside `bounds`. On the torus they "
                 "wrap to the opposite side and act as obstacles there. "
@@ -1694,30 +1265,12 @@ def esa(
                 outside, scaled_samples.shape[0])
 
     k_value = k if k is not None else min(2 * dim + 1, K_LOCAL)
-    batch = batch_size if batch_size is not None else max(n, 1)
-    # `radius` is a *fraction of the torus diameter*, not a distance: a
-    # caller one layer up holds points and no geometry, so a raw L1 cutoff is
-    # not a number it could form. Zero and None both mean "derive it", which
-    # keeps the auto case expressible from a config file or a CLI flag that
-    # cannot carry None. `radius_for_target` converts a neighbour count into
-    # a value for this argument.
-    # One call answers both halves of the neighbourhood question -- which
-    # query to run, and how wide -- because they are one decision: the target
-    # is the search cutoff in radius mode and only the force scale in k-NN, so
-    # a mode and a target resolved apart can be paired wrongly. `search_mode`
-    # is `"auto"` by default, which is what makes the default path
-    # parameter-free at every dimension rather than only above the crossover.
-    # One exponent for the whole run. The index ranks by it, so the radius,
-    # the force direction, the step cap and the attraction estimate have to
-    # be in it too; an index built under another one is refused rather than
-    # quietly relaxed in a geometry it does not search.
+    batch = batch_size if batch_size is not None else max(n_gen, 1)
     index_p = None if index is None else float(getattr(index, "p", 1.0))
-    if p is None:
+    if p is None or (index_p is not None and p == 1.0):
         exponent = geometry.check_p(1.0 if index_p is None else index_p)
     else:
         exponent = geometry.check_p(p)
-        # Close, not equal: an exponent read from a float32 array or a
-        # config file is the same exponent.
         if index_p is not None and not math.isclose(
                 index_p, exponent, rel_tol=1e-6):
             raise ValueError(
@@ -1726,7 +1279,7 @@ def esa(
         if index_p is not None:
             exponent = index_p
 
-    n_total = samples.shape[0] + n
+    n_total = samples.shape[0] + n_gen
     mode, target = geometry.neighbourhood_for(
         dim, n_total, search_mode, radius_target)
     final_radius = (
@@ -1743,34 +1296,23 @@ def esa(
     generated = _esa(
         scaled_samples,
         index,
-        n=n,
+        n=n_gen,
         dim=dim,
         epochs=epochs,
-        lr=lr,
-        decay=decay,
+        C=float(C),
+        w=float(w),
         batch_size=batch,
         k=k_value,
         radius=final_radius,
         search_mode=mode,
-        tol=tol,
         patience=patience,
         metric_fn=metric_fn,
         rng=rng,
         init_sampler=samplers.check_sampler(init_sampler, default_random_state=rng),
         init_pool=int(init_pool),
         p=exponent,
-        attract=attract,
-        attraction_weight=float(attraction_weight),
-        attraction_fn=attraction_fn,
-        attraction_kwargs=attraction_kw,
-        k_att=int(k_att),
-        att_power=float(att_power),
-        att_search_mode=att_search_mode,
-        att_radius=att_radius,
-        placement_weight=(None if placement_weight is None
-                          else float(placement_weight)),
-        att_every=max(1, int(att_every)),
-        att_model=att_model,
+        fit_norm=fit_norm,
+        fitness_weight=float(fitness_weight),
         stats=stats,
         **metric_kwargs,
     )
@@ -1779,9 +1321,11 @@ def esa(
 
 def ess(
     samples: np.ndarray | list,
-    bounds: np.ndarray,
+    bounds: np.ndarray | list,
     *,
-    n: int,
+    fitness: np.ndarray | list | None = None,
+    n: int | None = None,
+    p: float = 1.0,
     **kwargs,
 ) -> np.ndarray:
     r"""Empty Space Strategy (ESS): returns the combined data set.
@@ -1793,10 +1337,15 @@ def ess(
 
     Args:
         samples (np.ndarray | list): Existing points, shape $(N_0, D)$.
-        bounds (np.ndarray): Domain boundaries, shape $(D, 2)$.
-        n (int): Number of new points to generate.
-        **kwargs: Forwarded verbatim to `esa` (epochs, lr, search_mode,
-            metric, tol, patience, index, seed, ...).
+        bounds (np.ndarray | list): Domain boundaries, shape $(D, 2)$.
+        fitness (np.ndarray | list | None): Optional per-sample
+            fitness values (lower = closer to the ground = better).
+        n (int | None): Number of new points to generate; ``None`` defaults
+            to $\max(1, N_0)$.
+        p (float): Exponent of the toroidal $L^p$ metric,
+            `geometry.P_MIN` $\le p \le 1$. Default ``1.0``.
+        **kwargs: Forwarded verbatim to `esa` (`C`, `w`, `fitness_weight`,
+            `epochs`, `patience`, `search_mode`, `metric`, `index`, `seed`, ...).
 
     Returns:
         np.ndarray: Array of shape $(N_0 + n, D)$ with original and new
@@ -1806,5 +1355,5 @@ def ess(
     if samples.ndim != 2:
         samples = samples.reshape(-1, np.asarray(bounds).shape[0])
 
-    new_points = esa(samples, bounds, n=n, **kwargs)
+    new_points = esa(samples, bounds, fitness=fitness, n=n, p=p, **kwargs)
     return np.concatenate((samples, new_points), axis=0)

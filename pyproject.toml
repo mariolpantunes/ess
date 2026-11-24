@@ -67,6 +67,8 @@ line-length = 120
 typeCheckingMode = "standard"
 include = ["src/ess"]
 reportImportCycles = "none"
+venvPath = "."
+venv = "venv"
 
 [tool.vulture]
 paths = ["src/ess"]

@@ -1,85 +1,46 @@
-"""Models for the attractiveness of a position that was never measured.
+"""Inverse-distance fitness terrain for never-measured positions on the unit torus.
 
-Attractiveness is only ever known where the objective was actually paid for.
+Fitness is only ever known where the objective was actually paid for.
 Everything else is an estimate, and this module is where estimates come from.
 
-**What these models are for, and what they are not.** Every force in ESS acts
-between *points*: repulsion pushes a node away from a point, attraction pulls
-it toward one. Both therefore need the attractiveness of *both* endpoints, and
-the two endpoints are not alike:
+**The space guides, not the points.** In ESS, only particles (the points being
+relaxed and the static anchors) exert forces -- repulsion, to maximise space
+exploration. The fitness field $f(x)$ is the terrain those particles traverse:
+a non-convex, spatially bounded function built from the measured anchors at
+zero objective evaluation cost, where **lower is closer to the ground
+(better)** and **higher is uphill (worse)**. Its slope $\\nabla f(x)$ modulates
+the repulsive displacement along the terrain (braking uphill movement towards
+higher cost), and its value scores candidate positions during placement.
 
-* **Anchors are static and measured.** Their positions do not move and their
-  attractiveness is the objective value that was paid for. Nothing here is
-  used for them.
-* **Candidates move, and are never measured.** Their repulsion is still exact
-  -- it depends only on distance -- but their attractiveness cannot be
-  computed, and leaving it out is not neutral. `_rank_normalise` puts the
-  scale on `[0, 1]`, so an unset value reads as the *bottom* of it: every
-  candidate would be modelled as the least attractive object in the space,
-  candidates that should pull on one another would repel instead, and the only
-  attraction in the system would be toward the anchors.
+Three properties follow from that design:
 
-So a model here exists to **keep the pairwise force balance well posed for
-points that have no measurement**. It is not a search for the optimum, and it
-is not asked to name a position better than anything measured. Do not reason
-about it as a surrogate that has to *extrapolate*: what it has to do is supply
-a plausible, correctly-ranked value at a moving position.
+1. **Being bounded by the measured range is a guarantee, not a handicap.**
+   `InverseDistance` returns a convex combination of the anchors and can never
+   leave their range, so it can never steer a point toward a value nobody
+   observed.
+2. **Degrading to the mean is the right failure.** Where the field has no
+   information its slope vanishes and the run reduces to pure repulsion.
+3. **The field is static for a whole call.** The anchors do not move during
+   relaxation, so the field and its leave-one-out neighbourhood size (`choose_k`)
+   are fitted once at the start of `esa` and only read as the moving points
+   traverse it.
 
-Three consequences that are easy to get backwards:
+**Why only InverseDistance (IDW) survived high dimensionality.**
+In a 468-arm factorial sweep inside OBLESA across $d = 8..64$, parametric and
+basis-fitted models (`detrended`, `projection`, `fourier`, `auto`) all fitted
+$2d$ coefficients from a fixed population size and collapsed below the $33\\%$
+random parity line as $d$ grew (`detrended`: $70.4 \\to 41.9 \\to 18.0 \\to 13.8\\%$;
+`projection`: $71.4 \\to 56.8 \\to 41.1 \\to 27.9\\%$), steering points in the wrong
+direction once under-determined. `InverseDistance` has zero fitted coefficients
+and held flat at $74.9 / 73.1 / 72.1 / 71.0\\%$ across $d = 8 / 16 / 32 / 64$.
 
-1. **Being bounded by the measured range is not a handicap.**
-   `InverseDistance` returns a convex combination and so can never leave that
-   range. For this job that is a *guarantee*, not a limitation -- the value
-   only has to be plausible and correctly ordered, and a bounded estimate
-   cannot inject a force from a number that was never observed.
-2. **Degrading to the mean is the correct failure.** When a model has nothing
-   to say it should say nothing, so the force balance falls back to
-   repulsion. A model that instead fits confidently to noise is *worse than
-   useless*: it pulls the block somewhere unjustified. This is why `Auto`
-   scores abstention fairly and why `HarmonicRidge` is dangerous below
-   `M > 2 * d`, which is why no such model is left here.
-3. **The field is fitted once, from the anchors, before the relaxation
-   loop.** The anchors are static, so nothing about the fit changes as the
-   run proceeds; `_AttractionField` builds it in its constructor. What repeats
-   every `att_every` epochs is *evaluation* at the candidates' new positions,
-   which cannot be hoisted out: attractiveness belongs to a position, not to a
-   point, and a point that has relaxed into a good region must become an
-   attractor rather than carry its placement-time value. `InverseDistance`
-   has no closed form to tabulate, so each refresh pays `O(M d)`; see
-   `ess._toroidal_l1` for what that costs and what was done about it.
-
-**One model, and what replaced the choice.** Every parametric model this
-module carried fitted `2d` coefficients against `M` measured points, so each
-one needed `M > 2d` to be identifiable -- a condition set by the caller's
-population, not by anything this module controls. `InverseDistance` fits
-nothing, has no such threshold, and is a convex combination of measured
-values, so it provably cannot leave their range. It is the only built-in left,
-and `k` and `power` are the whole of its configuration.
-
-Its two costs, both measured rather than argued: the query is `O(M d)` with no
-closed form to tabulate, and in high dimension distances concentrate so extra
-sources stop sharpening the estimate -- leave-one-out error at `d = 100` moves
-only 0.624 to 0.614 as `M` goes 60 to 300. Neither bites at the anchor counts
-a population-sized caller supplies. Degrading to a *local* mean is also the
-right failure: it still moves with position, where a shrunk parametric fit
-degrades to a constant and says nothing at all.
-
-**Custom models.** Subclass :class:`AttractionModel`, implement `fit` and `at`,
-and pass the instance as `att_model`::
-
-    class MyModel(ess.AttractionModel):
-        def fit(self, positions, values, confidence):
-            ...
-            return self
-
-        def at(self, positions):
-            return ...
-
-    ess.esa(samples, bounds, n=60, attractiveness=-scores, att_model=MyModel())
+At low dimension a local average (`k = 8`) preserves sharp regional detail;
+at high dimension ($d \\ge 16$) pairwise distances concentrate and only a wide
+average (`k = 128` to all anchors) preserves rank correlation and slope
+direction. `choose_k` selects `k` per call via buffered leave-one-out
+cross-validation at the fair-share radius $R_1$, and returns the field's
+leave-one-out rank correlation as its `trust` in $[0, 1]$.
 """
-
-import abc
-import inspect
 
 import numpy as np
 from torann import ToroidalNN
@@ -87,60 +48,11 @@ from torann import ToroidalNN
 from . import geometry
 
 
-class AttractionModel(abc.ABC):
-    """Estimates attractiveness at positions on the unit torus.
-
-    `fit` is called whenever the measured set changes and must tolerate being
-    called repeatedly. `at` must accept any number of query positions and
-    return one value per row, on the same scale as the values it was fitted
-    on.
-    """
-
-    @abc.abstractmethod
-    def fit(self, positions: np.ndarray, values: np.ndarray,
-            confidence: np.ndarray) -> "AttractionModel":
-        """Take the measured sources.
-
-        Args:
-            positions (np.ndarray): Measured points, shape $(M, D)$, in
-                $[0, 1)$.
-            values (np.ndarray): Their attractiveness, shape $(M,)$, higher
-                is more attractive.
-            confidence (np.ndarray): Per-source weight in $(0, 1]$. Measured
-                points sit at 1; a value inferred earlier enters lower, so a
-                chain of inference fades toward the mean rather than
-                laundering itself into ground truth.
-
-        Returns:
-            AttractionModel: self.
-        """
-
-    @abc.abstractmethod
-    def at(self, positions: np.ndarray) -> np.ndarray:
-        """Estimated attractiveness at `positions`, shape $(Q,)$."""
-
-
-class InverseDistance(AttractionModel):
-    """Shepard interpolation over the `k` nearest measured points.
+class InverseDistance:
+    """Shepard inverse-distance interpolation over the `k` nearest measured points.
 
     No coefficients, so nothing to under-determine: the estimate is a convex
     combination of measured values and can never leave their range.
-
-    **That bound is a guarantee, not a handicap** -- see the module docstring.
-    The estimate is not asked to name a position better than anything measured;
-    it is asked to give a moving candidate a plausible, correctly-ordered value
-    so the force balance is well posed. Being unable to leave the measured
-    range means it can never inject a force from a number nobody observed.
-
-    The textbook objection is that distances concentrate in high dimension, so
-    the weights flatten and the estimate tends to the mean. That is true of the
-    *values* and is the right failure mode -- "no information", not something
-    wrong. It is **not** true that the guidance stops working: measured inside
-    OBLESA at `attraction_weight=2`, the share of the selected population that
-    the relaxed block wins is 74.9 / 73.1 / 72.1 / 71.0 percent at
-    `d = 8 / 16 / 32 / 64`, essentially flat, while `Detrended` over the same
-    range falls 70.4 -> 41.9 -> 18.0 -> 13.8 as its fit stops being
-    identifiable. Do not drop this model on the concentration argument alone.
 
     **The neighbour search is `torann`, not a second implementation.** The
     library already delegates every toroidal query to `ToroidalNN`, and
@@ -150,63 +62,15 @@ class InverseDistance(AttractionModel):
     estimate must average over *sources* -- points whose objective was paid
     for -- never over the points being placed.
 
-    The index is fitted once, in `fit`, and queried on every refresh. It also
-    means the backend decision is `torann`'s: below its crossover the search
-    is exact brute force, and above it the same call is LSH, so a caller who
-    supplies far more anchors than a population gets the faster path without
-    changing anything here.
-
-    **Let it take the LSH path.** The approximation looks alarming measured
-    against exact k-NN -- rank correlation between the two estimates falls to
-    0.638 at `M = 15360, d = 100` -- but that is the wrong reference. Both are
-    noisy readings of one field, and disagreeing with each other says nothing
-    about which is closer to it. Scored against the truth they are recovering:
-
-    ==========  =====  ==========  ========  =========
-    M           d      exact rho   LSH rho   speed-up
-    ==========  =====  ==========  ========  =========
-    960         100    0.4649      0.4648    25x
-    3840        100    0.5208      0.5281    45x
-    15360       100    0.5147      0.5429    111x
-    15360       8      0.9613      0.9613    73x
-    ==========  =====  ==========  ========  =========
-
-    LSH is as good or better everywhere, and at the largest cell it is
-    *better* than exact -- in high dimension the formally-nearest `k` are
-    barely nearer than any other `k`, so paying to identify them exactly buys
-    precision in a quantity that has stopped carrying information. Forcing
-    `brute_threshold` there spends two orders of magnitude for nothing.
-
-    **k-NN or radius.** The two differ in what they hold fixed. ``'k_nn'``
-    averages over a fixed *count*, so the neighbourhood grows and shrinks with
-    the local density and every candidate is estimated from the same number of
-    sources -- a candidate in a void reaches far away for its `k` and is
-    smoothed by distant, weakly-related values. ``'radius'`` fixes the
-    *volume* instead: a candidate in a dense region averages many sources, one
-    in a void averages few or none and falls back to the mean, which is the
-    honest answer for a position nothing nearby has measured. Which is better
-    is an empirical question and the reason this is a switch.
-
-    It has an answer, and it is why the switch has no ``'auto'`` while
-    `ess.esa`'s `search_mode` does. Across the 2x2 mode sweep, radius
-    attraction is the worse half at every dimension where the effect resolves
-    (`de` and `cs` give up 0.002-0.009 dlog10 to it from $D = 40$ up, under
-    either repulsion mode), so unlike the repulsion there is no crossover for
-    a policy to sit on -- only a default. It stays a switch because that
-    measurement is one benchmark family; it does not stay a policy.
+    The index is fitted once, in `fit`, and queried on every refresh. Above
+    `torann`'s crossover the search uses LSH (unless `k` covers every source,
+    where exact brute force is forced via `brute_threshold`).
 
     Args:
-        k (int): Neighbours averaged over in ``'k_nn'`` mode.
+        k (int): Neighbours averaged over.
         power (float): Inverse-distance exponent.
         backend (str): Forwarded to `ToroidalNN`; `'auto'` picks the compiled
             kernel when it is installed.
-        search_mode (geometry.ResolvedMode): ``'k_nn'`` or ``'radius'``.
-        radius (float | None): Normalized radius in $(0, 1]$ for
-            ``'radius'`` mode -- a fraction of the torus diameter, see
-            `geometry.radius_from_normalized`. ``None`` or ``0`` derives one
-            from the fitted anchors that targets `k` neighbours, so the two
-            modes are calibrated to the same neighbourhood by default and
-            differ only in which of count and volume is held fixed.
         p (float): Exponent of the toroidal $L^p$ metric the neighbours are
             ranked and weighted by, in $(0, 1]$.
         seed (int | None): Seed of the index's hash functions. Fixed by
@@ -215,65 +79,43 @@ class InverseDistance(AttractionModel):
     """
 
     def __init__(self, k: int = 8, power: float = 2.0, backend: str = "auto",
-                 search_mode: geometry.ResolvedMode = "k_nn",
-                 radius: float | None = None, p: float = 1.0,
-                 seed: int | None = 0):
-        if search_mode not in ("k_nn", "radius"):
-            raise ValueError(
-                f"search_mode must be 'k_nn' or 'radius', got {search_mode!r}")
+                 p: float = 1.0, seed: int | None = 0):
         self.k = int(k)
         self.power = float(power)
         self.backend = str(backend)
-        self.search_mode = str(search_mode)
-        self.radius = radius
         self.p = geometry.check_p(p)
         self.seed = seed
         self._val = np.empty(0)
-        self._conf = np.empty(0)
+        self._pos = np.empty((0, 0))
         self._index: ToroidalNN | None = None
-        self._r: float = 0.0
 
-    def fit(self, positions, values, confidence):
+    def fit(self, positions: np.ndarray, values: np.ndarray) -> "InverseDistance":
+        """Fit the terrain to the measured anchor positions and fitness values.
+
+        Args:
+            positions (np.ndarray): Measured points, shape $(M, D)$, in $[0, 1)$.
+            values (np.ndarray): Their fitness (elevation), shape $(M,)$,
+                lower is closer to the ground (better).
+
+        Returns:
+            InverseDistance: self.
+        """
         pos = np.asarray(positions, dtype=np.float64)
         self._val = np.asarray(values, dtype=np.float64)
-        self._conf = np.asarray(confidence, dtype=np.float64)
+        self._pos = np.mod(pos, 1.0)
         self._index = None
         if pos.shape[0]:
-            n, dim = pos.shape
-            # Resolved here, not in `at`: the radius is a property of the
-            # source set, which is fixed at fit time, and `at` runs on every
-            # refresh.
-            # Only radius mode reads it, and below p = 1 it is not free.
-            if self.search_mode == "radius":
-                self._r = (
-                    geometry.radius_for_count(dim, n, min(self.k, n), self.p)
-                    if not self.radius
-                    else geometry.radius_from_normalized(
-                        float(self.radius), dim, self.p)
-                )
-            # Under the run's exponent, not L1: "nearest" has to mean the
-            # same thing to the estimate as to the repulsion it balances.
-            # Seeded: above torann's crossover the search is LSH, whose hash
-            # functions are drawn at fit. Unseeded, two runs of `esa` with
-            # one seed estimated two different fields and placed two
-            # different designs -- from about 3000 sources at d = 8.
+            n = pos.shape[0]
             self._index = ToroidalNN(
-                seed=self.seed, backend=self.backend, p=self.p).fit(
-                np.mod(pos, 1.0), k=min(self.k, n))
+                seed=self.seed, backend=self.backend, p=self.p,
+                brute_threshold=n + 1 if self.k >= n - 1 else None).fit(
+                self._pos, k=min(self.k, n))
         return self
 
-    def at(self, positions):
-        """Attractiveness a candidate position is *expected* to have.
+    def at(self, positions: np.ndarray) -> np.ndarray:
+        """Expected fitness (elevation) at `positions`, shape $(Q,)$.
 
-        Attractiveness is only ever known for the sources -- they are the ones
-        whose objective has been paid for. A candidate has none, and treating
-        that as zero is not neutral: `_rank_normalise` puts the scale on
-        `[0, 1]`, so zero is the *bottom* of it, every candidate is modelled
-        as the least attractive thing in the space, candidates that should
-        pull on one another repel instead, and the only attraction left in the
-        system is toward the sources.
-
-        A candidate sitting exactly on a source takes that source's value
+        A position sitting exactly on a source takes that source's value
         rather than dividing by zero.
         """
         queries = np.asarray(positions, dtype=np.float64)
@@ -281,103 +123,223 @@ class InverseDistance(AttractionModel):
             return np.zeros(queries.shape[0], dtype=np.float64)
 
         q = np.mod(queries, 1.0)
-        if self.search_mode == "radius":
-            # `pad=True` returns the same dense (m, width) shape `query` does,
-            # under the same -1 / inf convention -- which is the whole reason
-            # radius mode costs two lines here instead of a second weighting
-            # path. A query that found nothing is an all-padded row, and the
-            # fallback to the mean below is already what handles it.
-            ids, dist = self._index.query_radius(self._r, queries=q, pad=True)
-        else:
-            kk = min(self.k, self._val.shape[0])
-            ids, dist = self._index.query(k=kk, queries=q)
+        kk = min(self.k, self._val.shape[0])
+        ids, dist = self._index.query(k=kk, queries=q)
 
-        # LSH mode guarantees `k` results, but a source set smaller than `k`
-        # pads with -1 / inf, and a radius that found nothing pads the whole
-        # row. All three are handled by zeroing the weight.
         missing = ids < 0
         safe = np.where(missing, 0, ids)
-        a_near = self._val[safe]
+        f_near = self._val[safe]
 
         exact = (dist <= 0.0) & ~missing
         with np.errstate(divide="ignore", invalid="ignore"):
             w = np.where(exact | missing, 0.0, dist ** (-self.power))
-        w = w * self._conf[safe]
 
         total = w.sum(axis=1)
         out = np.full(queries.shape[0], float(self._val.mean()))
         ok = total > 0
         if ok.any():
-            out[ok] = np.einsum("qk,qk->q", w[ok], a_near[ok]) / total[ok]
+            out[ok] = np.einsum("qk,qk->q", w[ok], f_near[ok]) / total[ok]
         hit = exact.any(axis=1)
         if hit.any():
-            out[hit] = a_near[hit, np.argmax(exact[hit], axis=1)]
+            out[hit] = f_near[hit, np.argmax(exact[hit], axis=1)]
         return out
 
+    def guide(self, positions: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        r"""The terrain elevation and its uphill slope at `positions`.
 
-#: Built-in models, by the name `att_model` accepts. One, now.
-#:
-#: `'fourier'`, `'detrended'`, `'auto'` and `'projection'` were removed after a
-#: 468-arm factorial measured them against `'idw'` inside OBLESA. Every one of
-#: them fits `2d` coefficients, and a caller supplies anchors by population
-#: size rather than by dimension, so identifiability needs a population growing
-#: linearly in `d` -- where every anchor is a paid objective call.
-#:
-#: Measured as the share of the selected population the relaxed block won,
-#: against 33% parity:
-#:
-#: ============  =====  =====  =====  =====
-#: model         d=8    d=16   d=32   d=64
-#: ============  =====  =====  =====  =====
-#: detrended     70.4   41.9   18.0   13.8
-#: projection    71.4   56.8   41.1   27.9
-#: idw           74.9   73.1   72.1   71.0
-#: ============  =====  =====  =====  =====
-#:
-#: `'detrended'` and `'projection'` both end below parity, which means their
-#: field steers wrong rather than merely saying nothing. `'auto'` additionally
-#: cross-validated four candidates on every fit: 22.8 ms at 60 sources, 86
-#: seconds at 15360.
-#:
-#: The one thing lost with the harmonic basis is a query cost flat in `M` --
-#: tabulating the torus as `d` one-dimensional curves made a query integer
-#: indexing and a sum, where inverse-distance weighting pays `O(M d)`. That
-#: matters above roughly four thousand anchors and not below; a
-#: population-sized caller supplies 60 to 400.
-MODELS = {"idw": InverseDistance}
+        The field is $f(x) = \sum_j w_j f_j / \sum_j w_j$ with
+        $w_j = d_j^{-q}$ over the neighbours `at` uses. Its gradient is
+
+        $$ \nabla f(x) = -q \sum_j \tilde w_j \,\frac{f_j - f(x)}{d_j}\,
+           \nabla d_j, \qquad \tilde w_j = \frac{w_j}{\sum_l w_l} $$
+
+        (the neighbour set is held fixed). Because lower $f$ is closer to the
+        ground (better) and higher $f$ is uphill (worse), $\nabla f(x)$ points
+        **uphill** towards higher cost, and $-\nabla f(x)$ points **downhill**
+        towards the ground. It is a property of the position: a mean, not a
+        sum, so a region probed by ten sources of one value guides like a
+        region probed by one; a constant field has no slope.
+
+        The direction of $\nabla d_j$ is the library's: $\operatorname{sign}$
+        of the toroidal displacement, normalised to unit $L^1$ length (see
+        `ess._compute_forces`). The returned vector is therefore
+        $\nabla f$ divided by the number of coordinates that differ, in units
+        of fitness per unit distance; a caller multiplies by its interaction
+        radius to compare it with a push.
+
+        Args:
+            positions (np.ndarray): Query positions, shape $(Q, D)$.
+
+        Returns:
+            tuple[np.ndarray, np.ndarray]: The estimated elevation, shape $(Q,)$,
+            and the uphill slope vector, shape $(Q, D)$, pointing towards higher
+            fitness (uphill). A query on a source, or with no usable neighbour,
+            has a zero vector.
+        """
+        queries = np.asarray(positions, dtype=np.float64)
+        dim = queries.shape[1] if queries.ndim == 2 else 0
+        out = np.zeros((queries.shape[0], dim), dtype=np.float64)
+        if self._index is None or queries.shape[0] == 0:
+            return np.zeros(queries.shape[0], dtype=np.float64), out
+
+        q = np.mod(queries, 1.0)
+        kk = min(self.k, self._val.shape[0])
+        ids, dist = self._index.query(k=kk, queries=q)
+        missing = ids < 0
+        safe = np.where(missing, 0, ids)
+        f_near = self._val[safe]
+        exact = (dist <= 0.0) & ~missing
+        with np.errstate(divide="ignore", invalid="ignore"):
+            w = np.where(exact | missing, 0.0, dist ** (-self.power))
+        total = w.sum(axis=1)
+        est = np.full(queries.shape[0], float(self._val.mean()))
+        ok = total > 0
+        if ok.any():
+            est[ok] = np.einsum("qk,qk->q", w[ok], f_near[ok]) / total[ok]
+        hit = exact.any(axis=1)
+        if hit.any():
+            est[hit] = f_near[hit, np.argmax(exact[hit], axis=1)]
+
+        rows = np.flatnonzero(ok & ~hit)
+        step = max(1, 4_000_000 // max(1, ids.shape[1] * dim))
+        for lo in range(0, rows.size, step):
+            r = rows[lo : lo + step]
+            with np.errstate(divide="ignore", invalid="ignore"):
+                coef = np.where(
+                    w[r] > 0.0,
+                    w[r] / total[r, None] * (f_near[r] - est[r, None]) / dist[r],
+                    0.0)
+            disp = q[r, None, :] - self._pos[safe[r]]
+            disp -= np.round(disp)
+            grad = np.sign(disp)
+            norms = np.maximum(np.abs(grad).sum(axis=2, keepdims=True), 1e-9)
+            out[r] = -self.power * np.einsum("qk,qkd->qd", coef, grad / norms)
+        return est, out
 
 
-def get_model(spec, **kwargs) -> AttractionModel:
-    """Resolve `att_model` to an instance.
+K_CANDIDATES = (8, 32, 128)
+"""tuple: Neighbour counts `choose_k` compares, beside "every source"."""
 
-    Accepts a registered name, a subclass, or an already-built instance, so a
-    caller can pass `'fourier'`, `HarmonicRidge(harmonics=3)`, or a model of
-    their own.
+K_TOLERANCE = 0.02
+"""float: Rank correlation a smaller neighbourhood may lose and still be chosen."""
+
+
+def _rank_corr(a: np.ndarray, b: np.ndarray) -> float:
+    """Spearman rank correlation; 0 when one side is constant."""
+    if a.size < 3 or np.ptp(a) == 0.0 or np.ptp(b) == 0.0:
+        return 0.0
+    ra = np.argsort(np.argsort(a, kind="stable")).astype(np.float64)
+    rb = np.argsort(np.argsort(b, kind="stable")).astype(np.float64)
+    return float(np.corrcoef(ra, rb)[0, 1])
+
+
+def leave_one_out(positions, values, ks=None, power: float = 2.0,
+                  p: float = 1.0, max_queries: int = 512,
+                  seed: int | None = 0, buffer: float = 0.0) -> dict[int, float]:
+    r"""How well the distance-weighted average predicts the sources it is made of.
+
+    Each source is estimated from the others (itself left out) with the
+    $k$ nearest of them, for every $k$ in `ks`; the score of a $k$ is the
+    rank correlation of those estimates with the measured values. It costs
+    no evaluation of the objective: the sources are the only measured
+    points, and they are all the evidence there is of what the field is
+    worth at the dimension, the count and the landscape of this call.
+
+    A score near 1 means the field orders positions as the objective does;
+    near 0 (or below) means it holds no information, whatever $k$.
+
+    **The buffer.** The field is read where the points are placed: in empty
+    regions, about one fair-share radius from every source. A source inside
+    a cluster is predicted by its own cluster, which says nothing of that
+    reading. With `buffer` > 0 the sources nearer than it are left out too
+    (a buffered, or spatial, leave-one-out), so each source is predicted
+    from as far away as an empty region is.
 
     Args:
-        spec (str | type | AttractionModel): What to resolve.
-        **kwargs: Forwarded to the constructor when `spec` names a class.
-            Ignored for an instance, which is already configured.
+        positions (np.ndarray): Sources, shape $(M, D)$, in $[0, 1)$.
+        values (np.ndarray): Their fitness, shape $(M,)$.
+        ks (Iterable[int] | None): Neighbour counts; ``None`` is
+            `K_CANDIDATES` and every source. Capped at $M - 1$.
+        power (float): Inverse-distance exponent.
+        p (float): Exponent of the toroidal $L^p$ metric.
+        max_queries (int): Sources that are left out, at most (a seeded
+            sample above it); bounds the cost at `max_queries` $\times M$.
+        seed (int | None): Seed of that sample and of the index.
+        buffer (float): Distance under which a neighbour is left out too.
 
     Returns:
-        AttractionModel: A model ready to `fit`.
-
-    Raises:
-        ValueError: If `spec` is an unknown name.
-        TypeError: If `spec` is not a model at all.
+        dict[int, float]: Score per neighbour count, ascending.
     """
-    if isinstance(spec, AttractionModel):
-        return spec
-    if isinstance(spec, str):
-        if spec not in MODELS:
-            raise ValueError(
-                f"unknown att_model {spec!r}; expected one of "
-                f"{sorted(MODELS)}, an AttractionModel subclass, or an "
-                f"instance of one")
-        spec = MODELS[spec]
-    if isinstance(spec, type) and issubclass(spec, AttractionModel):
-        params = inspect.signature(spec).parameters
-        return spec(**{k: v for k, v in kwargs.items() if k in params})
-    raise TypeError(
-        f"att_model must be a name, an AttractionModel subclass or an "
-        f"instance, got {type(spec).__name__}")
+    pos = np.mod(np.asarray(positions, dtype=np.float64), 1.0)
+    val = np.asarray(values, dtype=np.float64)
+    n = val.shape[0]
+    if n < 3:
+        return {}
+    wanted = (*K_CANDIDATES, n - 1) if ks is None else tuple(ks)
+    cand = sorted({min(max(int(k), 1), n - 1) for k in wanted})
+    if buffer > 0.0:
+        cand = sorted({*cand, n - 1})  # the search must reach past the buffer
+    rows = np.arange(n)
+    if n > max_queries:
+        rows = np.sort(np.random.default_rng(seed).choice(n, max_queries, replace=False))
+    k_max = min(cand[-1] + 1, n)
+    index = ToroidalNN(
+        seed=seed, p=geometry.check_p(p),
+        brute_threshold=n + 1 if k_max >= n else None).fit(pos, k=k_max)
+    ids, dist = index.query(k=k_max, queries=pos[rows])
+    ids = np.asarray(ids)
+    dist = np.asarray(dist, dtype=np.float64)
+    dist = np.where((ids == rows[:, None]) | (ids < 0) | (dist < buffer), np.inf, dist)
+    order = np.argsort(dist, axis=1, kind="stable")
+    ids = np.take_along_axis(ids, order, axis=1)
+    dist = np.take_along_axis(dist, order, axis=1)
+    usable = np.isfinite(dist)
+    with np.errstate(divide="ignore"):
+        w = np.where(usable, np.maximum(dist, 1e-12) ** (-float(power)), 0.0)
+    f_near = np.where(usable, val[np.where(ids < 0, 0, ids)], 0.0)
+    num = np.cumsum(w * f_near, axis=1)
+    den = np.cumsum(w, axis=1)
+    out = {}
+    for k in (cand if ks is None else sorted({min(max(int(k), 1), n - 1) for k in wanted})):
+        col = min(k, dist.shape[1]) - 1
+        est = np.where(den[:, col] > 0.0, num[:, col] / np.maximum(den[:, col], 1e-300),
+                       float(val.mean()))
+        out[k] = _rank_corr(est, val[rows])
+    return out
+
+
+def choose_k(positions, values, power: float = 2.0, p: float = 1.0,
+             seed: int | None = 0) -> tuple[int, float]:
+    r"""Neighbour count of the field for these sources, and how far to trust it.
+
+    The count is the smallest candidate whose leave-one-out score
+    (`leave_one_out`) is within `K_TOLERANCE` of the best: a local average
+    where it is as good as a wide one (low dimension), every source where
+    only the wide one keeps an order (high dimension, where the nearest
+    sources are barely nearer than the rest). "Every source" is returned as
+    the number of sources.
+
+    The trust is the best score, clipped to $[0, 1]$: 0 for a field that
+    predicts nothing (a deceptive or flat landscape), so a caller can scale
+    its guide by it.
+
+    The leave-one-out is buffered by the fair-share radius of the sources
+    (`geometry.radius_for_count` with a target of one), the distance at
+    which a point placed in an empty region reads the field.
+
+    Returns:
+        tuple[int, float]: `(k, trust)`.
+    """
+    val = np.asarray(values, dtype=np.float64)
+    pos = np.asarray(positions, dtype=np.float64)
+    buffer = 0.0
+    if val.shape[0] >= 3 and pos.ndim == 2:
+        buffer = geometry.radius_for_count(pos.shape[1], val.shape[0], target=1, p=p)
+    scores = leave_one_out(pos, val, power=power, p=p, seed=seed, buffer=buffer)
+    if not scores:
+        return max(1, val.shape[0]), 0.0
+    best = max(scores.values())
+    k = min(k for k, s in scores.items() if s >= best - K_TOLERANCE)
+    if k >= val.shape[0] - 1:
+        k = val.shape[0]
+    return int(k), float(min(max(best, 0.0), 1.0))

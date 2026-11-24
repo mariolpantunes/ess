@@ -13,10 +13,9 @@ repository-code: 'https://github.com/mariolpantunes/ess'
 url: 'https://mariolpantunes.github.io/ess/'
 abstract: >-
   Empty Space Search — places points in the under-explored regions of an
-  existing sample by relaxing them under repulsion and an optional attraction
-  toward positions predicted to be valuable, measured in toroidal L1 on the
-  unit torus. Attractiveness models are pluggable and selected by
-  cross-validation on the points already evaluated.
+  existing sample by relaxing them under repulsion and an optional inverse-
+  distance fitness terrain (with buffered leave-one-out neighbourhood selection
+  and uphill damping), measured in toroidal L^p (0 < p <= 1) on the unit torus.
 keywords:
   - space-filling-design
   - sampling
@@ -25,5 +24,5 @@ keywords:
   - initialization
   - design-of-experiments
 license: MIT
-version: 0.6.0
-date-released: '2026-08-23'
+version: 0.8.0
+date-released: '2026-11-19'

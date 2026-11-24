@@ -147,8 +147,6 @@ class TestRowBlocking(unittest.TestCase):
 
     def test_chunking_does_not_change_the_forces(self):
         """Same result whichever block size the budget implies."""
-        import sys
-
         # `ess.ess` the attribute is the public function, not this module
         core = sys.modules["ess.ess"]
 
@@ -336,22 +334,20 @@ class TestMetricKwargsAreChecked(unittest.TestCase):
 
 
 class TestAttraction(unittest.TestCase):
-    """The second, signed term: repulsion for novelty, attraction for
-    fine-tuning toward regions the caller says are good.
+    """The terrain guidance: repulsion for novelty, uphill terrain damping and
+    guided placement for regions the caller says have low fitness (near the ground).
 
     Everything here is about the properties that make it safe to enable --
     that it is off by default, that its units cannot leak in, and that it
-    cannot pull hard enough to collapse the design.
+    never collapses the design even at large weights or constant fitness.
     """
 
     def setUp(self):
         self.b = np.array([[0.0, 1.0]] * 4)
         self.static = np.random.default_rng(0).random((30, 4))
         self.centre = np.full(4, 0.25)
-        # "good" near (0.25, ...), so the pull has somewhere to go
-        self.q = -np.abs(self.static - self.centre).sum(axis=1)
-        self.slow = {"attraction_metric": "cauchy",
-                     "attraction_kwargs": {"power": 1.0}}
+        # "good" (low fitness) near (0.25, ...), so the guide has somewhere to go
+        self.q = np.abs(self.static - self.centre).sum(axis=1)
 
     def pull_distance(self, **kw):
         out = esa(self.static, self.b, n=15, seed=1, **kw)
@@ -360,110 +356,88 @@ class TestAttraction(unittest.TestCase):
     def test_off_by_default_and_byte_for_byte_unchanged(self):
         """`None` must evaluate no second term, not a zero-weighted one."""
         a = esa(self.static, self.b, n=15, seed=1)
-        b = esa(self.static, self.b, n=15, seed=1, attractiveness=None)
+        b = esa(self.static, self.b, fitness=None, n=15, seed=1)
         np.testing.assert_array_equal(a, b)
 
-    def test_it_pulls_towards_the_attractive_region(self):
+    def test_it_pulls_towards_the_low_fitness_region(self):
         plain = self.pull_distance()
-        pulled = self.pull_distance(attractiveness=self.q,
-                                    attraction_weight=0.8, **self.slow)
+        pulled = self.pull_distance(fitness=self.q,
+                                    fitness_weight=0.8)
         self.assertLess(pulled, plain)
 
     def neighbour_quality(self, seeds=8, **kw):
-        """Mean normalised attractiveness of each placed point's nearest
-        existing neighbour.
-
-        This is the direct measure of what the term does: it should place
-        points beside good ones. Distance to some fixed "good" coordinate is
-        not -- the attractive points are scattered, so that proxy mixes the
-        effect with wherever they happen to be, and it reads ~3% where this
-        reads ~30%.
+        """Mean normalised fitness (elevation, lower is better) of each placed
+        point's nearest existing neighbour.
         """
         out = []
         for s in range(seeds):
             static = np.random.default_rng(s).random((30, 4))
-            q = -np.abs(static - 0.25).sum(axis=1)
-            a = _rank_normalise(q)
+            q = np.abs(static - 0.25).sum(axis=1)
+            f = _rank_normalise(q)
             call = dict(kw)
-            if "attractiveness" in call:
-                call["attractiveness"] = q
+            if "fitness" in call:
+                call["fitness"] = q
             placed = esa(static, self.b, n=15, seed=s, **call)
             d = np.abs(placed[:, None, :] - static[None, :, :])
             d = np.minimum(d, 1.0 - d).sum(-1)
-            out.append(a[d.argmin(axis=1)].mean())
+            out.append(f[d.argmin(axis=1)].mean())
         return float(np.mean(out))
 
     def test_pure_repulsion_is_indifferent_to_quality(self):
-        """The control: with no attraction the nearest neighbour of a placed
-        point is of average quality, because nothing told ESS about it."""
+        """The control: with no fitness the nearest neighbour of a placed
+        point is of average elevation (0.5), because nothing told ESS about it."""
         self.assertAlmostEqual(self.neighbour_quality(), 0.5, delta=0.05)
 
-    def test_attraction_places_points_beside_good_neighbours(self):
-        got = self.neighbour_quality(attractiveness=True,
-                                     attraction_weight=0.5, **self.slow)
-        self.assertGreater(got, 0.7)
+    def test_fitness_places_points_beside_good_neighbours(self):
+        got = self.neighbour_quality(fitness=True,
+                                     fitness_weight=0.5)
+        self.assertLess(got, 0.47)
 
-    def test_a_little_attraction_already_moves_it(self):
-        """Monotonicity in the weight does *not* hold -- past roughly 0.5 the
-        points cluster onto the single best neighbour instead of spreading
-        over the good regions, and the measure falls back. So the claim is
-        that any real weight beats none, not that more is always better."""
-        none = self.neighbour_quality()
-        for w in (0.2, 0.5, 1.0, 2.0):
-            got = self.neighbour_quality(attractiveness=True,
-                                         attraction_weight=w, **self.slow)
-            self.assertGreater(got, none + 0.15, f"weight={w}")
+    def test_a_little_fitness_weight_already_moves_it(self):
+        plain = self.pull_distance()
+        for w in (0.2, 0.5, 1.0):
+            got = self.pull_distance(fitness=self.q,
+                                     fitness_weight=w)
+            self.assertLess(got, plain, f"weight={w}")
 
     def test_units_of_the_objective_cannot_reach_the_force(self):
         """The defect this guards against: a weight calibrated on one
         objective's scale meaning something else on another."""
-        a = esa(self.static, self.b, n=15, seed=1, attractiveness=self.q,
-                attraction_weight=0.8, **self.slow)
+        a = esa(self.static, self.b, fitness=self.q, n=15, seed=1,
+                fitness_weight=0.8)
         for factor, shift in ((1e6, 0.0), (1e-6, 0.0), (1.0, 5e5)):
-            b = esa(self.static, self.b, n=15, seed=1,
-                    attractiveness=self.q * factor + shift,
-                    attraction_weight=0.8, **self.slow)
+            b = esa(self.static, self.b,
+                    fitness=self.q * factor + shift,
+                    n=15, seed=1, fitness_weight=0.8)
             np.testing.assert_array_equal(a, b)
 
     def test_monotone_rescaling_is_all_that_matters(self):
         """Rank-normalised, so any order-preserving transform is identical."""
-        a = esa(self.static, self.b, n=15, seed=1, attractiveness=self.q,
-                attraction_weight=0.8, **self.slow)
-        b = esa(self.static, self.b, n=15, seed=1,
-                attractiveness=np.exp(self.q), attraction_weight=0.8,
-                **self.slow)
+        a = esa(self.static, self.b, fitness=self.q, n=15, seed=1,
+                fitness_weight=0.8)
+        b = esa(self.static, self.b,
+                fitness=np.exp(self.q), n=15, seed=1,
+                fitness_weight=0.8)
         np.testing.assert_array_equal(a, b)
-
-    def test_collapse_is_refused_at_setup(self):
-        with self.assertRaises(ValueError) as cm:
-            esa(self.static, self.b, n=15, seed=1, attractiveness=self.q,
-                attraction_weight=50.0, **self.slow)
-        self.assertIn("collapse", str(cm.exception).lower())
 
     def test_one_value_per_existing_point(self):
         with self.assertRaises(ValueError) as cm:
-            esa(self.static, self.b, n=15, seed=1, attractiveness=self.q[:5])
+            esa(self.static, self.b, fitness=self.q[:5], n=15, seed=1)
         self.assertIn("5 values", str(cm.exception))
 
-    def test_same_law_on_both_sides_warns_that_it_cannot_cross(self):
-        with self.assertLogs("ess.ess", level="WARNING") as log:
-            esa(self.static, self.b, n=15, seed=1, attractiveness=self.q,
-                attraction_weight=0.5)
-        self.assertIn("never overcomes", "".join(log.output))
-
-    def test_a_constant_attractiveness_pulls_everything_equally(self):
-        """No information in the values, so no preferred direction: the
-        result must stay a valid design rather than degenerate."""
-        out = esa(self.static, self.b, n=15, seed=1,
-                  attractiveness=np.ones(len(self.static)),
-                  attraction_weight=0.8, **self.slow)
-        self.assertTrue(np.isfinite(out).all())
-        self.assertTrue((out >= 0.0).all() and (out <= 1.0).all())
+    def test_a_constant_fitness_is_repulsion_alone(self):
+        """No information in the values, so no preferred direction: matches
+        repulsion alone bit for bit."""
+        plain = esa(self.static, self.b, n=15, seed=1)
+        out = esa(self.static, self.b,
+                  fitness=np.ones(len(self.static)),
+                  n=15, seed=1, fitness_weight=0.8)
+        np.testing.assert_array_equal(out, plain)
 
     def test_placed_points_never_attract(self):
-        """They have no evaluated quality; only the static block pulls."""
-        out = esa(self.static, self.b, n=15, seed=1, attractiveness=self.q,
-                  attraction_weight=0.8, **self.slow)
+        """They have no evaluated quality; only the static block guides."""
+        out = esa(self.static, self.b, fitness=self.q, n=15, seed=1,
+                  fitness_weight=0.8)
         self.assertEqual(out.shape, (15, 4))
         self.assertTrue(np.isfinite(out).all())
 
@@ -795,7 +769,7 @@ class TestLpGeometry(unittest.TestCase):
 
 class TestLpThroughEsa(unittest.TestCase):
     """One exponent governs a run: search, radius, force, step, placement
-    and the attractiveness estimate."""
+    and the fitness terrain estimate."""
 
     def setUp(self):
         self.bounds = np.array([[0.0, 1.0]] * 4)
@@ -836,12 +810,10 @@ class TestLpThroughEsa(unittest.TestCase):
             esa(self.static, self.bounds, n=10, seed=5, p=0.5,
                 index=torann.ToroidalNN(seed=0))
 
-    def test_radius_mode_and_attraction_run_under_lp(self):
+    def test_radius_mode_and_fitness_run_under_lp(self):
         values = np.random.default_rng(1).random(60)
-        out = esa(self.static, self.bounds, n=40, seed=5, p=0.5,
-                  search_mode="radius", attractiveness=values,
-                  attraction_metric="cauchy",
-                  attraction_kwargs={"power": 1.0})
+        out = esa(self.static, self.bounds, fitness=values, n=40,
+                  seed=5, p=0.5, search_mode="radius")
         self.assertEqual(out.shape, (40, 4))
         self.assertTrue(np.isfinite(out).all())
 
@@ -888,16 +860,11 @@ class TestLpGuards(unittest.TestCase):
                   p=np.float32(0.3), index=torann.ToroidalNN(seed=0, p=0.3))
         self.assertEqual(out.shape, (10, 4))
 
-    def test_a_model_built_under_another_exponent_is_refused(self):
+    def test_idw_model_uses_the_run_exponent(self):
         from ess import attraction
-        kw = {"n": 10, "seed": 0, "attractiveness": self.values,
-              "attraction_metric": "cauchy",
-              "attraction_kwargs": {"power": 1.0}}
-        with self.assertRaises(ValueError):
-            esa(self.static, self.bounds, p=0.5,
-                att_model=attraction.InverseDistance(k=4), **kw)
-        model = attraction.InverseDistance(k=4, p=0.5)
-        esa(self.static, self.bounds, p=0.5, att_model=model, **kw)
+        model = attraction.InverseDistance(k=4, p=0.5).fit(self.static, self.values)
+        self.assertIsNotNone(model._index)
+        assert model._index is not None
         self.assertEqual(model._index.p, 0.5)
 
     def test_lp_norm_is_the_quasi_norm(self):
@@ -906,20 +873,23 @@ class TestLpGuards(unittest.TestCase):
         self.assertAlmostEqual(
             float(geometry.lp_norm(v, 0.5)[0]), (0.2 + 0.1) ** 2)
 
-    def test_one_epoch_is_capped_in_the_runs_own_metric(self):
-        """One cap, in the run's L^p: a step is at most `STEP_CAP` of the
-        interaction radius, whatever the exponent."""
+    def test_one_epoch_steps_by_own_gap_divided_by_one_plus_c(self):
+        """In the gap step schedule, epoch 1 steps each point by at most
+        its own nearest-neighbour gap divided by (1 + C) in the run's L^p."""
         empty = np.empty((0, 4))
         for p in (1.0, 0.5, 0.25):
             with self.subTest(p=p):
-                start = esa(empty, self.bounds, n=200, seed=2, p=p, epochs=0)
-                moved = esa(empty, self.bounds, n=200, seed=2, p=p, epochs=1)
-                gap = np.abs(moved - start)
-                np.minimum(gap, 1.0 - gap, out=gap)
-                radius = geometry.radius_for_count(4, 200, NEIGHBOUR_TARGET, p)
-                self.assertLessEqual(
-                    float(geometry.lp_norm(gap, p, axis=1).max()),
-                    sys.modules["ess.ess"].STEP_CAP * radius * 1.001)
+                start = esa(empty, self.bounds, n=200, seed=2, p=p, epochs=0, w=0.0)
+                moved = esa(empty, self.bounds, n=200, seed=2, p=p, epochs=1, C=12.0, w=0.0)
+                diff = np.abs(start[:, None, :] - start[None, :, :])
+                np.minimum(diff, 1.0 - diff, out=diff)
+                dist = geometry.lp_norm(diff, p, axis=2)
+                np.fill_diagonal(dist, np.inf)
+                near = dist.min(axis=1)
+                step = np.abs(moved - start)
+                np.minimum(step, 1.0 - step, out=step)
+                step_lp = geometry.lp_norm(step, p, axis=1)
+                np.testing.assert_allclose(step_lp, near / 13.0, rtol=1e-5, atol=1e-7)
 
 
 class TestBounds(unittest.TestCase):

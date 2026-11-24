@@ -1,5 +1,4 @@
-
-"""Tests for the attractiveness models."""
+"""Tests for the inverse-distance fitness terrain and automatic k selection."""
 
 import unittest
 
@@ -10,13 +9,13 @@ from ess import attraction
 
 
 def additive_truth(x):
-    """A truth the additive basis can represent exactly."""
+    """Smooth periodic test landscape."""
     ang = 2.0 * np.pi * x
     return np.sin(ang).sum(1) + 0.4 * np.cos(2 * ang).sum(1)
 
 
 def coupled_truth(x):
-    """A truth it cannot: pairwise products have no additive decomposition."""
+    """Pairwise coupled periodic test landscape."""
     a = np.sin(2.0 * np.pi * x)
     return np.sum(a * np.roll(a, 1, axis=1), axis=1)
 
@@ -31,101 +30,44 @@ def held_out(model, truth, d, m, seed=0, q=200):
     xs = rng.uniform(0, 1, size=(m, d))
     xq = rng.uniform(0, 1, size=(q, d))
     yq = truth(xq)
-    model.fit(xs, truth(xs), np.ones(m))
+    model.fit(xs, truth(xs))
     return float(np.mean(np.abs(model.at(xq) - yq))) / float(np.std(yq))
 
 
 class TestInterface(unittest.TestCase):
-    def test_every_registered_model_round_trips(self):
+    def test_idw_round_trips(self):
         rng = np.random.default_rng(0)
         pos = rng.uniform(0, 1, size=(40, 6))
         val = additive_truth(pos)
-        for name in attraction.MODELS:
-            with self.subTest(model=name):
-                model = attraction.get_model(name)
-                self.assertIsInstance(model, attraction.AttractionModel)
-                out = model.fit(pos, val, np.ones(40)).at(pos[:5])
-                self.assertEqual(out.shape, (5,))
-                self.assertTrue(np.all(np.isfinite(out)))
-
-    def test_get_model_accepts_name_class_and_instance(self):
-        built = attraction.InverseDistance(k=3)
-        self.assertIs(attraction.get_model(built), built)
-        self.assertIsInstance(attraction.get_model("idw"),
-                              attraction.InverseDistance)
-        self.assertIsInstance(
-            attraction.get_model(attraction.InverseDistance),
-            attraction.InverseDistance)
-
-    def test_get_model_forwards_only_what_the_class_takes(self):
-        """`_AttractionField` passes every knob; each model takes its own."""
-        idw = attraction.get_model("idw", k=3, power=1.5, nonsense=8)
-        self.assertEqual((idw.k, idw.power), (3, 1.5))
-
-    def test_get_model_rejects_nonsense(self):
-        with self.assertRaises(ValueError):
-            attraction.get_model("no-such-model")
-        with self.assertRaises(TypeError):
-            attraction.get_model(42)
+        model = attraction.InverseDistance()
+        out = model.fit(pos, val).at(pos[:5])
+        self.assertEqual(out.shape, (5,))
+        self.assertTrue(np.all(np.isfinite(out)))
 
     def test_empty_source_set_is_not_an_error(self):
-        for name in ("idw",):
-            with self.subTest(model=name):
-                model = attraction.get_model(name)
-                model.fit(np.empty((0, 4)), np.empty(0), np.empty(0))
-                out = model.at(np.random.default_rng(0).uniform(0, 1, (3, 4)))
-                self.assertEqual(out.shape, (3,))
-                self.assertTrue(np.all(np.isfinite(out)))
-
-
-class TestCustomModel(unittest.TestCase):
-    class Constant(attraction.AttractionModel):
-        def fit(self, positions, values, confidence):
-            self.value = float(np.max(values))
-            return self
-
-        def at(self, positions):
-            return np.full(len(positions), self.value)
-
-    def test_a_user_model_drives_a_real_run(self):
-        rng = np.random.default_rng(0)
-        d = 6
-        samples = rng.uniform(0, 1, size=(30, d))
-        bounds = np.array([[0.0, 1.0]] * d)
-        placed = ess.esa(
-            samples, bounds, n=8,
-            attractiveness=-np.sum((samples - 0.3) ** 2, axis=1),
-            attraction_weight=0.5, attraction_metric="cauchy",
-            attraction_kwargs={"power": 1.0},
-            att_model=self.Constant(), seed=1,
-        )
-        self.assertEqual(placed.shape, (8, d))
-        self.assertTrue(np.all(np.isfinite(placed)))
+        model = attraction.InverseDistance()
+        model.fit(np.empty((0, 4)), np.empty(0))
+        out = model.at(np.random.default_rng(0).uniform(0, 1, (3, 4)))
+        self.assertEqual(out.shape, (3,))
+        self.assertTrue(np.all(np.isfinite(out)))
 
 
 class TestRegimes(unittest.TestCase):
-    """Which model to trust is a question about the data, not a preference."""
+    """Inverse-distance interpolation bounds and periodicity."""
 
-    def test_the_hedging_models_never_do(self):
-        for name in ("idw",):
-            for d, m in ((32, 120), (100, 300)):
-                with self.subTest(model=name, d=d, m=m):
-                    err = held_out(attraction.get_model(name),
-                                   coupled_truth, d, m)
-                    self.assertLess(err, 1.0)
+    def test_idw_stays_below_mean_predictor_at_high_dimension(self):
+        for d, m in ((32, 120), (100, 300)):
+            with self.subTest(d=d, m=m):
+                err = held_out(attraction.InverseDistance(),
+                               coupled_truth, d, m)
+                self.assertLess(err, 1.0)
 
     def test_the_estimate_cannot_leave_the_range_of_its_sources(self):
-        """The guarantee the whole default rests on.
-
-        A convex combination of measured values cannot exceed them, so the
-        field can never pull a probe toward a number nobody observed. The
-        removed parametric fits could and did -- that was the argument *for*
-        them, and it is why they were dangerous when the basis was wrong.
-        """
+        """A convex combination of measured values cannot exceed them."""
         rng = np.random.default_rng(2)
         pos = rng.uniform(0, 1, size=(50, 4))
         val = additive_truth(pos)
-        model = attraction.InverseDistance().fit(pos, val, np.ones(50))
+        model = attraction.InverseDistance().fit(pos, val)
         got = model.at(rng.uniform(0, 1, size=(400, 4)))
         self.assertGreaterEqual(got.min(), val.min())
         self.assertLessEqual(got.max(), val.max())
@@ -134,99 +76,10 @@ class TestRegimes(unittest.TestCase):
         """No seam: the space wraps, so the metric behind the estimate must."""
         rng = np.random.default_rng(0)
         pos = rng.uniform(0, 1, size=(120, 4))
-        model = attraction.InverseDistance().fit(
-            pos, additive_truth(pos), np.ones(120))
+        model = attraction.InverseDistance().fit(pos, additive_truth(pos))
         left = np.full((1, 4), 1e-9)
         right = np.full((1, 4), 1.0 - 1e-9)
         np.testing.assert_allclose(model.at(left), model.at(right), atol=1e-3)
-
-
-if __name__ == "__main__":
-    unittest.main()
-
-
-class TestRadiusMode(unittest.TestCase):
-    """`InverseDistance(search_mode='radius')`.
-
-    The two modes differ in what they hold fixed -- k-NN the neighbour
-    *count*, radius the *volume* -- so these assert the consequences of that
-    difference rather than that the numbers match.
-    """
-
-    def setUp(self):
-        rng = np.random.default_rng(4)
-        self.pos = rng.random((200, 10))
-        self.val = rng.random(200)
-        self.conf = np.ones(200)
-        self.q = rng.random((50, 10))
-
-    def _fit(self, **kw):
-        return attraction.InverseDistance(k=8, **kw).fit(
-            self.pos, self.val, self.conf)
-
-    def test_the_default_radius_tracks_the_k_nn_estimate(self):
-        """Auto targets `k` neighbours, so the two modes start from the same
-        neighbourhood and should agree closely -- if they did not, the
-        default radius would be calibrated to something else."""
-        a = self._fit().at(self.q)
-        b = self._fit(search_mode="radius").at(self.q)
-        self.assertGreater(float(np.corrcoef(a, b)[0, 1]), 0.85)
-
-    def test_a_wide_radius_collapses_toward_the_mean(self):
-        """Averaging over nearly everything is averaging: the estimate must
-        lose its spread, which is the check that the radius is really
-        widening the neighbourhood and not being ignored."""
-        narrow = self._fit(search_mode="radius").at(self.q)
-        wide = self._fit(search_mode="radius", radius=0.95).at(self.q)
-        self.assertLess(float(wide.std()), float(narrow.std()))
-
-    def test_an_empty_neighbourhood_falls_back_to_the_mean(self):
-        """A radius small enough to find nothing is legal, not an error: the
-        honest estimate for a position nothing has measured near is the mean
-        of what has been measured."""
-        out = self._fit(search_mode="radius", radius=1e-9).at(self.q)
-        np.testing.assert_allclose(out, self.val.mean())
-
-    def test_a_query_on_a_source_takes_its_value(self):
-        """The exact-hit path is shared, so radius mode must not lose it."""
-        out = self._fit(search_mode="radius").at(self.pos[:5])
-        np.testing.assert_allclose(out, self.val[:5])
-
-    def test_bad_arguments_are_refused(self):
-        with self.assertRaises(ValueError):
-            attraction.InverseDistance(search_mode="bogus")
-        with self.assertRaises(ValueError):
-            attraction.InverseDistance(search_mode="radius", radius=1.5).fit(
-                self.pos, self.val, self.conf)
-
-
-class TestRadiusModeThroughEsa(unittest.TestCase):
-    """`att_search_mode` reaches the model, and is independent of the
-    repulsion's `search_mode`."""
-
-    def _run(self, **kw):
-        rng = np.random.default_rng(2)
-        bounds = np.tile([0.0, 1.0], (8, 1))
-        samples = rng.random((40, 8))
-        return ess.esa(samples, bounds, n=12, epochs=40, seed=1,
-                       attractiveness=rng.random(40), **kw)
-
-    def test_every_combination_of_the_two_modes_runs(self):
-        for repel in ("k_nn", "radius"):
-            for attract in ("k_nn", "radius"):
-                with self.subTest(search_mode=repel, att_search_mode=attract):
-                    out = self._run(search_mode=repel, att_search_mode=attract)
-                    self.assertEqual(out.shape, (12, 8))
-                    self.assertTrue(np.isfinite(out).all())
-
-    def test_the_two_modes_are_genuinely_independent(self):
-        """Changing one must move the result while the other is held: if the
-        arms coincided, the 2x2 would not be measuring two things."""
-        base = self._run(search_mode="k_nn", att_search_mode="k_nn")
-        att = self._run(search_mode="k_nn", att_search_mode="radius")
-        rep = self._run(search_mode="radius", att_search_mode="k_nn")
-        self.assertFalse(np.allclose(base, att))
-        self.assertFalse(np.allclose(base, rep))
 
 
 class TestEstimateIsReproducible(unittest.TestCase):
@@ -238,16 +91,117 @@ class TestEstimateIsReproducible(unittest.TestCase):
         rng = np.random.default_rng(0)
         pos, val = rng.random((3000, 8)), rng.random(3000)
         queries = rng.random((200, 8))
-        first = attraction.InverseDistance().fit(pos, val, np.ones(3000))
-        again = attraction.InverseDistance().fit(pos, val, np.ones(3000))
+        first = attraction.InverseDistance().fit(pos, val)
+        again = attraction.InverseDistance().fit(pos, val)
         np.testing.assert_array_equal(first.at(queries), again.at(queries))
 
-    def test_a_seeded_run_with_attraction_repeats(self):
+    def test_a_seeded_run_with_fitness_repeats(self):
         rng = np.random.default_rng(1)
         pos, val = rng.random((3000, 8)), rng.random(3000)
         bounds = np.array([[0.0, 1.0]] * 8)
-        kw = {"n": 60, "seed": 7, "attractiveness": val,
-              "attraction_metric": "cauchy",
-              "attraction_kwargs": {"power": 1.0}}
+        kw = {"fitness": val, "n": 60, "seed": 7}
         np.testing.assert_array_equal(
             ess.esa(pos, bounds, **kw), ess.esa(pos, bounds, **kw))
+
+
+class TestGuide(unittest.TestCase):
+    """The slope of the field: a property of the position, not of the points."""
+
+    def setUp(self):
+        rng = np.random.default_rng(11)
+        self.dim = 6
+        self.pos = rng.random((80, self.dim))
+        self.val = rng.random(80)
+        self.queries = rng.random((12, self.dim))
+
+    def _model(self, pos, val, k=None):
+        k = pos.shape[0] if k is None else k
+        return attraction.InverseDistance(k=k).fit(pos, val)
+
+    def test_guide_is_the_gradient_of_the_estimate(self):
+        """Central differences of `at`, over the coordinates that differ."""
+        model = self._model(self.pos, self.val)
+        est, guide = model.guide(self.queries)
+        np.testing.assert_allclose(est, model.at(self.queries), rtol=1e-12)
+        h = 1e-6
+        numeric = np.empty_like(self.queries)
+        for axis in range(self.dim):
+            step = np.zeros(self.dim)
+            step[axis] = h
+            numeric[:, axis] = (model.at(self.queries + step)
+                                - model.at(self.queries - step)) / (2 * h)
+        np.testing.assert_allclose(guide * self.dim, numeric, atol=1e-6)
+
+    def test_constant_values_have_no_guide(self):
+        _, guide = self._model(self.pos, np.full(80, 0.7)).guide(self.queries)
+        np.testing.assert_allclose(guide, 0.0, atol=1e-12)
+
+    def test_guide_does_not_grow_with_the_number_of_sources(self):
+        """Every source three times: the same field and the same guide."""
+        est, guide = self._model(self.pos, self.val).guide(self.queries)
+        est3, guide3 = self._model(np.tile(self.pos, (3, 1)),
+                                   np.tile(self.val, 3)).guide(self.queries)
+        np.testing.assert_allclose(est3, est, rtol=1e-9)
+        np.testing.assert_allclose(guide3, guide, rtol=1e-9, atol=1e-12)
+
+    def test_guide_points_uphill_and_negative_guide_points_to_ground(self):
+        """Source at x=0.2 has fitness 0.0 (ground); source at x=0.6 has fitness 1.0 (hill).
+        The uphill slope guide points toward x=0.6 (+x), so downhill (-guide) points to x=0.2."""
+        pos = np.array([[0.2, 0.5], [0.6, 0.5]])
+        _, guide = self._model(pos, np.array([0.0, 1.0])).guide(np.array([[0.4, 0.45]]))
+        self.assertGreater(guide[0, 0], 0.0)
+
+    def test_query_on_a_source_has_no_guide(self):
+        est, guide = self._model(self.pos, self.val).guide(self.pos[:3])
+        np.testing.assert_allclose(est, self.val[:3])
+        np.testing.assert_array_equal(guide, 0.0)
+
+
+class TestChooseK(unittest.TestCase):
+    """Leave-one-out choice of the neighbour count, and the trust of the field."""
+
+    def setUp(self):
+        rng = np.random.default_rng(4)
+        self.pos = rng.random((200, 3))
+        self.smooth = ((self.pos - 0.5) ** 2).sum(axis=1)
+        self.noise = rng.random(200)
+
+    def test_scores_follow_the_information_in_the_values(self):
+        smooth = attraction.leave_one_out(self.pos, self.smooth)
+        noise = attraction.leave_one_out(self.pos, self.noise)
+        self.assertEqual(sorted(smooth), [8, 32, 128, 199])
+        self.assertGreater(smooth[8], 0.7)
+        self.assertLess(max(noise.values()), 0.3)
+
+    def test_choice_is_a_candidate_and_trust_is_bounded(self):
+        k, trust = attraction.choose_k(self.pos, self.smooth)
+        self.assertIn(k, (8, 32, 128, 200))
+        self.assertGreater(trust, 0.5)
+        k, trust = attraction.choose_k(self.pos, self.noise)
+        self.assertGreaterEqual(trust, 0.0)
+        self.assertLess(trust, 0.3)
+
+    def test_constant_values_have_no_trust(self):
+        self.assertEqual(attraction.choose_k(self.pos, np.full(200, 0.3))[1], 0.0)
+
+    def test_buffer_leaves_the_cluster_out(self):
+        """Tight clusters with one value each: predicted from inside, not from outside."""
+        rng = np.random.default_rng(8)
+        centres = rng.random((20, 3))
+        pos = np.mod(np.repeat(centres, 10, axis=0) + rng.normal(0, 1e-3, (200, 3)), 1.0)
+        val = np.repeat(rng.random(20), 10)
+        inside = attraction.leave_one_out(pos, val, ks=(8,))[8]
+        outside = attraction.leave_one_out(pos, val, ks=(8,), buffer=0.05)[8]
+        self.assertGreater(inside, 0.95)
+        self.assertLess(outside, 0.5)
+
+    def test_copies_of_the_sources_do_not_change_the_choice(self):
+        k1, t1 = attraction.choose_k(self.pos, self.smooth)
+        scores = attraction.leave_one_out(self.pos, self.smooth, ks=(8, 32))
+        self.assertEqual(sorted(scores), [8, 32])
+        self.assertGreater(t1, 0.0)
+        self.assertGreater(k1, 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
