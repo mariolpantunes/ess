@@ -71,8 +71,6 @@ ignore = ["B905"]
 typeCheckingMode = "standard"
 include = ["src/ess", "test"]
 reportImportCycles = "none"
-venvPath = "."
-venv = "venv"
 
 [tool.vulture]
 paths = ["src/ess"]

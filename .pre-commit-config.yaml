@@ -74,7 +74,7 @@ repos:
 
       - id: basedpyright
         name: basedpyright
-        entry: basedpyright
+        entry: basedpyright --pythonpath venv/bin/python
         language: system
         files: '(\.py$|^pyproject\.toml$)'
         pass_filenames: false
