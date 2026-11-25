@@ -43,14 +43,14 @@ class LHCSampler(Sampler):
         self, n: int, dim: int, rng: np.random.Generator | None = None
     ) -> np.ndarray:
         if n <= 0:
-            return np.empty((0, dim), dtype=np.float32)
+            return np.empty((0, dim), dtype=np.float64)
 
         active_rng = rng if rng is not None else self.rng
-        perms = np.empty((n, dim), dtype=np.float32)
+        perms = np.empty((n, dim), dtype=np.float64)
         for d in range(dim):
             perms[:, d] = active_rng.permutation(n)
 
-        offsets = active_rng.uniform(0.0, 1.0, (n, dim)).astype(np.float32)
+        offsets = active_rng.uniform(0.0, 1.0, (n, dim))
         return (perms + offsets) / n
 
 
@@ -61,10 +61,10 @@ class UniformSampler(Sampler):
         self, n: int, dim: int, rng: np.random.Generator | None = None
     ) -> np.ndarray:
         if n <= 0:
-            return np.empty((0, dim), dtype=np.float32)
+            return np.empty((0, dim), dtype=np.float64)
 
         active_rng = rng if rng is not None else self.rng
-        return active_rng.uniform(0.0, 1.0, (n, dim)).astype(np.float32)
+        return active_rng.uniform(0.0, 1.0, (n, dim))
 
 
 def check_sampler(

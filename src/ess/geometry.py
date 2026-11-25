@@ -332,7 +332,9 @@ def _power_sum_law(dim: int, p: float) -> tuple[np.ndarray, float]:
     pmf = np.diff(2.0 * edges ** (1.0 / p))
     size = dim * bins
     law = np.fft.irfft(np.fft.rfft(pmf, size) ** dim, size)
-    cdf = np.cumsum(np.maximum(law, 0.0))
+    peak = float(np.max(law)) if law.size else 0.0
+    law = np.where(law > 1e-14 * peak, law, 0.0)
+    cdf = np.cumsum(law)
     return cdf / cdf[-1], top / bins
 
 
@@ -344,19 +346,24 @@ def _power_sum_quantile(dim: int, p: float, q: float) -> float:
     $u^p$ is skewed, and a neighbour count is a *lower-tail* probability,
     where a normal approximation to a skewed sum is at its worst -- at
     $p = 1/4$, $d = 5$ it returned a radius holding 19.5 neighbours for a
-    target of 8. So the law is computed (`_power_sum_law`). The normal
-    approximation remains the fallback where the tail is below what double
-    precision resolves.
+    target of 8. So the law is computed (`_power_sum_law`). Below the first
+    reliable CDF bin above FFT noise, a continuous power-law tail matching
+    the small-$S$ volume scaling $P(S \le x) \propto x^{d/p}$ keeps the
+    quantile strictly monotone for every $q \in (0, 1)$.
     """
-    if q > 1e-9:
-        cdf, step = _power_sum_law(dim, p)
-        at = min(int(np.searchsorted(cdf, q)), cdf.size - 1)
-        # Entry k is the sum of d bin indices; each term sits mid-bin.
-        return float((at + 0.5 * dim) * step)
-    top = 0.5 ** p
-    mean = dim * top / (p + 1.0)
-    var = dim * top * top * (1.0 / (2.0 * p + 1.0) - 1.0 / (p + 1.0) ** 2)
-    return max(mean + statistics.NormalDist().inv_cdf(q) * math.sqrt(var), 0.0)
+    cdf, step = _power_sum_law(dim, p)
+    i0 = int(np.searchsorted(cdf, 1e-12, side="right"))
+    if i0 >= cdf.size:
+        i0 = int(np.argmax(cdf > 0.0))
+    q0 = float(cdf[i0])
+    x0 = float((i0 + 0.5 * dim) * step)
+    if q <= 0.0:
+        return 0.0
+    if q < q0:
+        return x0 * (q / q0) ** (p / dim)
+    at = min(int(np.searchsorted(cdf, q)), cdf.size - 1)
+    # Entry k is the sum of d bin indices; each term sits mid-bin.
+    return float((at + 0.5 * dim) * step)
 
 
 def l1_radius_for_count(

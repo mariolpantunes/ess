@@ -16,17 +16,18 @@ logging.getLogger("PIL").setLevel(logging.WARNING)
 
 
 def main(args):
+    # Inset from the [0, 5] periodic seam so all eight anchors are distinct on the torus.
     points0 = np.array(
         [
-            [0, 0, 0],
-            [5, 5, 5],
-            [5, 0, 0],
-            [0, 5, 0],
-            [0, 0, 5],
-            [0, 5, 5],
-            [5, 0, 5],
-            [5, 5, 0],
-            [2, 2, 2],
+            [0.5, 0.5, 0.5],
+            [4.5, 4.5, 4.5],
+            [4.5, 0.5, 0.5],
+            [0.5, 4.5, 0.5],
+            [0.5, 0.5, 4.5],
+            [0.5, 4.5, 4.5],
+            [4.5, 0.5, 4.5],
+            [4.5, 4.5, 0.5],
+            [2.5, 2.5, 2.5],
         ]
     )
     bounds = np.array([[0, 5], [0, 5], [0, 5]])
@@ -67,7 +68,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Sample for 2D ESA")
+    parser = argparse.ArgumentParser(description="Sample for 3D ESA")
     parser.add_argument("-n", type=int, help="number of points", default=10)
     parser.add_argument("-g", type=int, help="number of points in grid", default=7)
     args = parser.parse_args()

@@ -1,29 +1,38 @@
-"""Current `esa` against the legacy `_esa_01`, on speed and on quality.
+r"""Current `esa` against the legacy `_esa_01`, on speed and clearance.
 
-Quality is the normalised wrap-around discrepancy, which is what this
-project ranks designs on -- see `benchmark_dispersion.py` for why it is a
-discrepancy and not a point metric. **Lower is better, and 1.0 = random.**
-
-That polarity is the whole reason this file needed fixing. The number was
-right all along; it was printed under a "Clark-Evans" heading, which is
-higher-better, so the summary read 25.39 for legacy against 2.39 for current
-and looked like a 10x regression when it is a 10x improvement. The script
-never crashed, which is why it went unnoticed -- a mislabelled metric is
-worse than a missing one.
+Designs are ranked on per-new-point toroidal L1 nearest-neighbour clearance
+normalised by the fair-share radius $R_1 = \text{radius\_for\_count}(d, N_{\text{total}}, 1)$:
+`gap_min / R1` and `gap_p05 / R1` (**higher is better**), reported beside wall
+time and epochs used.
 
 Run from the repository root::
 
     python examples/evaluate_esa.py
 """
 
-
 import time
 
 import numpy as np
+from torann import ToroidalNN
 
 from ess import esa as current_esa
+from ess import geometry
 from ess.legacy import _esa_01 as legacy_esa
-from ess.utils import expected_discrepancy, wrap_around_discrepancy
+
+
+def clearance_stats(anchors: np.ndarray, new_pts: np.ndarray, p: float = 1.0) -> dict[str, float]:
+    """Per-new-point nearest-neighbour gap normalised by fair-share radius R1."""
+    n_total = anchors.shape[0] + new_pts.shape[0]
+    dim = new_pts.shape[1]
+    r1 = geometry.radius_for_count(dim, n_total, target=1, p=p)
+    idx = ToroidalNN(seed=0, p=p, brute_threshold=n_total + 1).fit(anchors, new_pts, k=1)
+    _, dists = idx.query(k=1)
+    gaps = np.asarray(dists, dtype=np.float64).ravel() / r1
+    return {
+        "gap_min": float(gaps.min()),
+        "gap_p05": float(np.quantile(gaps, 0.05)),
+        "gap_med": float(np.median(gaps)),
+    }
 
 
 def run_benchmark():
@@ -33,34 +42,26 @@ def run_benchmark():
 
     print(
         f"{'Dim':>4} | {'N':>4} | {'Legacy(s)':>10} | {'Current(s)':>10} | "
-        f"{'Speedup':>8} | {'L-Disc':>10} | {'C-Disc':>10}"
+        f"{'Speedup':>8} | {'L-gap05':>8} | {'C-gap05':>8} | {'C-min':>8} | {'Ep':>4}"
     )
-    print("-" * 75)
+    print("-" * 88)
 
     for d in dimensions:
         for n in populations:
-            bounds = np.array([[0, 1]] * d)
-            # Use a small seed set (10% of N)
+            bounds = np.array([[0.0, 1.0]] * d)
             n_initial = max(1, n // 10)
-            samples = np.random.default_rng(42).uniform(0, 1, (n_initial, d)).astype(np.float32)
+            samples = np.random.default_rng(42).uniform(0.0, 1.0, (n_initial, d))
 
-            # --- Benchmark Legacy Version ---
-            # _esa_01 optimizes each point independently against 'samples'
             start_legacy = time.perf_counter()
             points_legacy = legacy_esa(samples, bounds, n=n, seed=42)
             time_legacy = time.perf_counter() - start_legacy
-            quality_legacy = wrap_around_discrepancy(
-                points_legacy) / expected_discrepancy(
-                len(points_legacy), points_legacy.shape[1])
+            q_legacy = clearance_stats(samples, points_legacy)
 
-            # --- Benchmark Current Version ---
-            # esa optimizes points as a batch, repelling each other and 'samples'
+            stats: dict = {}
             start_current = time.perf_counter()
-            points_current = current_esa(samples, bounds, n=n, seed=42)
+            points_current = current_esa(samples, bounds, n=n, seed=42, stats=stats)
             time_current = time.perf_counter() - start_current
-            quality_current = wrap_around_discrepancy(
-                points_current) / expected_discrepancy(
-                len(points_current), points_current.shape[1])
+            q_current = clearance_stats(samples, points_current)
 
             speedup = time_legacy / time_current
 
@@ -70,21 +71,23 @@ def run_benchmark():
                 "Legacy_T": time_legacy,
                 "Current_T": time_current,
                 "Speedup": speedup,
-                "Legacy_Q": quality_legacy,
-                "Current_Q": quality_current,
+                "Legacy_Q": q_legacy["gap_p05"],
+                "Current_Q": q_current["gap_p05"],
+                "Current_Min": q_current["gap_min"],
+                "Epochs": int(stats.get("epochs_total", 0)),
             }
             results.append(row)
 
             print(
                 f"{d:4d} | {n:4d} | {time_legacy:10.4f} | {time_current:10.4f} | "
-                f"{speedup:7.2f}x | {quality_legacy:10.4f} | {quality_current:10.4f}"
+                f"{speedup:7.2f}x | {row['Legacy_Q']:8.4f} | {row['Current_Q']:8.4f} | "
+                f"{row['Current_Min']:8.4f} | {row['Epochs']:4d}"
             )
 
     return results
 
 
 def print_markdown(data):
-    # 1. Detailed Table
     print("\n### Detailed Comparison Table")
     headers = [
         "Dim",
@@ -92,22 +95,21 @@ def print_markdown(data):
         "Legacy Time (s)",
         "Current Time (s)",
         "Speedup",
-        "Legacy wrap disc",
-        "Current wrap disc",
+        "Legacy gap_p05/R1",
+        "Current gap_p05/R1",
+        "Current gap_min/R1",
+        "Epochs",
     ]
-    header_line = "| " + " | ".join(headers) + " |"
-    sep_line = "| " + " | ".join(["---"] * len(headers)) + " |"
-    print(header_line)
-    print(sep_line)
+    print("| " + " | ".join(headers) + " |")
+    print("| " + " | ".join(["---"] * len(headers)) + " |")
 
     for r in data:
-        line = (
+        print(
             f"| {r['Dim']} | {r['N']} | {r['Legacy_T']:.4f} | {r['Current_T']:.4f} | "
-            f"{r['Speedup']:.2f}x | {r['Legacy_Q']:.4f} | {r['Current_Q']:.4f} |"
+            f"{r['Speedup']:.2f}x | {r['Legacy_Q']:.4f} | {r['Current_Q']:.4f} | "
+            f"{r['Current_Min']:.4f} | {r['Epochs']} |"
         )
-        print(line)
 
-    # 2. Aggregated Metrics
     speedups = [r["Speedup"] for r in data]
     l_qualities = [r["Legacy_Q"] for r in data]
     c_qualities = [r["Current_Q"] for r in data]
@@ -122,8 +124,8 @@ def print_markdown(data):
     print("| --- | --- |")
     print(f"| Average Speedup | {avg_speedup:.2f}x |")
     print(f"| Median Speedup | {med_speedup:.2f}x |")
-    print(f"| Avg Legacy wrap disc (LOWER better, 1 = random) | {avg_l_q:.4f} |")
-    print(f"| Avg Current wrap disc (LOWER better, 1 = random) | {avg_c_q:.4f} |")
+    print(f"| Avg Legacy gap_p05/R1 (HIGHER better) | {avg_l_q:.4f} |")
+    print(f"| Avg Current gap_p05/R1 (HIGHER better) | {avg_c_q:.4f} |")
 
 
 if __name__ == "__main__":
