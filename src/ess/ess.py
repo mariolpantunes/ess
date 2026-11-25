@@ -30,6 +30,7 @@ import time
 
 import numpy as np
 from torann import ToroidalNN
+from torann import brute as _torann_brute
 from torann import rust as _torann_rust
 
 from . import attraction, geometry, samplers
@@ -449,6 +450,7 @@ def _smart_init(
     field: "_AttractionField | None" = None,
     fitness_weight: float = 0.0,
     p: float = 1.0,
+    prior: np.ndarray | None = None,
 ) -> np.ndarray:
     r"""Initializes new points by Best Candidate Sampling against the index.
 
@@ -516,6 +518,13 @@ def _smart_init(
     # A copy: it is lowered in place as slots are picked, and the index owns
     # what it returned.
     novelty = np.array(dists, dtype=np.float64).reshape(n_new, pool)
+    if prior is not None and prior.shape[0] > 0:
+        _, d_prior = _torann_brute.knn_scan(prior, candidates, k=1, p=p)
+        np.minimum(
+            novelty,
+            np.asarray(d_prior, dtype=np.float64).reshape(n_new, pool),
+            out=novelty,
+        )
     slots = candidates.reshape(n_new, pool, dim)
 
     # Repulsive ESS places on novelty alone; guided ESS places on a blend
@@ -871,10 +880,13 @@ def _esa(
     radius_hint = radius if search_mode == "radius" else None
     fitted = n_static > 0
 
+    timers: dict | None = {} if stats is not None else None
+
     # One field, built once from the measured points: the anchors do not move,
     # so the terrain they define is static for the whole call.
     field = None
     trust = 1.0
+    started = time.perf_counter()
     if fit_norm is not None and n_static > 0:
         k_att, trust = attraction.choose_k(
             all_data[:n_static], fit_norm[:n_static], power=2.0, p=p)
@@ -885,6 +897,7 @@ def _esa(
                                  k=k_att, power=2.0, p=p)
     if fitted:
         index.fit(all_data[:n_static], k=k, radius=radius_hint)
+    _accumulate(timers, "setup_s", started)
 
     num_batches = math.ceil(n / batch_size)
     logger.debug(
@@ -892,7 +905,6 @@ def _esa(
         n, num_batches, search_mode, radius,
     )
 
-    timers: dict | None = {} if stats is not None else None
     place_w = min(float(fitness_weight), PLACEMENT_WEIGHT_CAP) if fitness_weight > 0.0 else 0.0
 
     for _ in range(num_batches):
@@ -902,10 +914,8 @@ def _esa(
 
         started = time.perf_counter()
         if fitted:
-            # Placed in rounds, each one indexed before the next is drawn, so
-            # that a slot is far from the whole batch placed so far and not
-            # only from the batches before it. Within a round `_smart_init`
-            # does the same thing exactly.
+            # Placed in rounds against the static index plus previously picked
+            # slots of this batch, then promoted once into the candidate tier.
             rounds = PLACEMENT_ROUND
             init = np.empty((current_n, dim))
             for lo in range(0, current_n, rounds):
@@ -913,16 +923,9 @@ def _esa(
                 init[lo:hi] = _smart_init(
                     index, hi - lo, dim, rng, init_sampler, pool=init_pool,
                     field=field, fitness_weight=place_w, p=p,
+                    prior=init[:lo] if lo > 0 else None,
                 )
-                if hi < current_n:
-                    index.promote(init[lo:hi])
-            if current_n > rounds:
-                # The earlier rounds went into the static tier to be seen;
-                # the relaxation needs the whole batch back in the candidate
-                # tier, and a refit is the only way to say that.
-                index.fit(all_data[:cursor], init, k=k, radius=radius_hint)
-            else:
-                index.promote(init)
+            index.promote(init)
         else:
             # From scratch: nothing to anchor against — the first batch
             # starts straight from the space-filling sampler.
@@ -941,7 +944,9 @@ def _esa(
                      and space_weight > 0.0)
         att_step = ATT_IMPROVE
         if field is not None and fit_norm is not None:
+            started = time.perf_counter()
             est = field.at(active)
+            _accumulate(timers, "guide_s", started)
             best_fit = float(est.mean())
             if current_n > 1:
                 att_step = ATT_IMPROVE * min(1.0, max(0.01, float(est.std()) / _RANK_STD))
@@ -981,8 +986,10 @@ def _esa(
                     guide_vec is None or epochs_used % ATT_EVERY == 0):
                 # The field is fixed for the call; what is refreshed is
                 # where the moving points read it. Lower elevation is better.
+                started = time.perf_counter()
                 est, guide_vec = field.guide(active)
                 guide_vec *= radius
+                _accumulate(timers, "guide_s", started)
                 fit_now = float(est.mean())
                 if fit_now < best_fit - att_step:
                     best_fit = fit_now
@@ -994,16 +1001,19 @@ def _esa(
                 active, all_data, ids, dists, radius, metric_fn, rng,
                 **metric_kwargs,
             )
+            f_max = float(np.max(np.abs(forces).sum(axis=1)))
+            f_norm = geometry.lp_norm(forces, p, axis=1)[:, None]
+            unit_step = np.where(
+                f_norm > 1e-12, forces / np.maximum(f_norm, 1e-12), 0.0
+            )
             if use_guide and guide_vec is not None:
-                _apply_guide(forces, guide_vec, space_weight)
+                _apply_guide(unit_step, guide_vec, space_weight)
             _accumulate(timers, "force_s", started)
 
             started = time.perf_counter()
             # The point's own clearance is the unit, and it shrinks as
-            # 1/(t + C) along the unit force direction in the run's L^p.
-            f_norm = geometry.lp_norm(forces, p, axis=1)[:, None]
-            step = forces / np.maximum(f_norm, 1e-12)
-            step *= (near / (epochs_used + C))[:, None]
+            # 1/(t + C) along the (terrain-damped) unit force direction in L^p.
+            step = unit_step * (near / (epochs_used + C))[:, None]
             active += step
             np.mod(active, 1.0, out=active)
             _accumulate(timers, "step_s", started)
@@ -1012,7 +1022,6 @@ def _esa(
             index.update(active)
             _accumulate(timers, "update_s", started)
 
-            f_max = float(np.max(np.abs(forces).sum(axis=1)))
             ema = f_max if ema is None else 0.5 * ema + 0.5 * f_max
             settled = both_streak if use_guide else gap_streak
             if f_max <= 1e-12 or settled >= patience:
@@ -1020,19 +1029,26 @@ def _esa(
 
         replaced = 0
         if w > 0.0 and current_n > 1:
+            started = time.perf_counter()
             # Worst first, in rounds, each one indexed before the next is
             # drawn, as the placement does. Higher score = larger gap and
             # lower fitness (closer to the ground).
-            _, d_near = index.query(k=2, queries=active)
-            d_near = np.asarray(d_near, dtype=np.float64).reshape(current_n, -1)
-            own = np.where(d_near > 1e-12, d_near, np.inf).min(axis=1)
+            nbr_ids, d_near = index.query(k=1)
+            nbr_ids = np.asarray(nbr_ids, dtype=np.int64).reshape(current_n, -1)
+            own = np.asarray(d_near, dtype=np.float64).reshape(current_n, -1)[:, 0].copy()
             own[~np.isfinite(own)] = 0.0
             guided = field is not None and fit_norm is not None and place_w > 0.0
             own_fit = field.at(active) if guided and field is not None else None
             rank_by = (own if own_fit is None
                        else _zscore(own) - place_w * _zscore(own_fit))
             order = np.argsort(rank_by)[: math.ceil(w * current_n)]
+            prev_moved = False
             for lo in range(0, order.size, PLACEMENT_ROUND):
+                if prev_moved:
+                    nbr_ids, d_near = index.query(k=1)
+                    nbr_ids = np.asarray(nbr_ids, dtype=np.int64).reshape(current_n, -1)
+                    own = np.asarray(d_near, dtype=np.float64).reshape(current_n, -1)[:, 0].copy()
+                    own[~np.isfinite(own)] = 0.0
                 rows = order[lo : lo + PLACEMENT_ROUND]
                 offer = _smart_init(index, rows.size, dim, rng, init_sampler,
                                     pool=init_pool, p=p,
@@ -1053,26 +1069,42 @@ def _esa(
                     -gain if offer_fit is None
                     else -(_zscore(gain) + fit_term[rows.size:]))
                 moved = False
+                moved_rows: set[int] = set()
                 taken = np.empty((0, dim))
                 for at, (row, j) in enumerate(zip(rows, best_first)):
+                    row_i = int(row)
+                    own_row = float(own[row_i])
+                    nbr_global = int(nbr_ids[row_i, 0])
+                    if cursor <= nbr_global < cursor + current_n and (nbr_global - cursor) in moved_rows:
+                        sep_all = np.abs(all_data[: cursor + current_n] - active[row_i])
+                        np.minimum(sep_all, 1.0 - sep_all, out=sep_all)
+                        d_all = geometry.lp_norm(sep_all, p, axis=1)
+                        d_all[cursor + row_i] = np.inf
+                        own_row = float(d_all.min())
+                        if not np.isfinite(own_row):
+                            own_row = 0.0
+                        own[row_i] = own_row
                     clear = gain[j]
                     if taken.shape[0]:
                         sep = np.abs(taken - offer[j])
                         np.minimum(sep, 1.0 - sep, out=sep)
                         clear = min(clear, float(geometry.lp_norm(sep, p, axis=1).min()))
                     if offer_fit is None:
-                        better = clear > own[row]
+                        better = clear > own_row
                     else:
                         scale = sd_g if sd_g > 0.0 else 1.0
                         better = ((clear - mu_g) / scale + fit_term[rows.size + j]
-                                  > (own[row] - mu_g) / scale + fit_term[at])
+                                  > (own_row - mu_g) / scale + fit_term[at])
                     if better:
-                        active[row] = offer[j]
+                        active[row_i] = offer[j]
                         taken = np.concatenate((taken, offer[j][None]))
+                        moved_rows.add(row_i)
                         replaced += 1
                         moved = True
                 if moved:
                     index.update(active)
+                prev_moved = moved
+            _accumulate(timers, "replace_s", started)
 
         logger.debug(
             "Batch [%d:%d] stopped after %d/%d epochs (force EMA %.4g)",
@@ -1082,8 +1114,10 @@ def _esa(
             stats.setdefault("batch_epochs", []).append(epochs_used)
             stats.setdefault("batch_replaced", []).append(replaced)
             if field is not None and fit_norm is not None:
+                started = time.perf_counter()
                 stats.setdefault("batch_att_gain", []).append(
                     fit_start - float(field.at(active).mean()))
+                _accumulate(timers, "guide_s", started)
             stats.setdefault("batch_force_ema", []).append(
                 float(ema) if ema is not None else 0.0
             )
@@ -1200,7 +1234,7 @@ def esa(
             statistics (`batch_epochs`, `batch_replaced`, `batch_force_ema`,
             `epochs_total`, `radius`, `search_mode`, `k_att`, `field_trust`,
             and timing buckets `query_s`, `force_s`, `step_s`, `update_s`,
-            `setup_s`).
+            `setup_s`, `guide_s`, `replace_s`).
         **metric_kwargs: Extra arguments for the force law.
 
     Returns:
@@ -1215,14 +1249,26 @@ def esa(
         raise ValueError(
             "`bounds` must be finite with lower <= upper on every axis")
     samples = np.asarray(samples, dtype=np.float64)
-    if samples.ndim != 2:
+    if samples.ndim == 2:
+        if samples.shape[1] != bounds.shape[0]:
+            raise ValueError(
+                f"`samples` has {samples.shape[1]} columns, expected {bounds.shape[0]} "
+                f"to match `bounds`"
+            )
+    else:
         samples = samples.reshape(-1, bounds.shape[0])
+    if not np.all(np.isfinite(samples)):
+        raise ValueError("`samples` must be finite")
 
     n_gen = max(1, samples.shape[0]) if n is None else int(n)
     if C <= 0.0:
         raise ValueError(f"`C` must be positive, got {C!r}")
     if not 0.0 <= float(w) <= 1.0:
         raise ValueError(f"`w` must be in [0, 1], got {w!r}")
+    if not np.isfinite(float(fitness_weight)) or float(fitness_weight) < 0.0:
+        raise ValueError(
+            f"`fitness_weight` must be finite and non-negative, got {fitness_weight!r}"
+        )
 
     if isinstance(metric, str):
         metric_fn = METRIC_REGISTRY.get(metric.lower())
@@ -1241,7 +1287,9 @@ def esa(
                 f"samples. One per existing point: the points being placed "
                 f"have no evaluated quality yet, so they carry none."
             )
-        if raw_fit.size > 0 and np.ptp(raw_fit) > 0.0 and float(fitness_weight) != 0.0:
+        if not np.all(np.isfinite(raw_fit)):
+            raise ValueError("`fitness` must be finite")
+        if raw_fit.size > 0 and np.ptp(raw_fit) > 0.0 and float(fitness_weight) > 0.0:
             fit_norm = _rank_normalise(raw_fit)
 
     if isinstance(seed, np.random.Generator):
@@ -1249,10 +1297,33 @@ def esa(
     else:
         rng = np.random.default_rng(seed)
 
-    dim = bounds.shape[0]
-    min_val = bounds[:, 0]
-    max_val = bounds[:, 1]
-    scaled_samples, _, _ = _scale(samples, min_val, max_val)
+    full_dim = bounds.shape[0]
+    active_dims = bounds[:, 1] > bounds[:, 0]
+    work_dim = int(np.count_nonzero(active_dims))
+    if work_dim == 0:
+        if stats is not None:
+            stats.update(
+                batch_epochs=[],
+                batch_replaced=[],
+                batch_force_ema=[],
+                epochs_total=0,
+                radius=0.0,
+                search_mode="k_nn",
+                query_s=0.0,
+                force_s=0.0,
+                step_s=0.0,
+                update_s=0.0,
+                setup_s=0.0,
+                guide_s=0.0,
+                replace_s=0.0,
+            )
+        return np.tile(bounds[:, 0], (n_gen, 1))
+
+    work_bounds = bounds[active_dims] if work_dim < full_dim else bounds
+    work_samples = samples[:, active_dims] if work_dim < full_dim else samples
+    min_val = work_bounds[:, 0]
+    max_val = work_bounds[:, 1]
+    scaled_samples, _, _ = _scale(work_samples, min_val, max_val)
     if scaled_samples.size:
         outside = int(np.any(
             (scaled_samples < 0.0) | (scaled_samples > 1.0), axis=1).sum())
@@ -1263,7 +1334,7 @@ def esa(
                 "Widen `bounds` to contain the samples, or drop them.",
                 outside, scaled_samples.shape[0])
 
-    k_value = k if k is not None else min(2 * dim + 1, K_LOCAL)
+    k_value = k if k is not None else min(2 * work_dim + 1, K_LOCAL)
     batch = batch_size if batch_size is not None else max(n_gen, 1)
     index_p = None if index is None else float(getattr(index, "p", 1.0))
     if p is None or (index_p is not None and p == 1.0):
@@ -1280,11 +1351,11 @@ def esa(
 
     n_total = samples.shape[0] + n_gen
     mode, target = geometry.neighbourhood_for(
-        dim, n_total, search_mode, radius_target)
+        work_dim, n_total, search_mode, radius_target)
     final_radius = (
-        geometry.radius_for_count(dim, n_total, target, exponent)
+        geometry.radius_for_count(work_dim, n_total, target, exponent)
         if not radius
-        else geometry.radius_from_normalized(float(radius), dim, exponent)
+        else geometry.radius_from_normalized(float(radius), work_dim, exponent)
     )
     logger.debug("Interaction radius (toroidal L^%g): %.4f",
                  exponent, final_radius)
@@ -1296,7 +1367,7 @@ def esa(
         scaled_samples,
         index,
         n=n_gen,
-        dim=dim,
+        dim=work_dim,
         epochs=epochs,
         C=float(C),
         w=float(w),
@@ -1315,7 +1386,12 @@ def esa(
         stats=stats,
         **metric_kwargs,
     )
-    return _inv_scale(generated, min_val, max_val)
+    restored = _inv_scale(generated, min_val, max_val)
+    if work_dim == full_dim:
+        return restored
+    out = np.tile(bounds[:, 0], (n_gen, 1))
+    out[:, active_dims] = restored
+    return out
 
 
 def ess(

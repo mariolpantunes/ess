@@ -44,8 +44,12 @@ leave-one-out rank correlation as its `trust` in $[0, 1]$.
 
 import numpy as np
 from torann import ToroidalNN
+from torann import rust as _torann_rust
 
 from . import geometry
+
+_KERNEL_MIN_WORK = 200_000
+_AT_BLOCK_ELEMENTS = 4_000_000
 
 
 class InverseDistance:
@@ -124,24 +128,34 @@ class InverseDistance:
 
         q = np.mod(queries, 1.0)
         kk = min(self.k, self._val.shape[0])
-        ids, dist = self._index.query(k=kk, queries=q)
+        mean_val = float(self._val.mean())
+        out = np.full(queries.shape[0], mean_val, dtype=np.float64)
+        step = max(1, _AT_BLOCK_ELEMENTS // max(1, kk))
 
-        missing = ids < 0
-        safe = np.where(missing, 0, ids)
-        f_near = self._val[safe]
+        for lo in range(0, q.shape[0], step):
+            hi = min(lo + step, q.shape[0])
+            ids, dist = self._index.query(k=kk, queries=q[lo:hi])
 
-        exact = (dist <= 0.0) & ~missing
-        with np.errstate(divide="ignore", invalid="ignore"):
-            w = np.where(exact | missing, 0.0, dist ** (-self.power))
+            missing = ids < 0
+            safe = np.where(missing, 0, ids)
+            f_near = self._val[safe]
 
-        total = w.sum(axis=1)
-        out = np.full(queries.shape[0], float(self._val.mean()))
-        ok = total > 0
-        if ok.any():
-            out[ok] = np.einsum("qk,qk->q", w[ok], f_near[ok]) / total[ok]
-        hit = exact.any(axis=1)
-        if hit.any():
-            out[hit] = f_near[hit, np.argmax(exact[hit], axis=1)]
+            exact = (dist <= 0.0) & ~missing
+            with np.errstate(divide="ignore", invalid="ignore"):
+                w = np.where(exact | missing, 0.0, dist ** (-self.power))
+
+            total = w.sum(axis=1)
+            blk = out[lo:hi]
+            ok = total > 0
+            if ok.any():
+                blk[ok] = np.einsum("qk,qk->q", w[ok], f_near[ok]) / total[ok]
+            hit = exact.any(axis=1)
+            if hit.any():
+                hit_exact = exact[hit]
+                blk[hit] = (
+                    np.where(hit_exact, f_near[hit], 0.0).sum(axis=1)
+                    / hit_exact.sum(axis=1)
+                )
         return out
 
     def guide(self, positions: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -198,10 +212,15 @@ class InverseDistance:
             est[ok] = np.einsum("qk,qk->q", w[ok], f_near[ok]) / total[ok]
         hit = exact.any(axis=1)
         if hit.any():
-            est[hit] = f_near[hit, np.argmax(exact[hit], axis=1)]
+            hit_exact = exact[hit]
+            est[hit] = (
+                np.where(hit_exact, f_near[hit], 0.0).sum(axis=1)
+                / hit_exact.sum(axis=1)
+            )
 
         rows = np.flatnonzero(ok & ~hit)
-        step = max(1, 4_000_000 // max(1, ids.shape[1] * dim))
+        step = max(1, _AT_BLOCK_ELEMENTS // max(1, ids.shape[1] * dim))
+        wd = _torann_rust.weighted_directions
         for lo in range(0, rows.size, step):
             r = rows[lo : lo + step]
             with np.errstate(divide="ignore", invalid="ignore"):
@@ -209,11 +228,15 @@ class InverseDistance:
                     w[r] > 0.0,
                     w[r] / total[r, None] * (f_near[r] - est[r, None]) / dist[r],
                     0.0)
-            disp = q[r, None, :] - self._pos[safe[r]]
-            disp -= np.round(disp)
-            grad = np.sign(disp)
-            norms = np.maximum(np.abs(grad).sum(axis=2, keepdims=True), 1e-9)
-            out[r] = -self.power * np.einsum("qk,qkd->qd", coef, grad / norms)
+            if wd is not None and ids[r].size * dim >= _KERNEL_MIN_WORK:
+                weights = np.ascontiguousarray(-self.power * coef, dtype=np.float64)
+                (out[r],) = wd(self._pos, q[r], ids[r], weights[None])
+            else:
+                disp = q[r, None, :] - self._pos[safe[r]]
+                disp -= np.round(disp)
+                grad = np.sign(disp)
+                norms = np.maximum(np.abs(grad).sum(axis=2, keepdims=True), 1e-9)
+                out[r] = -self.power * np.einsum("qk,qkd->qd", coef, grad / norms)
         return est, out
 
 

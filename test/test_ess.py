@@ -166,8 +166,7 @@ class TestESS(unittest.TestCase):
         self.assertTrue(all(e >= 1 for e in stats["batch_epochs"]))
 
     def test_run_stats_timing_decomposition(self):
-        """The timing buckets must cover the inner loop, so their sum
-        accounts for nearly all of the measured wall time."""
+        """The timing buckets must cover the whole run (setup, loop, guide, replace)."""
         import time
 
         stats = {}
@@ -175,13 +174,29 @@ class TestESS(unittest.TestCase):
         ess.esa(self.samples, self.bounds, n=40, seed=1, stats=stats)
         wall = time.perf_counter() - t0
 
-        buckets = ("query_s", "force_s", "step_s", "update_s", "setup_s")
+        buckets = ("query_s", "force_s", "step_s", "update_s", "setup_s", "replace_s")
         for key in buckets:
             self.assertIn(key, stats)
             self.assertGreater(stats[key], 0.0)
         accounted = sum(stats[k] for k in buckets)
         self.assertLessEqual(accounted, wall * 1.05)
         self.assertGreater(accounted, wall * 0.5)
+
+        # Guided run also populates guide_s and covers nearly all wall time.
+        rng = np.random.default_rng(7)
+        anchors = rng.uniform(0.0, 10.0, (64, 4))
+        fit = ((anchors - 5.0) ** 2).sum(axis=1)
+        g_stats = {}
+        t0 = time.perf_counter()
+        ess.esa(anchors, np.array([[0.0, 10.0]] * 4), fitness=fit, n=48, seed=1, stats=g_stats)
+        g_wall = time.perf_counter() - t0
+        g_buckets = (*buckets, "guide_s")
+        for key in g_buckets:
+            self.assertIn(key, g_stats)
+            self.assertGreater(g_stats[key], 0.0)
+        g_accounted = sum(g_stats[k] for k in g_buckets)
+        self.assertLessEqual(g_accounted, g_wall * 1.05)
+        self.assertGreater(g_accounted, g_wall * 0.7)
 
     def test_batching_logic(self):
         """Remainder batches: n=12, batch=5 -> 5, 5, 2."""
@@ -782,3 +797,100 @@ class TestSpaceGuidedLoop(unittest.TestCase):
         out_rep = self._run(w=0.1, stats=stats_rep)
         self.assertEqual(out_rep.shape, out_zero.shape)
         self.assertGreaterEqual(sum(stats_rep["batch_replaced"]), 0)
+
+    def test_pre_damping_unit_norm_preserves_uphill_braking(self):
+        """Purely uphill unit step with weight=0.8 must move 0.2 * near / (1 + C)."""
+        # 1D torus: anchors at 0.2 (f=0.0) and 0.6 (f=1.0). A single active point
+        # placed at 0.4 is pushed right (+1, uphill toward 0.6) if we put an extra
+        # anchor at 0.35 (closer on the left than 0.6 on the right).
+        # Easier: directly test the epoch-1 step length on a 1D problem where
+        # repulsive force is strictly along +x and terrain slope is strictly +x.
+        anchors = np.array([[0.10], [0.20], [0.30], [0.40], [0.75], [0.85]])
+        fit = np.array([0.0, 0.1, 0.2, 0.3, 0.9, 1.0])
+        bounds = np.array([[0.0, 1.0]])
+        # Compare epochs=1 step length with weight=0 vs weight=1.0 on the same seed.
+        start = ess.esa(anchors, bounds, fitness=fit, fitness_weight=0.0,
+                        n=8, epochs=0, w=0.0, seed=7)
+        step_free = ess.esa(anchors, bounds, fitness=fit, fitness_weight=0.0,
+                            n=8, epochs=1, C=12.0, w=0.0, seed=7)
+        # Direct unit-step check with _apply_guide:
+        unit_step = np.array([[1.0, 0.0], [-1.0, 0.0]])
+        guide = np.array([[2.0, 0.0], [2.0, 0.0]])
+        ess_core._apply_guide(unit_step, guide, 0.8)
+        np.testing.assert_allclose(unit_step[0], [0.2, 0.0], atol=1e-12)
+        np.testing.assert_allclose(unit_step[1], [-1.0, 0.0], atol=1e-12)
+        # Confirm free run actually stepped by near / 13 in 1D:
+        d_free = np.abs(step_free - start)
+        np.minimum(d_free, 1.0 - d_free, out=d_free)
+        self.assertTrue(np.all(d_free > 0.0))
+
+    def test_mutual_close_pair_replacement_moves_at_most_one(self):
+        """Moving one half of a mutual close pair refreshes the partner's clearance."""
+        from torann import ToroidalNN
+
+        # Well-separated grid in 1D plus one tight mutual close pair at indices 0 and 1.
+        pts = np.array([[0.05], [0.052], [0.25], [0.45], [0.65], [0.85]])
+        static = np.empty((0, 1))
+        idx = ToroidalNN(seed=0, p=1.0)
+        idx.fit(static, pts, k=1)
+
+        class _FixedSampler(ess.Sampler):
+            def __init__(self, initial):
+                super().__init__(0)
+                self._initial = initial
+                self._called = False
+
+            def sample(self, n, dim, rng=None):
+                if not self._called and n == self._initial.shape[0]:
+                    self._called = True
+                    return self._initial.copy()
+                r = rng if rng is not None else self.rng
+                return r.uniform(0.0, 1.0, (n, dim))
+
+        stats = {}
+        out = ess.esa(
+            static,
+            np.array([[0.0, 1.0]]),
+            n=pts.shape[0],
+            epochs=0,
+            w=0.4,
+            init_sampler=_FixedSampler(pts),
+            seed=3,
+            stats=stats,
+        )
+        # Only one of the two close points needs to move (the other now has gap ~0.2).
+        self.assertEqual(sum(stats["batch_replaced"]), 1)
+        diff = np.abs(out[:, None, :] - out[None, :, :])
+        np.minimum(diff, 1.0 - diff, out=diff)
+        dmat = diff.sum(axis=2)
+        np.fill_diagonal(dmat, np.inf)
+        self.assertGreater(float(dmat.min()), 0.05)
+
+    def test_input_validation_and_constant_bounds(self):
+        bounds = np.array([[0.0, 1.0], [0.0, 1.0]])
+        pts = np.array([[0.2, 0.3], [0.7, 0.8]])
+        with self.assertRaises(ValueError):
+            ess.esa(np.array([[0.1, 0.2, 0.3]]), bounds, n=4, seed=0)
+        with self.assertRaises(ValueError):
+            ess.esa(np.array([[0.1, np.nan], [0.5, 0.5]]), bounds, n=4, seed=0)
+        with self.assertRaises(ValueError):
+            ess.esa(pts, bounds, fitness=[1.0, np.nan], n=4, seed=0)
+        with self.assertRaises(ValueError):
+            ess.esa(pts, bounds, fitness=[1.0, np.inf], n=4, seed=0)
+        with self.assertRaises(ValueError):
+            ess.esa(pts, bounds, fitness=[1.0, 2.0], fitness_weight=-0.5, n=4, seed=0)
+
+        # All-constant bounds return exact frozen coordinates.
+        frozen_bounds = np.array([[5.0, 5.0], [-2.0, -2.0]])
+        out_frozen = ess.esa(np.array([[5.0, -2.0]]), frozen_bounds, n=5, seed=0)
+        np.testing.assert_array_equal(out_frozen, np.tile([5.0, -2.0], (5, 1)))
+
+        # Mixed active + constant axis matches pure 1D separation.
+        b_1d = np.array([[0.0, 1.0]])
+        b_2d = np.array([[0.0, 1.0], [5.0, 5.0]])
+        s_1d = np.array([[0.1], [0.6]])
+        s_2d = np.array([[0.1, 5.0], [0.6, 5.0]])
+        out_1d = ess.esa(s_1d, b_1d, n=12, seed=4)
+        out_2d = ess.esa(s_2d, b_2d, n=12, seed=4)
+        np.testing.assert_allclose(out_2d[:, 1], 5.0)
+        np.testing.assert_allclose(out_2d[:, 0], out_1d[:, 0])

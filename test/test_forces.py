@@ -907,3 +907,14 @@ class TestBounds(unittest.TestCase):
                     [[0.0, np.inf], [0.0, 1.0]]):
             with self.assertRaises(ValueError):
                 esa(static, bad, n=10, seed=1)
+
+    def test_power_sum_quantile_is_monotone_in_lower_tail(self):
+        qs = np.geomspace(1e-12, 0.5, 64)
+        for p in (0.5, 0.25, 0.05):
+            for d in (2, 8, 32, 128):
+                with self.subTest(d=d, p=p):
+                    vals = [geometry._power_sum_quantile(d, p, float(q)) for q in qs]
+                    self.assertTrue(
+                        np.all(np.diff(vals) >= -1e-15),
+                        f"non-monotone quantile for d={d}, p={p}",
+                    )

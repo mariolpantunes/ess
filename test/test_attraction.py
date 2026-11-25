@@ -202,6 +202,52 @@ class TestChooseK(unittest.TestCase):
         self.assertGreater(t1, 0.0)
         self.assertGreater(k1, 0)
 
+    def test_exact_hit_duplicates_are_averaged(self):
+        """Duplicate / 0-vs-1 aliased anchors with distinct fitness return their mean."""
+        pos = np.array([[0.0, 0.0], [1.0, 0.0], [0.5, 0.5]])
+        val = np.array([0.0, 1.0, 0.25])
+        model = attraction.InverseDistance(k=3).fit(pos, val)
+        q = np.array([[0.0, 0.0], [1.0, 0.0]])
+        np.testing.assert_allclose(model.at(q), [0.5, 0.5])
+        est, slope = model.guide(q)
+        np.testing.assert_allclose(est, [0.5, 0.5])
+        np.testing.assert_allclose(slope, 0.0)
+
+    def test_guide_rust_kernel_matches_numpy_path(self):
+        """Compiled weighted_directions path in guide matches the NumPy fallback."""
+        rng = np.random.default_rng(11)
+        pos = rng.random((128, 32))
+        val = ((pos - 0.5) ** 2).sum(axis=1)
+        q = rng.random((80, 32))
+        for p in (1.0, 0.5):
+            with self.subTest(p=p):
+                model = attraction.InverseDistance(k=128, p=p).fit(pos, val)
+                est_rust, grad_rust = model.guide(q)
+                old_min = attraction._KERNEL_MIN_WORK
+                try:
+                    attraction._KERNEL_MIN_WORK = 10**12
+                    est_np, grad_np = model.guide(q)
+                finally:
+                    attraction._KERNEL_MIN_WORK = old_min
+                np.testing.assert_allclose(est_rust, est_np, rtol=1e-13, atol=1e-13)
+                np.testing.assert_allclose(grad_rust, grad_np, rtol=1e-12, atol=1e-12)
+
+    def test_at_chunked_matches_unchunked(self):
+        """Chunking InverseDistance.at preserves exact outputs."""
+        rng = np.random.default_rng(12)
+        pos = rng.random((40, 6))
+        val = rng.random(40)
+        q = rng.random((100, 6))
+        model = attraction.InverseDistance(k=40).fit(pos, val)
+        ref = model.at(q)
+        old_blk = attraction._AT_BLOCK_ELEMENTS
+        try:
+            attraction._AT_BLOCK_ELEMENTS = 200
+            chunked = model.at(q)
+        finally:
+            attraction._AT_BLOCK_ELEMENTS = old_blk
+        np.testing.assert_array_equal(chunked, ref)
+
 
 if __name__ == "__main__":
     unittest.main()

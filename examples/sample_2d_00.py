@@ -16,7 +16,8 @@ logging.getLogger("PIL").setLevel(logging.WARNING)
 
 
 def main(args):
-    points0 = np.array([[0, 0], [5, 5], [5, 0], [0, 5], [2.5, 2.5]])
+    # Inset from the [0, 5] periodic seam so the four anchors are distinct on the torus.
+    points0 = np.array([[0.5, 0.5], [4.5, 4.5], [4.5, 0.5], [0.5, 4.5], [2.5, 2.5]])
     bounds = np.array([[0, 5], [0, 5]])
 
     s = time.perf_counter()
