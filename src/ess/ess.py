@@ -30,7 +30,6 @@ import time
 
 import numpy as np
 from torann import ToroidalNN
-from torann import brute as _torann_brute
 from torann import rust as _torann_rust
 
 from . import attraction, geometry, samplers
@@ -450,7 +449,6 @@ def _smart_init(
     field: "_AttractionField | None" = None,
     fitness_weight: float = 0.0,
     p: float = 1.0,
-    prior: np.ndarray | None = None,
 ) -> np.ndarray:
     r"""Initializes new points by Best Candidate Sampling against the index.
 
@@ -518,13 +516,6 @@ def _smart_init(
     # A copy: it is lowered in place as slots are picked, and the index owns
     # what it returned.
     novelty = np.array(dists, dtype=np.float64).reshape(n_new, pool)
-    if prior is not None and prior.shape[0] > 0:
-        _, d_prior = _torann_brute.knn_scan(prior, candidates, k=1, p=p)
-        np.minimum(
-            novelty,
-            np.asarray(d_prior, dtype=np.float64).reshape(n_new, pool),
-            out=novelty,
-        )
     slots = candidates.reshape(n_new, pool, dim)
 
     # Repulsive ESS places on novelty alone; guided ESS places on a blend
@@ -914,8 +905,10 @@ def _esa(
 
         started = time.perf_counter()
         if fitted:
-            # Placed in rounds against the static index plus previously picked
-            # slots of this batch, then promoted once into the candidate tier.
+            # Placed in rounds, each one indexed before the next is drawn, so
+            # that a slot is far from the whole batch placed so far and not
+            # only from the batches before it. Within a round `_smart_init`
+            # does the same thing exactly.
             rounds = PLACEMENT_ROUND
             init = np.empty((current_n, dim))
             for lo in range(0, current_n, rounds):
@@ -923,9 +916,16 @@ def _esa(
                 init[lo:hi] = _smart_init(
                     index, hi - lo, dim, rng, init_sampler, pool=init_pool,
                     field=field, fitness_weight=place_w, p=p,
-                    prior=init[:lo] if lo > 0 else None,
                 )
-            index.promote(init)
+                if hi < current_n:
+                    index.promote(init[lo:hi])
+            if current_n > rounds:
+                # The earlier rounds went into the static tier to be seen;
+                # the relaxation needs the whole batch back in the candidate
+                # tier, and a refit is the only way to say that.
+                index.fit(all_data[:cursor], init, k=k, radius=radius_hint)
+            else:
+                index.promote(init)
         else:
             # From scratch: nothing to anchor against — the first batch
             # starts straight from the space-filling sampler.
